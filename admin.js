@@ -358,7 +358,10 @@ function renderDetailOverview(c) {
   el.innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       ${pipelineBadge(c.pipeline)} ${statusBadge(c.status)}
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="openEditCandidateModal('${esc(c.id)}')">Edit Info</button>
+      <div style="margin-left:auto;display:flex;gap:6px;">
+        ${!c.portal_activated_at ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendPortalInvite('${esc(c.id)}')">Send Portal Invite</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit Info</button>
+      </div>
     </div>
     <div class="info-grid" style="margin-bottom:16px">
       <div class="info-item"><label>Phone</label><span>${esc(c.phone || '—')}</span></div>
@@ -578,11 +581,15 @@ async function viewInterviewSlots(interviewId) {
       <button class="btn btn-primary btn-sm" onclick="openAddSlotsModal('${interviewId}')">+ Add Slots</button>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Start</th><th>End</th><th>Status</th></tr></thead>
+      <thead><tr><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
       <tbody>${slots.length ? slots.map(s => `
-        <tr><td>${fmtDateTime(s.start_time)}</td><td>${fmtDateTime(s.end_time)}</td>
-        <td>${s.is_booked ? '<span class="badge badge-approved">Booked</span>' : s.is_blocked ? '<span class="badge badge-hold">Blocked</span>' : '<span class="badge badge-new">Available</span>'}</td></tr>`).join('') :
-        '<tr><td colspan="3" class="table-empty">No slots defined</td></tr>'}
+        <tr>
+          <td>${fmtDateTime(s.start_time)}</td>
+          <td>${fmtDateTime(s.end_time)}</td>
+          <td>${s.is_booked ? '<span class="badge badge-approved">Booked</span>' : s.is_blocked ? '<span class="badge badge-hold">Blocked</span>' : '<span class="badge badge-new">Available</span>'}</td>
+          <td>${!s.is_booked ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:2px 6px;" onclick="deleteSlot('${esc(interviewId)}','${esc(s.id)}')">Delete</button>` : ''}</td>
+        </tr>`).join('') :
+        '<tr><td colspan="4" class="table-empty">No slots defined</td></tr>'}
       </tbody>
     </table></div>`, 'modal-lg');
 }
@@ -1007,10 +1014,14 @@ async function loadUsers() {
       <tr>
         <td style="font-weight:500">${esc(u.first_name)} ${esc(u.last_name)}</td>
         <td class="text-muted">${esc(u.email)}</td>
-        <td><span class="badge badge-active">${esc(u.role.replace('_', ' '))}</span></td>
+        <td><span class="badge badge-active">${esc(u.role.replace(/_/g, ' '))}</span></td>
         <td>${u.is_active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-new">Inactive</span>'}</td>
         <td class="text-muted text-sm">${u.last_login_at ? relTime(u.last_login_at) : 'Never'}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No users</td></tr>';
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="resetUserPassword('${esc(u.id)}')">Reset PW</button>
+          <button class="btn btn-ghost btn-sm" style="color:${u.is_active ? 'var(--warning)' : 'var(--success)'}" onclick="toggleUserActive('${esc(u.id)}',${u.is_active ? 0 : 1})">${u.is_active ? 'Deactivate' : 'Activate'}</button>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="6" class="table-empty">No users</td></tr>';
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -1417,6 +1428,59 @@ document.getElementById('login-email').addEventListener('keydown', e => { if (e.
 
 function parseJWT(token) {
   try { const p = token.split('.')[1]; return JSON.parse(atob(p.replace(/-/g,'+').replace(/_/g,'/'))); } catch { return null; }
+}
+
+// ── Portal Invite ─────────────────────────────────────────────────────────────
+
+async function sendPortalInvite(candidateId) {
+  try {
+    await api('POST', `/candidates/${candidateId}/portal-invite`);
+    toast('Portal activation email sent', 'success');
+    openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Delete Booking Slot ───────────────────────────────────────────────────────
+
+async function deleteSlot(interviewId, slotId) {
+  const ok = await showConfirm('Delete this slot? This cannot be undone.');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/interviews/${interviewId}/slots/${slotId}`);
+    toast('Slot deleted', 'success');
+    viewInterviewSlots(interviewId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── User Management ───────────────────────────────────────────────────────────
+
+async function toggleUserActive(userId, isActive) {
+  try {
+    await api('PATCH', `/users/${userId}`, { isActive: isActive === 1 });
+    toast(isActive ? 'User activated' : 'User deactivated', isActive ? 'success' : 'info');
+    loadUsers();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function resetUserPassword(userId) {
+  openModal('Reset User Password', `
+    <div class="form-group">
+      <label>New Password</label>
+      <input type="password" id="rp-pw" placeholder="At least 8 characters" autofocus>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveUserPassword('${esc(userId)}')">Set Password</button>
+    </div>`);
+}
+
+async function saveUserPassword(userId) {
+  const pw = document.getElementById('rp-pw').value;
+  if (!pw || pw.length < 8) { toast('Password must be at least 8 characters', 'error'); return; }
+  try {
+    await api('PATCH', `/users/${userId}`, { password: pw });
+    closeModal(); toast('Password updated', 'success');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ── Edit Candidate Info ────────────────────────────────────────────────────────

@@ -462,6 +462,15 @@ R.post('/api/v1/candidates/:id/assign-recruiter', async (req, env, ctx, p) => {
   return json({ success: true });
 });
 
+R.post('/api/v1/candidates/:id/portal-invite', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const c = await env.DB.prepare('SELECT id,email,first_name,user_id FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Candidate not found', 404);
+  if (c.user_id) return err('Candidate has already activated their portal', 409);
+  await provisionPortal(env, p.id);
+  return json({ sent: true });
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // PUBLIC FORM & SUBMISSIONS
 // ═════════════════════════════════════════════════════════════════════════════
