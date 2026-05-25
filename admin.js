@@ -1641,8 +1641,24 @@ function parseJWT(token) {
 
 async function sendPortalInvite(candidateId) {
   try {
-    await api('POST', `/candidates/${candidateId}/portal-invite`);
-    toast('Portal activation email sent', 'success');
+    const d = await api('POST', `/candidates/${candidateId}/portal-invite`);
+    if (d.emailSent) {
+      toast('Portal activation email sent to candidate', 'success');
+    } else {
+      // Email not configured — show the link so admin can share manually
+      openModal('Activation Link', `
+        <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px;">
+          Email could not be sent (Microsoft Graph not configured).<br>
+          Share this activation link with the candidate manually — it expires in <strong>72 hours</strong>.
+        </p>
+        <div style="background:var(--navy-mid);border-radius:6px;padding:10px 14px;font-size:.8rem;word-break:break-all;color:var(--blue);margin-bottom:16px;">
+          ${d.activationLink || '—'}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" onclick="navigator.clipboard.writeText('${d.activationLink}').then(()=>toast('Copied!'));closeModal()">Copy Link</button>
+          <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+        </div>`);
+    }
     openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }
