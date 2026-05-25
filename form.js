@@ -4,6 +4,7 @@ const API = 'https://poseidon-api.putuastrawijaya.workers.dev/api/v1';
 
 let selectedPipeline = null;
 let dynamicFields    = [];
+let activeFormId     = null;
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -36,11 +37,13 @@ function selectPipeline(pipeline, card) {
 async function loadDynamicFields(pipeline) {
   try {
     const res = await fetch(`${API}/public/forms/${pipeline}`);
-    if (!res.ok) return;
-    const { form, fields } = await res.json();
-    dynamicFields = fields || [];
-    renderDynamicFields(fields || []);
+    if (!res.ok) { activeFormId = null; return; }
+    const d = await res.json();
+    activeFormId = d.id || null;
+    dynamicFields = d.fields || [];
+    renderDynamicFields(d.fields || []);
   } catch (e) {
+    activeFormId = null;
     dynamicFields = [];
     document.getElementById('dynamic-fields-wrap').style.display = 'none';
   }
@@ -181,8 +184,7 @@ async function submitForm() {
   btn.disabled = true;
   btn.textContent = 'Submitting…';
 
-  const payload = {
-    pipeline: selectedPipeline,
+  const formData = {
     full_name: fullName,
     date_of_birth: dob,
     nationality,
@@ -198,6 +200,12 @@ async function submitForm() {
     emergency_contact_relationship: document.getElementById('f-ec-rel').value.trim() || null,
     emergency_contact_phone: document.getElementById('f-ec-phone').value.trim() || null,
     dynamic_fields: collectDynamicValues(),
+  };
+
+  const payload = {
+    formId:   activeFormId,
+    pipeline: selectedPipeline,
+    data:     formData,
   };
 
   try {
@@ -236,6 +244,7 @@ async function submitForm() {
 function resetForm() {
   selectedPipeline = null;
   dynamicFields    = [];
+  activeFormId     = null;
 
   document.querySelectorAll('.pipeline-card').forEach(c => c.classList.remove('selected'));
   ['f-name','f-dob','f-nationality','f-email','f-phone','f-position','f-exp',
