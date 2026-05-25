@@ -55,8 +55,10 @@ function renderDynamicFields(fields) {
     const req = f.is_required ? '<span class="required-star">*</span>' : '';
     const opts = f.options ? JSON.parse(f.options) : [];
 
-    switch (f.field_type) {
+    switch (f.field_type.toUpperCase()) {
       case 'TEXT':
+      case 'EMAIL':
+      case 'PHONE':
         return `<div class="form-group">
           <label class="form-label">${esc(f.label)}${req}</label>
           ${f.description ? `<p style="font-size:.78rem;color:var(--text-muted);margin:0 0 6px;">${esc(f.description)}</p>` : ''}
