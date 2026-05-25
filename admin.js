@@ -429,8 +429,84 @@ function renderDetailInterviews(c) {
           </div>
           <span class="badge ${i.status === 'SUBMITTED' || i.status === 'COMPLETED' ? 'badge-approved' : 'badge-active'}">${esc(i.status)}</span>
         </div>
-        ${i.score != null ? `<div class="mt-2 text-sm">Score: <strong>${i.score}/100</strong> · ${i.passed ? '<span style="color:var(--success)">Passed</span>' : '<span style="color:var(--danger)">Failed</span>'}</div>` : ''}
+        ${i.score != null ? `<div style="margin-top:8px;font-size:.85rem;">Score: <strong>${i.score}/100</strong> · ${i.passed ? '<span style="color:var(--success)">Passed</span>' : '<span style="color:var(--danger)">Failed</span>'}</div>` : ''}
+        ${i.recruiter_notes ? `<div style="margin-top:4px;font-size:.82rem;color:var(--text-muted);">${esc(i.recruiter_notes)}</div>` : ''}
+        ${(i.status === 'SUBMITTED' || i.status === 'COMPLETED') ? `
+          <div style="display:flex;gap:6px;margin-top:10px">
+            ${i.type === 'ONE_WAY' ? `<button class="btn btn-ghost btn-sm" onclick="viewInterviewResponses('${esc(c.id)}','${esc(i.id)}','${esc(i.interview_id)}')">View Responses</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="openScoreInterviewModal('${esc(c.id)}','${esc(i.id)}',${i.score||'null'},${i.passed!=null?i.passed:'null'})">Score</button>
+          </div>` : ''}
       </div>`).join('') : '<div class="empty" style="padding:32px"><p>No interviews yet</p></div>');
+}
+
+async function viewInterviewResponses(candidateId, candidateInterviewId, interviewId) {
+  try {
+    const [c, template] = await Promise.all([
+      Promise.resolve(STATE.currentCandidate),
+      api('GET', `/interviews/${interviewId}`)
+    ]);
+    const ci = (c?.interviews || []).find(i => i.id === candidateInterviewId);
+    let responses = [];
+    try { responses = JSON.parse(ci?.responses || '[]'); } catch {}
+    let questions = [];
+    try { questions = JSON.parse(template?.questions || '[]'); } catch {}
+    const respMap = {};
+    responses.forEach(r => { respMap[r.questionId] = r.responseText || r.text || ''; });
+    openModal('Interview Responses', `
+      <div style="margin-bottom:8px;font-size:.85rem;color:var(--text-muted);">
+        ${esc(template?.title)} · Submitted ${relTime(ci?.completed_at || ci?.updated_at)}
+      </div>
+      ${questions.length ? questions.map((q, idx) => `
+        <div style="margin-bottom:16px;padding:12px;background:var(--navy-mid);border-radius:8px;">
+          <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Q${idx+1}</div>
+          <div style="font-weight:500;margin-bottom:8px;">${esc(q.text)}</div>
+          <div style="font-size:.85rem;color:var(--text);white-space:pre-wrap;border-left:2px solid var(--blue);padding-left:10px;">${esc(respMap[q.id||idx] || '(No answer)')}</div>
+        </div>`).join('') : '<p style="color:var(--text-muted)">No questions found in this template.</p>'}
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+        <button class="btn btn-primary" onclick="closeModal();openScoreInterviewModal('${esc(candidateId)}','${esc(candidateInterviewId)}',null,null)">Score This Interview</button>
+      </div>`, 'modal-lg');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openScoreInterviewModal(candidateId, candidateInterviewId, currentScore, currentPassed) {
+  openModal('Score Interview', `
+    <div class="form-group">
+      <label>Score (0–100)</label>
+      <input type="number" id="sc-score" min="0" max="100" value="${currentScore ?? ''}" placeholder="e.g. 75">
+    </div>
+    <div class="form-group">
+      <label>Result</label>
+      <select id="sc-passed">
+        <option value="">— Not set —</option>
+        <option value="1" ${currentPassed === 1 ? 'selected' : ''}>Pass</option>
+        <option value="0" ${currentPassed === 0 ? 'selected' : ''}>Fail</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Recruiter Notes</label>
+      <textarea id="sc-notes" rows="3" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;" placeholder="Internal notes visible only to recruiters"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveInterviewScore('${esc(candidateId)}','${esc(candidateInterviewId)}')">Save Score</button>
+    </div>`);
+}
+
+async function saveInterviewScore(candidateId, candidateInterviewId) {
+  const score   = document.getElementById('sc-score').value;
+  const passed  = document.getElementById('sc-passed').value;
+  const notes   = document.getElementById('sc-notes').value.trim();
+  const body = {};
+  if (score !== '') body.score = parseInt(score);
+  if (passed !== '') body.passed = passed === '1';
+  if (notes) body.recruiterNotes = notes;
+  if (!Object.keys(body).length) { closeModal(); return; }
+  try {
+    await api('PATCH', `/candidates/${candidateId}/interviews/${candidateInterviewId}`, body);
+    closeModal(); toast('Score saved', 'success');
+    openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function renderDetailDocuments(c) {
