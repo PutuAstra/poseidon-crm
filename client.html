@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>POSEIDON — Client Portal</title>
+  <link rel="icon" href="logo-poseidon.webp">
   <link rel="stylesheet" href="style.css?v=20250525b">
   <style>
     .candidate-row { cursor: pointer; transition: background .1s; }
@@ -32,10 +33,13 @@
 <!-- Login -->
 <div id="view-login" class="login-page">
   <div class="login-card">
-    <div class="login-logo">
-      <span class="logo-p">P</span><span class="logo-rest">OSEIDON</span>
+    <div class="login-logo" style="flex-direction:column;align-items:center;gap:10px;padding-bottom:4px;">
+      <img src="logo-poseidon.webp" alt="POSEIDON CRM" style="width:220px;height:auto;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <img src="logo-cti.png" alt="CTI Group" style="height:28px;width:auto;">
+        <span style="font-size:.73rem;color:var(--text-muted);">CTI Group Worldwide Services, Inc.</span>
+      </div>
     </div>
-    <p class="login-sub">CTI Group Worldwide Services, Inc.</p>
     <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 20px;text-align:center;">Client Portal</p>
     <div class="form-group">
       <label class="form-label">Email Address</label>
