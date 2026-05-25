@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POSEIDON — First-Time Setup</title>
+  <link rel="stylesheet" href="style.css?v=20250525b">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card" style="max-width:460px;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="display:inline-flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <span class="logo-p" style="font-size:1.6rem;">P</span>
+        <span class="logo-rest" style="font-size:1.6rem;">OSEIDON</span>
+      </div>
+      <p style="color:var(--text-muted);font-size:.82rem;margin:0;">CTI Group Worldwide Services, Inc.</p>
+    </div>
+
+    <!-- Step 1: Not bootstrapped -->
+    <div id="step-setup">
+      <h2 style="font-size:1.1rem;font-weight:700;color:var(--text);margin:0 0 4px;">First-Time Setup</h2>
+      <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 20px;">Create the Super Admin account. You will only need to do this once.</p>
+
+      <div class="form-group">
+        <label class="form-label">Admin Setup Key <span style="color:var(--danger);">*</span></label>
+        <input type="password" id="s-key" class="form-input" placeholder="From your Worker environment secrets">
+      </div>
+      <div class="form-group">
+        <label class="form-label">First Name <span style="color:var(--danger);">*</span></label>
+        <input type="text" id="s-fn" class="form-input" placeholder="First name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Last Name <span style="color:var(--danger);">*</span></label>
+        <input type="text" id="s-ln" class="form-input" placeholder="Last name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Address <span style="color:var(--danger);">*</span></label>
+        <input type="email" id="s-email" class="form-input" placeholder="admin@ctigroup.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password <span style="color:var(--danger);">*</span></label>
+        <input type="password" id="s-pw" class="form-input" placeholder="At least 8 characters">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Confirm Password <span style="color:var(--danger);">*</span></label>
+        <input type="password" id="s-pw2" class="form-input" placeholder="Repeat password">
+      </div>
+
+      <div id="setup-error" class="alert alert-danger hidden" style="margin-bottom:16px;"></div>
+      <button class="btn btn-primary" style="width:100%;padding:12px;" onclick="doSetup()">Create Super Admin Account</button>
+      <p style="text-align:center;margin-top:12px;"><a href="admin.html" style="color:var(--blue);font-size:.82rem;">Already set up? Sign in →</a></p>
+    </div>
+
+    <!-- Step 2: Already done -->
+    <div id="step-already" class="hidden" style="text-align:center;">
+      <div style="font-size:2.5rem;margin-bottom:12px;">🔒</div>
+      <h2 style="color:var(--text);margin:0 0 8px;">Already Configured</h2>
+      <p style="color:var(--text-muted);font-size:.88rem;margin:0 0 20px;">POSEIDON has already been set up. Sign in with your admin account.</p>
+      <a href="admin.html" class="btn btn-primary" style="display:inline-block;">Go to Admin Panel</a>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="step-success" class="hidden" style="text-align:center;">
+      <div style="font-size:2.5rem;margin-bottom:12px;">✅</div>
+      <h2 style="color:var(--text);margin:0 0 8px;">Setup Complete!</h2>
+      <p style="color:var(--text-muted);font-size:.88rem;margin:0 0 20px;">Your Super Admin account has been created. You can now sign in to the admin panel.</p>
+      <a href="admin.html" class="btn btn-primary" style="display:inline-block;">Go to Admin Panel →</a>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+<script>
+const API = 'https://poseidon-api.putuastrawijaya.workers.dev/api/v1';
+
+function show(id) { document.getElementById(id)?.classList.remove('hidden'); }
+function hide(id) { document.getElementById(id)?.classList.add('hidden'); }
+
+async function checkBootstrapped() {
+  try {
+    // Try bootstrap with empty key — if returns 409 it's done, otherwise show form
+    const r = await fetch(API + '/setup/bootstrap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminKey: '__check__' })
+    });
+    if (r.status === 409) {
+      hide('step-setup');
+      show('step-already');
+    }
+  } catch (e) {}
+}
+
+async function doSetup() {
+  const key   = document.getElementById('s-key').value.trim();
+  const fn    = document.getElementById('s-fn').value.trim();
+  const ln    = document.getElementById('s-ln').value.trim();
+  const email = document.getElementById('s-email').value.trim();
+  const pw    = document.getElementById('s-pw').value;
+  const pw2   = document.getElementById('s-pw2').value;
+  const errEl = document.getElementById('setup-error');
+  errEl.classList.add('hidden');
+
+  if (!key || !fn || !ln || !email || !pw) { errEl.textContent = 'All fields are required.'; errEl.classList.remove('hidden'); return; }
+  if (pw.length < 8)  { errEl.textContent = 'Password must be at least 8 characters.'; errEl.classList.remove('hidden'); return; }
+  if (pw !== pw2)     { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.querySelector('button[onclick="doSetup()"]');
+  btn.disabled = true; btn.textContent = 'Setting up…';
+
+  try {
+    const res = await fetch(API + '/setup/bootstrap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminKey: key, email, firstName: fn, lastName: ln, password: pw })
+    });
+    const d = await res.json();
+    if (res.status === 409) { hide('step-setup'); show('step-already'); return; }
+    if (!res.ok) { errEl.textContent = d.error || 'Setup failed.'; errEl.classList.remove('hidden'); btn.disabled = false; btn.textContent = 'Create Super Admin Account'; return; }
+    hide('step-setup');
+    show('step-success');
+  } catch (e) {
+    errEl.textContent = 'Network error. Please try again.';
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Create Super Admin Account';
+  }
+}
+
+checkBootstrapped();
+</script>
+</body>
+</html>

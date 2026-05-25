@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apply — CTI Group POSEIDON</title>
+  <link rel="stylesheet" href="style.css?v=20250525a">
+  <style>
+    body { background: var(--navy); min-height: 100vh; }
+    .apply-wrap {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+    .apply-header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .apply-header .logo-line {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .pipeline-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    .pipeline-card {
+      background: var(--navy-light);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .pipeline-card:hover { border-color: var(--blue); }
+    .pipeline-card.selected { border-color: var(--blue); background: rgba(26,86,219,.12); }
+    .pipeline-card .pc-icon { font-size: 1.6rem; margin-bottom: 8px; }
+    .pipeline-card .pc-name { font-size: .9rem; font-weight: 600; color: var(--text); }
+    .pipeline-card .pc-sub  { font-size: .75rem; color: var(--text-muted); margin-top: 2px; }
+    .form-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .form-section-title {
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-muted);
+      margin: 0 0 16px;
+    }
+    .field-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 560px) {
+      .pipeline-selector { grid-template-columns: 1fr; }
+      .field-grid-2 { grid-template-columns: 1fr; }
+    }
+    .required-star { color: var(--danger); margin-left: 2px; }
+    .submit-btn-wrap { margin-top: 28px; }
+
+    /* Success screen */
+    #view-success {
+      text-align: center;
+      padding: 80px 24px;
+    }
+    .success-icon {
+      font-size: 3rem;
+      margin-bottom: 16px;
+    }
+    .success-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0 0 12px;
+    }
+    .success-sub {
+      color: var(--text-muted);
+      font-size: .95rem;
+      max-width: 440px;
+      margin: 0 auto 28px;
+      line-height: 1.6;
+    }
+    .ref-box {
+      display: inline-block;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-family: monospace;
+      font-size: 1rem;
+      color: var(--blue);
+      letter-spacing: .05em;
+      margin-bottom: 28px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- APPLICATION FORM -->
+<div id="view-form" class="apply-wrap">
+  <div class="apply-header">
+    <div class="logo-line">
+      <span class="logo-p" style="font-size:1.6rem;">P</span>
+      <span style="font-weight:700;font-size:1.3rem;color:var(--text);">OSEIDON</span>
+    </div>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0;">CTI Group Worldwide Services, Inc.</p>
+    <h1 style="font-size:1.4rem;font-weight:700;color:var(--text);margin:16px 0 4px;">Apply for a Position</h1>
+    <p style="color:var(--text-muted);font-size:.9rem;margin:0;">Fill in the form below to start your application.</p>
+  </div>
+
+  <!-- Pipeline Selector -->
+  <div class="form-section">
+    <p class="form-section-title">Select Pipeline <span class="required-star">*</span></p>
+    <div class="pipeline-selector">
+      <div class="pipeline-card" data-pipeline="SEA_BASED" onclick="selectPipeline('SEA_BASED',this)">
+        <div class="pc-icon">⚓</div>
+        <div class="pc-name">Sea-Based</div>
+        <div class="pc-sub">Cruise lines &amp; maritime</div>
+      </div>
+      <div class="pipeline-card" data-pipeline="LAND_BASED" onclick="selectPipeline('LAND_BASED',this)">
+        <div class="pc-icon">🏢</div>
+        <div class="pc-name">Land-Based</div>
+        <div class="pc-sub">Overseas employment</div>
+      </div>
+      <div class="pipeline-card" data-pipeline="J1_VISA" onclick="selectPipeline('J1_VISA',this)">
+        <div class="pc-icon">🎓</div>
+        <div class="pc-name">J1 Visa Program</div>
+        <div class="pc-sub">US training &amp; exchange</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Personal Information -->
+  <div class="form-section">
+    <p class="form-section-title">Personal Information</p>
+    <div class="field-grid-2">
+      <div class="form-group">
+        <label class="form-label">Full Name <span class="required-star">*</span></label>
+        <input type="text" id="f-name" class="form-input" placeholder="Juan dela Cruz">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date of Birth <span class="required-star">*</span></label>
+        <input type="date" id="f-dob" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nationality <span class="required-star">*</span></label>
+        <input type="text" id="f-nationality" class="form-input" placeholder="Filipino">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Gender</label>
+        <select id="f-gender" class="form-input">
+          <option value="">— Select —</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+          <option value="Prefer not to say">Prefer not to say</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Home Address</label>
+      <input type="text" id="f-address" class="form-input" placeholder="Street, City, Province, Country">
+    </div>
+  </div>
+
+  <!-- Contact Information -->
+  <div class="form-section">
+    <p class="form-section-title">Contact Information</p>
+    <div class="field-grid-2">
+      <div class="form-group">
+        <label class="form-label">Email Address <span class="required-star">*</span></label>
+        <input type="email" id="f-email" class="form-input" placeholder="juan@email.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone / WhatsApp <span class="required-star">*</span></label>
+        <input type="tel" id="f-phone" class="form-input" placeholder="+63 9XX XXX XXXX">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Emergency Contact Name</label>
+      <input type="text" id="f-ec-name" class="form-input" placeholder="Full name">
+    </div>
+    <div class="field-grid-2">
+      <div class="form-group">
+        <label class="form-label">Emergency Contact Relationship</label>
+        <input type="text" id="f-ec-rel" class="form-input" placeholder="e.g. Spouse, Parent">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Emergency Contact Phone</label>
+        <input type="tel" id="f-ec-phone" class="form-input" placeholder="+63 9XX XXX XXXX">
+      </div>
+    </div>
+  </div>
+
+  <!-- Work Experience -->
+  <div class="form-section">
+    <p class="form-section-title">Work Experience</p>
+    <div class="field-grid-2">
+      <div class="form-group">
+        <label class="form-label">Position Applied For <span class="required-star">*</span></label>
+        <input type="text" id="f-position" class="form-input" placeholder="e.g. Utility - Galley">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Years of Experience</label>
+        <input type="number" id="f-exp" class="form-input" placeholder="0" min="0" max="60">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Previous Employer / Vessel</label>
+      <input type="text" id="f-employer" class="form-input" placeholder="Company or vessel name">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Skills &amp; Certifications</label>
+      <textarea id="f-skills" class="form-input" rows="3" placeholder="List relevant skills, licenses, and certifications…" style="resize:vertical;"></textarea>
+    </div>
+  </div>
+
+  <!-- Dynamic fields from form builder -->
+  <div id="dynamic-fields-wrap" style="display:none;">
+    <div class="form-section">
+      <p class="form-section-title">Additional Information</p>
+      <div id="dynamic-fields"></div>
+    </div>
+  </div>
+
+  <!-- Consent -->
+  <div class="form-section">
+    <p class="form-section-title">Declaration</p>
+    <div style="display:flex;gap:12px;align-items:flex-start;">
+      <input type="checkbox" id="f-consent" style="margin-top:3px;accent-color:var(--blue);width:16px;height:16px;flex-shrink:0;">
+      <label for="f-consent" style="font-size:.85rem;color:var(--text-muted);line-height:1.5;cursor:pointer;">
+        I confirm that all information provided is accurate and complete. I consent to CTI Group Worldwide Services, Inc.
+        collecting and processing my personal data for recruitment purposes in accordance with applicable data privacy laws.
+      </label>
+    </div>
+  </div>
+
+  <!-- Error / Submit -->
+  <div id="form-error" class="alert alert-danger hidden" style="margin-bottom:16px;"></div>
+  <div class="submit-btn-wrap">
+    <button class="btn btn-primary" style="width:100%;padding:14px;" id="btn-submit" onclick="submitForm()">
+      Submit Application
+    </button>
+    <p style="text-align:center;font-size:.78rem;color:var(--text-muted);margin-top:12px;">
+      Already applied? Contact your recruiter for a status update.
+    </p>
+  </div>
+</div><!-- /view-form -->
+
+<!-- SUCCESS VIEW -->
+<div id="view-success" class="hidden">
+  <div class="apply-wrap" style="padding-top:0;">
+    <div class="success-icon">✅</div>
+    <h2 class="success-title">Application Submitted!</h2>
+    <p class="success-sub">
+      Thank you for applying to CTI Group. Our recruitment team will review your profile
+      and reach out to you within 3–5 business days.
+    </p>
+    <div class="ref-box" id="ref-number"></div>
+    <p style="color:var(--text-muted);font-size:.82rem;">Please save your reference number above.</p>
+    <button class="btn btn-ghost" onclick="resetForm()">Submit Another Application</button>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+<script src="form.js?v=20250525a"></script>
+</body>
+</html>

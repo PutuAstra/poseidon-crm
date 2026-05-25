@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POSEIDON — Admin Panel</title>
+<link rel="stylesheet" href="style.css?v=20250525b">
+<style>
+  .candidate-name { font-weight: 600; color: var(--text); }
+  .candidate-email { font-size: 12px; color: var(--text-muted); }
+  .stage-select { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font-size: 12px; }
+  .doc-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .doc-row:last-child { border-bottom: none; }
+  .doc-icon { width: 32px; height: 32px; border-radius: 6px; background: var(--navy-mid); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .doc-info { flex: 1; min-width: 0; }
+  .doc-name { font-size: 13px; font-weight: 500; truncate; }
+  .doc-meta { font-size: 11px; color: var(--text-muted); }
+  .expiry-ok    { color: var(--success); }
+  .expiry-warn  { color: var(--warning); }
+  .expiry-dead  { color: var(--danger); }
+  .pipeline-tab { display: flex; gap: 4px; margin-bottom: 16px; }
+  .pipeline-tab button { padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+  .pipeline-tab button.active-sea  { background: #0c4a6e33; border-color: #0369a166; color: #38bdf8; }
+  .pipeline-tab button.active-land { background: #14532d33; border-color: #15803d66; color: #4ade80; }
+  .pipeline-tab button.active-j1   { background: #4c1d9533; border-color: #7c3aed66; color: #c084fc; }
+  .pipeline-tab button.active-all  { background: var(--blue); border-color: var(--blue); color: #fff; }
+  #detail-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 560px; background: var(--navy-light); border-left: 1px solid var(--border); z-index: 50; transform: translateX(100%); transition: transform 0.25s ease; overflow-y: auto; display: flex; flex-direction: column; }
+  #detail-panel.open { transform: translateX(0); }
+  .detail-head { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .detail-body { flex: 1; overflow-y: auto; padding: 20px; }
+  .detail-close { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 6px; }
+  .detail-close:hover { background: var(--navy-mid); color: var(--text); }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .info-item label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); display: block; margin-bottom: 2px; }
+  .info-item span { font-size: 13px; color: var(--text); }
+  .compliance-table td { font-size: 12px; }
+  .compliance-days { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Login ─────────────────────────────────────────────────────────────── -->
+  <div id="view-login" class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">
+        <img src="logo.png" alt="CTI" onerror="this.style.display='none'">
+        <div>
+          <div class="title">P<span>OSEIDON</span></div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">CTI Group Worldwide Services</div>
+        </div>
+      </div>
+      <div id="login-error" class="alert alert-danger hidden" style="margin-bottom:16px"></div>
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" id="login-email" placeholder="admin@ctigroup.com" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-password" placeholder="••••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn btn-primary w-full" id="login-btn" onclick="doLogin()" style="margin-top:8px;justify-content:center;padding:10px">Sign In</button>
+      <p style="text-align:center;margin-top:12px;margin-bottom:0;">
+        <a href="#" onclick="openForgotPasswordModal();return false;" style="color:var(--blue);font-size:.82rem;">Forgot password?</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ── App shell (hidden until logged in) ────────────────────────────────── -->
+  <div id="view-app" class="hidden" style="display:flex;width:100%;height:100vh">
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div class="sidebar-logo">
+        <img src="logo.png" alt="CTI" height="28" onerror="this.style.display='none'">
+        <div class="brand">P<span>OSEIDON</span></div>
+      </div>
+
+      <div class="sidebar-section">Intake</div>
+      <div class="nav-item" data-view="dashboard" onclick="showView('dashboard')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" data-view="submissions" onclick="showView('submissions')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        New Submissions
+        <span class="nav-badge" id="badge-submissions" style="display:none">0</span>
+      </div>
+
+      <div class="sidebar-section">Pipeline</div>
+      <div class="nav-item" data-view="candidates" onclick="showView('candidates')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Candidates
+      </div>
+      <div class="nav-item" data-view="interviews" onclick="showView('interviews')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        Interviews
+      </div>
+
+      <div class="sidebar-section">Clients</div>
+      <div class="nav-item" data-view="clients" onclick="showView('clients')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Clients
+      </div>
+
+      <div class="sidebar-section">Compliance</div>
+      <div class="nav-item" data-view="compliance" onclick="showView('compliance')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Document Filter
+      </div>
+      <div class="nav-item" data-view="forms" onclick="showView('forms')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Form Builder
+      </div>
+
+      <div class="sidebar-section" id="admin-only-section">Admin</div>
+      <div class="nav-item" id="nav-users" data-view="users" onclick="showView('users')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Users
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-chip" onclick="doLogout()">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <div class="user-info">
+            <div class="user-name" id="user-name">Loading…</div>
+            <div class="user-role" id="user-role"></div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main -->
+    <div id="main">
+      <div id="topbar">
+        <span id="page-title">Dashboard</span>
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+          <button class="btn btn-ghost btn-sm" id="topbar-action" style="display:none"></button>
+          <button class="btn btn-ghost btn-sm" id="btn-notif" onclick="toggleNotifDrawer()" title="Notifications" style="position:relative;padding:6px 10px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span id="notif-badge" style="display:none;position:absolute;top:3px;right:3px;background:var(--danger);color:#fff;border-radius:99px;font-size:9px;font-weight:700;min-width:14px;height:14px;line-height:14px;text-align:center;padding:0 3px;"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Notifications Drawer -->
+      <div id="notif-drawer" style="display:none;position:fixed;top:56px;right:0;width:340px;background:var(--navy-light);border-left:1px solid var(--border);border-bottom:1px solid var(--border);z-index:60;box-shadow:-4px 4px 24px rgba(0,0,0,.4);max-height:calc(100vh - 56px);overflow-y:auto;">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <span style="font-weight:600;font-size:.9rem;">Notifications</span>
+          <button class="btn btn-ghost btn-sm" onclick="markAllNotifsRead()" style="font-size:.75rem;">Mark all read</button>
+        </div>
+        <div id="notif-list" style="padding:8px 0;"></div>
+      </div>
+      <div id="content">
+
+        <!-- Dashboard -->
+        <div id="pane-dashboard" class="pane hidden">
+          <div class="stat-grid" id="dash-stats"></div>
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Recent Submissions</span>
+              <button class="btn btn-ghost btn-sm" onclick="showView('submissions')">View All</button>
+            </div>
+            <div id="dash-recent-submissions"></div>
+          </div>
+        </div>
+
+        <!-- Submissions -->
+        <div id="pane-submissions" class="pane hidden">
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="sub-search" placeholder="Search submissions…" oninput="loadSubmissions()">
+            </div>
+            <select id="sub-pipeline" onchange="loadSubmissions()">
+              <option value="">All Pipelines</option>
+              <option value="SEA_BASED">Sea-Based</option>
+              <option value="LAND_BASED">Land-Based</option>
+              <option value="J1_PROGRAM">J1 Program</option>
+            </select>
+            <select id="sub-reviewed" onchange="loadSubmissions()">
+              <option value="false">Unreviewed</option>
+              <option value="">All</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Applicant</th><th>Pipeline</th><th>Submitted</th><th>Duplicate</th><th>Actions</th>
+              </tr></thead>
+              <tbody id="submissions-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="sub-pagination"></div>
+        </div>
+
+        <!-- Candidates -->
+        <div id="pane-candidates" class="pane hidden">
+          <div class="pipeline-tab" id="pipeline-tabs">
+            <button onclick="setActivePipeline('')" class="active-all" data-pipeline="">All</button>
+            <button onclick="setActivePipeline('SEA_BASED')" data-pipeline="SEA_BASED">🚢 Sea-Based</button>
+            <button onclick="setActivePipeline('LAND_BASED')" data-pipeline="LAND_BASED">🏨 Land-Based</button>
+            <button onclick="setActivePipeline('J1_PROGRAM')" data-pipeline="J1_PROGRAM">🎓 J1 Program</button>
+          </div>
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="cand-search" placeholder="Search candidates…" oninput="debounce(loadCandidates,400)()">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="exportCandidatesCSV()" title="Export CSV" style="white-space:nowrap;">⬇ Export CSV</button>
+            <select id="cand-status" onchange="loadCandidates()">
+              <option value="">All Statuses</option>
+              <option value="NEW_SUBMISSION">New Submission</option>
+              <option value="SCREENING">Screening</option>
+              <option value="OWI_INVITED">OWI Invited</option>
+              <option value="OWI_SUBMITTED">OWI Submitted</option>
+              <option value="TWI_SCHEDULED">TWI Scheduled</option>
+              <option value="TWI_COMPLETED">TWI Completed</option>
+              <option value="BOOKING_INVITED">Booking Invited</option>
+              <option value="BOOKING_COMPLETED">Booking Completed</option>
+              <option value="PRE_QUAL_APPROVED">Pre-Qual Approved</option>
+              <option value="ENDORSED">Endorsed</option>
+              <option value="CLIENT_APPROVED">Client Approved</option>
+              <option value="ONBOARDING">Onboarding</option>
+              <option value="DOCUMENT_REVIEW">Doc Review</option>
+              <option value="COMPLIANCE_HOLD">Compliance Hold</option>
+              <option value="DEPLOYED">Deployed</option>
+              <option value="WITHDRAWN">Withdrawn</option>
+              <option value="ARCHIVED">Archived</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Candidate</th><th>Pipeline</th><th>Status</th><th>Recruiter</th><th>Updated</th>
+              </tr></thead>
+              <tbody id="candidates-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="cand-pagination"></div>
+        </div>
+
+        <!-- Interviews -->
+        <div id="pane-interviews" class="pane hidden">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Title</th><th>Type</th><th>Created By</th><th>Created</th><th>Actions</th></tr></thead>
+              <tbody id="interviews-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Clients -->
+        <div id="pane-clients" class="pane hidden">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Client</th><th>Type</th><th>Country</th><th>Contact</th><th>Status</th></tr></thead>
+              <tbody id="clients-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Compliance Filter -->
+        <div id="pane-compliance" class="pane hidden">
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title" style="margin-bottom:16px">Filter Criteria</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Document Types</label>
+                <select id="comp-doc-types" multiple style="height:120px">
+                  <option value="PASSPORT" selected>Passport</option>
+                  <option value="VISA_J1">J1 Visa</option>
+                  <option value="VISA_B1B2">B1/B2 Visa</option>
+                  <option value="SEAMANS_BOOK">Seaman's Book</option>
+                  <option value="MEDICAL_CERTIFICATE">Medical Certificate</option>
+                  <option value="STCW_CERTIFICATE">STCW Certificate</option>
+                  <option value="DS_2019">DS-2019</option>
+                  <option value="NBI_CLEARANCE">NBI Clearance</option>
+                </select>
+              </div>
+              <div>
+                <div class="form-group">
+                  <label>Expires Before</label>
+                  <input type="date" id="comp-expires-before">
+                </div>
+                <div class="form-group">
+                  <label>Pipeline</label>
+                  <select id="comp-pipeline">
+                    <option value="">All Pipelines</option>
+                    <option value="SEA_BASED">Sea-Based</option>
+                    <option value="LAND_BASED">Land-Based</option>
+                    <option value="J1_PROGRAM">J1 Program</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Candidate Status</label>
+                  <select id="comp-status">
+                    <option value="">All</option>
+                    <option value="DEPLOYED">Deployed</option>
+                    <option value="ONBOARDING">Onboarding</option>
+                    <option value="DOCUMENT_REVIEW">Doc Review</option>
+                  </select>
+                </div>
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px">
+                  <input type="checkbox" id="comp-expired-only"> Show expired only
+                </label>
+                <button class="btn btn-primary" onclick="runComplianceFilter()">Run Filter</button>
+              </div>
+            </div>
+          </div>
+          <div id="compliance-results"></div>
+        </div>
+
+        <!-- Form Builder -->
+        <div id="pane-forms" class="pane hidden">
+          <div id="forms-list"></div>
+        </div>
+
+        <!-- Users -->
+        <div id="pane-users" class="pane hidden">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th></tr></thead>
+              <tbody id="users-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div><!-- /content -->
+    </div><!-- /main -->
+  </div><!-- /view-app -->
+</div><!-- /app -->
+
+<!-- ── Candidate Detail Panel ─────────────────────────────────────────────── -->
+<div id="detail-panel">
+  <div class="detail-head">
+    <div class="user-avatar" id="dp-avatar" style="width:42px;height:42px;font-size:16px">?</div>
+    <div>
+      <div id="dp-name" style="font-size:16px;font-weight:700"></div>
+      <div id="dp-email" style="font-size:12px;color:var(--text-muted)"></div>
+    </div>
+    <button class="detail-close" onclick="closeDetail()">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="detail-body">
+    <div class="tabs" id="detail-tabs">
+      <div class="tab active" onclick="switchDetailTab('overview',this)">Overview</div>
+      <div class="tab" onclick="switchDetailTab('interviews',this)">Interviews</div>
+      <div class="tab" onclick="switchDetailTab('documents',this)">Documents</div>
+      <div class="tab" onclick="switchDetailTab('endorsements',this)">Endorsements</div>
+      <div class="tab" id="tab-j1plan" onclick="switchDetailTab('j1plan',this)" style="display:none;">J1 Plan</div>
+      <div class="tab" onclick="switchDetailTab('history',this)">Timeline</div>
+    </div>
+    <div id="dp-tab-overview"></div>
+    <div id="dp-tab-interviews" class="hidden"></div>
+    <div id="dp-tab-documents" class="hidden"></div>
+    <div id="dp-tab-endorsements" class="hidden"></div>
+    <div id="dp-tab-j1plan" class="hidden"></div>
+    <div id="dp-tab-history" class="hidden"></div>
+  </div>
+</div>
+
+<!-- ── Modals ─────────────────────────────────────────────────────────────── -->
+<div id="modal-container"></div>
+<div id="toast-container"></div>
+
+<script src="admin.js?v=20250525b"></script>
+</body>
+</html>

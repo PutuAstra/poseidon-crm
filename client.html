@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POSEIDON — Client Portal</title>
+  <link rel="stylesheet" href="style.css?v=20250525b">
+  <style>
+    .candidate-row { cursor: pointer; transition: background .1s; }
+    .candidate-row:hover { background: var(--navy-mid); }
+    #detail-panel {
+      position: fixed; right: 0; top: 0; bottom: 0; width: 520px;
+      background: var(--navy-light); border-left: 1px solid var(--border);
+      z-index: 50; transform: translateX(100%); transition: transform .25s ease;
+      overflow-y: auto; display: flex; flex-direction: column;
+    }
+    #detail-panel.open { transform: translateX(0); }
+    .detail-head { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+    .detail-body { flex: 1; overflow-y: auto; padding: 20px; }
+    .info-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .info-item label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); display: block; margin-bottom: 2px; }
+    .info-item span { font-size: 13px; color: var(--text); }
+    .filter-pill {
+      padding: 5px 14px; border-radius: 99px; font-size: 12px; font-weight: 600;
+      border: 1px solid var(--border); background: transparent; color: var(--text-muted); cursor: pointer;
+    }
+    .filter-pill.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="view-login" class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="logo-p">P</span><span class="logo-rest">OSEIDON</span>
+    </div>
+    <p class="login-sub">CTI Group Worldwide Services, Inc.</p>
+    <p style="color:var(--text-muted);font-size:.85rem;margin:0 0 20px;text-align:center;">Client Portal</p>
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input type="email" id="login-email" class="form-input" placeholder="your@company.com" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <input type="password" id="login-pw" class="form-input" placeholder="Password"
+        onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;" onclick="doLogin()">Sign In</button>
+    <div id="login-error" class="alert alert-danger hidden" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="view-app" class="hidden">
+
+  <header class="topbar" style="display:flex;align-items:center;gap:16px;padding:0 24px;">
+    <div style="display:flex;align-items:center;gap:10px;flex:1;">
+      <span class="logo-p" style="font-size:1.3rem;">P</span>
+      <span style="font-weight:600;font-size:.95rem;color:var(--text);">OSEIDON</span>
+      <span id="client-name-chip" style="font-size:.8rem;color:var(--text-muted);border-left:1px solid var(--border);padding-left:10px;margin-left:2px;"></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span id="topbar-user" style="font-size:.82rem;color:var(--text-muted);"></span>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">Sign Out</button>
+    </div>
+  </header>
+
+  <div style="max-width:980px;margin:0 auto;padding:32px 24px;">
+
+    <!-- Stats row -->
+    <div class="stat-grid" id="client-stats" style="margin-bottom:24px;"></div>
+
+    <!-- Filters -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <span style="font-size:.8rem;color:var(--text-muted);">Filter:</span>
+      <button class="filter-pill active" data-status="" onclick="setFilter('',this)">All</button>
+      <button class="filter-pill" data-status="PENDING" onclick="setFilter('PENDING',this)">Pending</button>
+      <button class="filter-pill" data-status="SCHEDULED" onclick="setFilter('SCHEDULED',this)">Scheduled</button>
+      <button class="filter-pill" data-status="APPROVED" onclick="setFilter('APPROVED',this)">Approved</button>
+      <button class="filter-pill" data-status="REJECTED" onclick="setFilter('REJECTED',this)">Rejected</button>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <table class="data-table" style="width:100%;">
+        <thead><tr>
+          <th>Candidate</th><th>Pipeline</th><th>Nationality</th><th>Endorsed</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody id="endorsements-tbody">
+          <tr><td colspan="6" class="table-empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- Detail Panel -->
+<div id="detail-panel">
+  <div class="detail-head">
+    <div class="user-avatar" id="dp-avatar" style="width:42px;height:42px;font-size:16px;">?</div>
+    <div style="flex:1;min-width:0;">
+      <div id="dp-name" style="font-size:15px;font-weight:700;color:var(--text);"></div>
+      <div id="dp-email" style="font-size:12px;color:var(--text-muted);"></div>
+    </div>
+    <button onclick="closeDetail()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:6px;border-radius:6px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="detail-body">
+    <div id="dp-status-row" style="margin-bottom:16px;"></div>
+    <div class="info-row" id="dp-info"></div>
+    <div id="dp-documents" style="margin-bottom:20px;"></div>
+    <div id="dp-decision-box" class="hidden">
+      <div style="background:var(--navy-mid);border-radius:8px;padding:16px;margin-bottom:16px;">
+        <h4 style="margin:0 0 12px;font-size:.9rem;color:var(--text);">Your Decision</h4>
+        <div class="form-group">
+          <label class="form-label">Notes <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <textarea id="decision-notes" class="form-input" rows="2" placeholder="Feedback for this candidate…" style="resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary btn-sm" style="flex:1;" onclick="makeDecision('APPROVED')">✓ Approve</button>
+          <button class="btn btn-danger btn-sm" style="flex:1;" onclick="makeDecision('REJECTED')">✗ Reject</button>
+        </div>
+      </div>
+    </div>
+    <div id="dp-decided" class="hidden" style="margin-bottom:16px;"></div>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+<script src="client.js?v=20250525b"></script>
+</body>
+</html>

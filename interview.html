@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interview — POSEIDON</title>
+  <link rel="stylesheet" href="style.css?v=20250525b">
+  <style>
+    body { background: var(--navy); min-height: 100vh; }
+    .iview-wrap { max-width: 680px; margin: 0 auto; padding: 48px 24px 80px; }
+    .iview-header { text-align: center; margin-bottom: 32px; }
+    .question-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 24px;
+      margin-bottom: 16px;
+    }
+    .q-number {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--blue);
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .q-text {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .q-hint { font-size: .78rem; color: var(--text-muted); margin-bottom: 10px; }
+    .char-count { font-size: .72rem; color: var(--text-muted); text-align: right; margin-top: 4px; }
+    .timer-bar {
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .timer-fill { height: 100%; background: var(--blue); transition: width .5s linear; }
+    #view-success { text-align: center; padding: 60px 24px; }
+    #view-two-way { text-align: center; padding: 60px 24px; }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="view-loading" class="iview-wrap" style="text-align:center;padding-top:100px;">
+  <p style="color:var(--text-muted);">Loading your interview…</p>
+</div>
+
+<!-- Error -->
+<div id="view-error" class="iview-wrap hidden" style="text-align:center;padding-top:80px;">
+  <div style="font-size:2.5rem;margin-bottom:16px;">⚠️</div>
+  <h2 style="color:var(--text);margin:0 0 8px;">Link Unavailable</h2>
+  <p id="error-msg" style="color:var(--text-muted);font-size:.9rem;"></p>
+</div>
+
+<!-- Already submitted -->
+<div id="view-already-submitted" class="iview-wrap hidden" style="text-align:center;padding-top:80px;">
+  <div style="font-size:2.5rem;margin-bottom:16px;">✅</div>
+  <h2 style="color:var(--text);margin:0 0 8px;">Already Submitted</h2>
+  <p style="color:var(--text-muted);font-size:.9rem;">You have already submitted this interview. Our team will review your responses.</p>
+</div>
+
+<!-- Two-Way / Scheduled interview -->
+<div id="view-two-way" class="iview-wrap hidden">
+  <div style="font-size:2.5rem;margin-bottom:16px;">📅</div>
+  <h2 id="twi-title" style="color:var(--text);font-size:1.3rem;margin:0 0 12px;"></h2>
+  <p id="twi-desc" style="color:var(--text-muted);font-size:.9rem;max-width:440px;margin:0 auto 24px;line-height:1.6;"></p>
+  <div id="twi-details" style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px 24px;max-width:400px;margin:0 auto 24px;text-align:left;"></div>
+  <p style="color:var(--text-muted);font-size:.78rem;">Questions? Contact your recruiter.</p>
+</div>
+
+<!-- One-Way Interview Form -->
+<div id="view-interview" class="iview-wrap hidden">
+  <div class="iview-header">
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+      <span class="logo-p" style="font-size:1.4rem;">P</span>
+      <span style="font-weight:700;font-size:1.2rem;color:var(--text);">OSEIDON</span>
+    </div>
+    <p style="color:var(--text-muted);font-size:.82rem;margin:0 0 20px;">CTI Group Worldwide Services, Inc.</p>
+    <h1 id="iview-title" style="font-size:1.3rem;font-weight:700;color:var(--text);margin:0 0 6px;"></h1>
+    <p id="iview-desc" style="color:var(--text-muted);font-size:.88rem;margin:0 0 12px;"></p>
+    <div id="candidate-info" style="display:inline-block;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 16px;font-size:.82rem;color:var(--text-muted);"></div>
+  </div>
+
+  <div style="background:rgba(26,86,219,.08);border:1px solid rgba(26,86,219,.25);border-radius:8px;padding:14px 18px;margin-bottom:24px;">
+    <p style="margin:0;font-size:.85rem;color:var(--text);">
+      <strong>Instructions:</strong> Answer each question below honestly and thoroughly.
+      Your responses will be reviewed by our recruitment team. Take your time — there is no time limit.
+    </p>
+  </div>
+
+  <div id="questions-container"></div>
+
+  <div id="submit-error" class="alert alert-danger hidden" style="margin-bottom:16px;"></div>
+  <button class="btn btn-primary" style="width:100%;padding:14px;" id="btn-submit" onclick="submitInterview()">
+    Submit Interview
+  </button>
+  <p style="text-align:center;font-size:.75rem;color:var(--text-muted);margin-top:10px;">
+    Submissions are final. Please review your answers before submitting.
+  </p>
+</div>
+
+<!-- Success -->
+<div id="view-success" class="iview-wrap hidden">
+  <div style="font-size:3rem;margin-bottom:16px;">🎉</div>
+  <h2 style="font-size:1.4rem;font-weight:700;color:var(--text);margin:0 0 12px;">Interview Submitted!</h2>
+  <p style="color:var(--text-muted);font-size:.9rem;max-width:400px;margin:0 auto 24px;line-height:1.6;">
+    Thank you! Your responses have been received. Our recruitment team will review them
+    and reach out to you within 3–5 business days.
+  </p>
+  <p style="color:var(--text-muted);font-size:.78rem;">CTI Group Worldwide Services, Inc. — POSEIDON</p>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+<script src="interview.js?v=20250525b"></script>
+</body>
+</html>
