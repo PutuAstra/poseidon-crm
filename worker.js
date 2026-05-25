@@ -779,6 +779,28 @@ R.patch('/api/v1/clients/:id', async (req, env, ctx, p) => {
   return json({ success: true });
 });
 
+R.post('/api/v1/clients/:id/contacts', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const { userId } = await req.json();
+  if (!userId) return err('userId required');
+  const user = await env.DB.prepare("SELECT id,role FROM users WHERE id=? AND is_active=1").bind(userId).first();
+  if (!user) return err('User not found', 404);
+  if (user.role !== 'CLIENT_CONTACT') return err('User must have CLIENT_CONTACT role');
+  try {
+    await env.DB.prepare('INSERT INTO client_contacts(id,client_id,user_id)VALUES(?,?,?)').bind(cuid(), p.id, userId).run();
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) return err('This user is already linked to a client', 409);
+    throw e;
+  }
+  return json({ success: true }, 201);
+});
+
+R.delete('/api/v1/clients/:id/contacts/:userId', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  await env.DB.prepare('DELETE FROM client_contacts WHERE client_id=? AND user_id=?').bind(p.id, p.userId).run();
+  return json({ success: true });
+});
+
 R.post('/api/v1/candidates/:id/endorse', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
   const { clientIds } = await req.json();

@@ -691,25 +691,89 @@ async function createClient() {
 }
 
 async function openClientDetail(id) {
-  const c = await api('GET', `/clients/${id}`);
-  const endr = await api('GET', `/clients/${id}/endorsements`);
+  const [c, endr] = await Promise.all([api('GET', `/clients/${id}`), api('GET', `/clients/${id}/endorsements`)]);
+  const contacts = c.contacts || [];
   openModal(c.name, `
-    <div class="info-grid">
-      <div class="info-item"><label>Type</label><span>${esc(c.type)}</span></div>
+    <div class="info-grid" style="margin-bottom:20px">
+      <div class="info-item"><label>Type</label><span>${esc(c.type.replace('_', ' '))}</span></div>
       <div class="info-item"><label>Country</label><span>${esc(c.country || '—')}</span></div>
       <div class="info-item"><label>Contact Email</label><span>${esc(c.contact_email || '—')}</span></div>
-      <div class="info-item"><label>Status</label><span>${c.is_active ? 'Active' : 'Inactive'}</span></div>
+      <div class="info-item"><label>Status</label><span>${c.is_active ? '<span class="badge badge-approved">Active</span>' : '<span class="badge badge-new">Inactive</span>'}</span></div>
     </div>
-    <div class="card-title" style="margin:16px 0 10px">Pending Endorsements (${endr.endorsements?.length || 0})</div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Portal Contacts (${contacts.length})</div>
+      <button class="btn btn-ghost btn-sm" onclick="openAddContactToClientModal('${esc(id)}')">+ Add Contact</button>
+    </div>
+    <div style="margin-bottom:20px">
+      ${contacts.length ? contacts.map(ct => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1">
+            <div style="font-weight:500;font-size:.88rem;">${esc(ct.first_name)} ${esc(ct.last_name)}</div>
+            <div style="font-size:.78rem;color:var(--text-muted);">${esc(ct.email)}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="removeContactFromClient('${esc(id)}','${esc(ct.user_id)}')">Remove</button>
+        </div>`).join('') : '<div class="text-muted text-sm" style="padding:8px 0">No portal contacts linked. Add a CLIENT_CONTACT user to give access to the client portal.</div>'}
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="card-title" style="margin:0">Endorsements (${endr.endorsements?.length || 0})</div>
+    </div>
     ${(endr.endorsements || []).map(e => `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div><div style="font-weight:500">${esc(e.first_name)} ${esc(e.last_name)}</div><div class="text-xs text-muted">${esc(e.pipeline)}</div></div>
+        <div>
+          <div style="font-weight:500">${esc(e.first_name)} ${esc(e.last_name)}</div>
+          <div style="font-size:.78rem;color:var(--text-muted)">${esc(e.pipeline)} · ${esc(e.status)}</div>
+        </div>
+        ${e.status === 'PENDING' || e.status === 'SCHEDULED' ? `
         <div style="display:flex;gap:6px">
           <button class="btn btn-sm btn-primary" onclick="updateEndorsement('${e.id}','APPROVED')">Approve</button>
-          <button class="btn btn-sm btn-danger" onclick="updateEndorsement('${e.id}','REJECTED')">Reject</button>
-        </div>
-      </div>`).join('') || '<div class="text-muted text-sm" style="padding:12px 0">No endorsements</div>'}
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="updateEndorsement('${e.id}','REJECTED')">Reject</button>
+        </div>` : `<span class="badge ${e.status === 'APPROVED' ? 'badge-approved' : 'badge-rejected'}">${esc(e.status)}</span>`}
+      </div>`).join('') || '<div class="text-muted text-sm" style="padding:12px 0">No endorsements yet</div>'}
     `, 'modal-lg');
+}
+
+function openAddContactToClientModal(clientId) {
+  // Fetch all CLIENT_CONTACT users so admin can pick one to link
+  openModal('Link Portal Contact', `
+    <p style="font-size:.85rem;color:var(--text-muted);margin:0 0 12px">Select a user with the <strong>Client Contact</strong> role to link to this client. They will be able to log in to the client portal.</p>
+    <div class="form-group">
+      <label>Client Contact User</label>
+      <select id="link-user-sel" style="width:100%"><option value="">Loading users…</option></select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addContactToClient('${esc(clientId)}')">Link Contact</button>
+    </div>`);
+  api('GET', '/users').then(d => {
+    const sel = document.getElementById('link-user-sel');
+    if (!sel) return;
+    const contacts = (d.users || []).filter(u => u.role === 'CLIENT_CONTACT');
+    sel.innerHTML = contacts.length
+      ? `<option value="">— Select a user —</option>` + contacts.map(u => `<option value="${u.id}">${esc(u.first_name)} ${esc(u.last_name)} (${esc(u.email)})</option>`).join('')
+      : `<option value="">No CLIENT_CONTACT users found — create one in Users first</option>`;
+  });
+}
+
+async function addContactToClient(clientId) {
+  const userId = document.getElementById('link-user-sel').value;
+  if (!userId) { toast('Select a user', 'error'); return; }
+  try {
+    await api('POST', `/clients/${clientId}/contacts`, { userId });
+    closeModal(); toast('Contact linked to client', 'success');
+    openClientDetail(clientId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function removeContactFromClient(clientId, userId) {
+  const ok = await showConfirm('Remove this contact? They will lose access to the client portal.');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/clients/${clientId}/contacts/${userId}`);
+    toast('Contact removed', 'success');
+    openClientDetail(clientId);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ── Endorsements ──────────────────────────────────────────────────────────────
