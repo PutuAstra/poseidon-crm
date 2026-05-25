@@ -638,6 +638,17 @@ R.get('/api/v1/interviews/:id', async (req, env, ctx, p) => {
   return json(i);
 });
 
+R.patch('/api/v1/interviews/:id', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json();
+  const map = { title: b.title, description: b.description !== undefined ? b.description : undefined, questions: b.questions !== undefined ? JSON.stringify(b.questions) : undefined, is_active: b.isActive !== undefined ? (b.isActive ? 1 : 0) : undefined };
+  const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
+  if (!Object.keys(upd).length) return err('No valid fields');
+  upd.updated_at = new Date().toISOString();
+  await env.DB.prepare(`UPDATE interviews SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
+  return json({ success: true });
+});
+
 R.post('/api/v1/candidates/:id/interviews/invite', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
   const { interviewId, expiresInHours = 72 } = await req.json();

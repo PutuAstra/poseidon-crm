@@ -511,7 +511,10 @@ async function loadInterviews() {
         <td><span class="badge badge-active">${esc(i.type)}</span></td>
         <td class="text-muted">${i.fn ? esc(i.fn) + ' ' + esc(i.ln) : '—'}</td>
         <td class="text-muted text-sm">${relTime(i.created_at)}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="viewInterviewSlots('${i.id}')">Manage Slots</button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" onclick="openEditInterviewModal('${i.id}')">Edit</button>
+          ${i.type === 'BOOKING' ? `<button class="btn btn-ghost btn-sm" onclick="viewInterviewSlots('${i.id}')">Manage Slots</button>` : ''}
+        </td>
       </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No interview templates</td></tr>';
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -541,6 +544,70 @@ async function createInterview() {
   try {
     await api('POST', '/interviews', { title, type, description });
     closeModal(); toast('Interview template created', 'success'); loadInterviews();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openEditInterviewModal(interviewId) {
+  api('GET', `/interviews/${interviewId}`).then(i => {
+    let qs = [];
+    try { qs = JSON.parse(i.questions || '[]'); } catch {}
+    openModal('Edit Interview Template', `
+      <div class="form-group"><label>Title</label><input type="text" id="ei-title" value="${esc(i.title)}"></div>
+      <div class="form-group"><label>Description</label><textarea id="ei-desc" rows="2" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(i.description||'')}</textarea></div>
+      ${i.type === 'ONE_WAY' || i.type === 'TWO_WAY' ? `
+        <div style="margin-top:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <label style="margin:0;font-size:.75rem;text-transform:uppercase;font-weight:700;color:var(--text-muted);">Questions</label>
+            <button class="btn btn-ghost btn-sm" onclick="addInterviewQuestion()">+ Add Question</button>
+          </div>
+          <div id="questions-editor">
+            ${qs.map((q, idx) => `
+              <div class="q-edit-row" data-qid="${esc(q.id||('q'+(idx+1)))}" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
+                <span style="color:var(--text-muted);font-size:.78rem;padding-top:8px;min-width:20px;">${idx+1}.</span>
+                <input type="text" class="q-text-input form-input" value="${esc(q.text||'')}" placeholder="Enter question" style="flex:1;">
+                <button class="btn btn-ghost btn-sm" style="color:var(--danger);flex-shrink:0;margin-top:2px" onclick="this.closest('.q-edit-row').remove()">✕</button>
+              </div>`).join('') || '<p style="font-size:.82rem;color:var(--text-muted)">No questions yet. Add one below.</p>'}
+          </div>
+        </div>` : ''}
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveInterviewEdit('${esc(i.id)}','${esc(i.type)}')">Save</button>
+      </div>`, 'modal-lg');
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function addInterviewQuestion() {
+  const editor = document.getElementById('questions-editor');
+  if (!editor) return;
+  const idx = editor.querySelectorAll('.q-edit-row').length + 1;
+  const div = document.createElement('div');
+  div.className = 'q-edit-row';
+  div.dataset.qid = `q${idx}_${Date.now()}`;
+  div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:flex-start';
+  div.innerHTML = `
+    <span style="color:var(--text-muted);font-size:.78rem;padding-top:8px;min-width:20px;">${idx}.</span>
+    <input type="text" class="q-text-input form-input" placeholder="Enter question" style="flex:1;">
+    <button class="btn btn-ghost btn-sm" style="color:var(--danger);flex-shrink:0;margin-top:2px" onclick="this.closest('.q-edit-row').remove()">✕</button>`;
+  editor.appendChild(div);
+  div.querySelector('input').focus();
+}
+
+async function saveInterviewEdit(interviewId, type) {
+  const title = document.getElementById('ei-title').value.trim();
+  const description = document.getElementById('ei-desc').value.trim();
+  if (!title) { toast('Title is required', 'error'); return; }
+  const body = { title, description };
+  if (type === 'ONE_WAY' || type === 'TWO_WAY') {
+    const rows = document.querySelectorAll('#questions-editor .q-edit-row');
+    body.questions = [...rows].map(row => ({
+      id: row.dataset.qid,
+      text: row.querySelector('.q-text-input').value.trim(),
+      type: 'text'
+    })).filter(q => q.text);
+  }
+  try {
+    await api('PATCH', `/interviews/${interviewId}`, body);
+    closeModal(); toast('Interview template saved', 'success'); loadInterviews();
   } catch (e) { toast(e.message, 'error'); }
 }
 
