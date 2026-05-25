@@ -571,6 +571,8 @@ tbody tr:hover td { background: var(--navy-mid); }
 
 /* ── Login page ──────────────────────────────────────────────────────────────── */
 .login-wrap {
+  flex: 1;
+  width: 100%;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -582,10 +584,10 @@ tbody tr:hover td { background: var(--navy-mid); }
 .login-card {
   background: var(--navy-light);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 40px;
+  border-radius: 16px;
+  padding: 48px 44px;
   width: 100%;
-  max-width: 400px;
+  max-width: 460px;
 }
 
 .login-logo {
@@ -596,7 +598,7 @@ tbody tr:hover td { background: var(--navy-mid); }
 }
 
 .login-logo img { height: 36px; }
-.login-logo .title { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
+.login-logo .title { font-size: 22px; font-weight: 800; letter-spacing: 1.5px; }
 .login-logo .title span { color: var(--blue); }
 
 /* ── Candidate portal ───────────────────────────────────────────────────────── */
