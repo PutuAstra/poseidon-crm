@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   id            TEXT PRIMARY KEY,
   email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
   password_hash TEXT,
-  role          TEXT NOT NULL CHECK(role IN ('SUPER_ADMIN','ADMIN','RECRUITER','CLIENT_CONTACT','CANDIDATE')),
+  role          TEXT NOT NULL CHECK(role IN ('SUPER_ADMIN','ADMIN','RECRUITER','CLIENT_CONTACT','CANDIDATE','ONBOARDING_TEAM')),
   first_name    TEXT NOT NULL,
   last_name     TEXT NOT NULL,
   avatar_url    TEXT,

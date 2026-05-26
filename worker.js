@@ -1479,7 +1479,12 @@ R.post('/api/v1/users', async (req, env) => {
   let pwh = null; let tempPw = null;
   if (password) { pwh = await pwHash(password); }
   else { tempPw = genToken().slice(0, 16); pwh = await pwHash(tempPw); }
-  await env.DB.prepare('INSERT INTO users(id,email,password_hash,role,first_name,last_name)VALUES(?,?,?,?,?,?)').bind(id, email, pwh, newRole, firstName, lastName).run();
+  try {
+    await env.DB.prepare('INSERT INTO users(id,email,password_hash,role,first_name,last_name)VALUES(?,?,?,?,?,?)').bind(id, email, pwh, newRole, firstName, lastName).run();
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) return err('A user with that email already exists', 409);
+    throw e;
+  }
   return json({ userId: id, tempPassword: tempPw }, 201);
 });
 
