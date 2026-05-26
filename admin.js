@@ -298,6 +298,7 @@ function bootApp() {
   }
   _navProgram = defaultProg;
   _renderSidebarStages(defaultProg);
+  _initWorkspaceDrawer();
   // Restore navigation state
   if (savedView.includes(':')) {
     const [prog, sub] = savedView.split(':');
@@ -430,7 +431,6 @@ const _workspaceCache = {};
 
 function openProgSwitcher() {
   const panel    = document.getElementById('prog-sub-panel');
-  const backdrop = document.getElementById('prog-sub-backdrop');
   const u        = STATE.user;
   const isAdmin  = ['SUPER_ADMIN', 'ADMIN'].includes(u?.role);
 
@@ -484,12 +484,26 @@ function openProgSwitcher() {
     </div>` : ''}`;
 
   panel.classList.add('open');
-  backdrop.classList.add('show');
 }
 
 function closeProgSwitcher() {
   document.getElementById('prog-sub-panel').classList.remove('open');
-  document.getElementById('prog-sub-backdrop').classList.remove('show');
+}
+
+// Hover-driven edge drawer: reveal when the cursor hits the screen's left edge,
+// auto-close (with a small grace delay) when the cursor leaves the panel.
+function _initWorkspaceDrawer() {
+  const trigger = document.getElementById('edge-trigger');
+  const panel   = document.getElementById('prog-sub-panel');
+  if (!trigger || !panel || trigger._wired) return;
+  trigger._wired = true;
+  let closeTimer = null;
+  const cancel = () => { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } };
+  const open   = () => { cancel(); openProgSwitcher(); };
+  const close  = () => { cancel(); closeTimer = setTimeout(closeProgSwitcher, 180); };
+  trigger.addEventListener('mouseenter', open);
+  panel.addEventListener('mouseenter', cancel);
+  panel.addEventListener('mouseleave', close);
 }
 
 function switchProgram(prog) {

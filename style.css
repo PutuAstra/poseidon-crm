@@ -50,41 +50,58 @@ button { cursor: pointer; border: none; outline: none; }
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 #app { display: flex; height: 100vh; overflow: hidden; }
 
-/* ── Program Sub-Panel (slides in from left, overlays sidebar — J1 dashboard pattern) */
+/* ── Edge Trigger Zone (invisible left-edge hit-box, hover to reveal drawer) ── */
+#edge-trigger {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 12px;
+  height: 100vh;
+  z-index: 998;
+}
+/* subtle always-on affordance so the hidden drawer is discoverable */
+#edge-trigger::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, var(--purple, #8b5cf6), #38bdf8, var(--success, #22c55e));
+  opacity: 0.22;
+  transition: opacity 0.2s ease, width 0.2s ease;
+}
+#edge-trigger:hover::before { opacity: 0.6; width: 4px; }
+/* hide the affordance while the drawer is open */
+#prog-sub-panel.open ~ #edge-trigger::before,
+body.drawer-open #edge-trigger::before { opacity: 0; }
+
+/* ── Workspace Drawer (hover-revealed, floats over sidebar — zero layout shift) ── */
 #prog-sub-panel {
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  width: var(--sidebar-w);   /* same width as primary sidebar — replaces it visually */
+  width: var(--sidebar-w);
   background: var(--navy-light);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   transform: translateX(-100%);
-  transition: transform 0.25s ease,
-              box-shadow 0.25s ease;
-  z-index: 300;              /* above sidebar (z-index:10) and backdrop (z-index:199) */
+  /* premium hardware-accelerated easing */
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.3s ease;
+  will-change: transform;
+  z-index: 999;
   box-shadow: none;
 }
 
 #prog-sub-panel.open {
   transform: translateX(0);
   overflow-y: auto;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 6px 0 32px rgba(0, 0, 0, 0.55);
 }
-
-/* Backdrop — dim + click-outside to close */
-#prog-sub-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 199;
-  background: rgba(0, 0, 0, 0.35);
-  display: none;
-  cursor: pointer;
-}
-#prog-sub-backdrop.show { display: block; }
 
 #prog-sub-header {
   padding: 14px 40px 14px 14px;  /* right padding clears the close button */
@@ -182,25 +199,23 @@ button { cursor: pointer; border: none; outline: none; }
 #prog-sub-panel[data-prog="LAND_BASED"] .sub-stage-item.active  { background: #14532d55; border-color: var(--success); }
 
 /* ── Workspace switcher button (permanent in sidebar) ─────────────────────── */
+/* Active-workspace display header (not a button — hover the left edge to switch) */
 #prog-switcher-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 9px 12px;
   margin: 0 8px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  cursor: pointer;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-muted);
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
   user-select: none;
 }
-#prog-switcher-btn:hover { background: var(--navy-mid); color: var(--text); }
-#prog-switcher-btn[data-prog="J1_PROGRAM"] { border-color: #6d28d9; color: #a78bfa; }
-#prog-switcher-btn[data-prog="SEA_BASED"]  { border-color: #0e7490; color: #38bdf8; }
-#prog-switcher-btn[data-prog="LAND_BASED"] { border-color: #15803d; color: #4ade80; }
+#prog-switcher-btn[data-prog="J1_PROGRAM"] { border-color: #6d28d9; color: #a78bfa; background: #4c1d9518; }
+#prog-switcher-btn[data-prog="SEA_BASED"]  { border-color: #0e7490; color: #38bdf8; background: #0c4a6e18; }
+#prog-switcher-btn[data-prog="LAND_BASED"] { border-color: #15803d; color: #4ade80; background: #14532d18; }
 
 /* ── Permanent sidebar stage / tool items ─────────────────────────────────── */
 .sidebar-stage-item {
