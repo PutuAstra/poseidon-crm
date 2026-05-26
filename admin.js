@@ -412,22 +412,23 @@ function _renderSidebarActive() {
 }
 
 function openSubPanel(prog) {
-  _navProgram = _navProgram === prog ? _navProgram : prog;
-  const panel = document.getElementById('prog-sub-panel');
+  const panel    = document.getElementById('prog-sub-panel');
+  const backdrop = document.getElementById('prog-sub-backdrop');
+  _navProgram    = prog;
   panel.setAttribute('data-prog', prog);
-  panel.classList.add('open');
   _renderSubPanel(prog);
+  // Mark active sub-item if we're already on this program
+  if (_navStage) _markSubActive('stage', _navStage);
+  if (_navTool)  _markSubActive('tool',  _navTool);
+  panel.classList.add('open');
+  backdrop.classList.add('show');
   document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
   document.querySelector(`.prog-nav-item[data-prog="${prog}"]`)?.classList.add('active');
-  // Mark active sub-item if already on this program
-  if (_navProgram === prog) {
-    if (_navStage) _markSubActive('stage', _navStage);
-    if (_navTool)  _markSubActive('tool',  _navTool);
-  }
 }
 
 function closeSubPanel() {
   document.getElementById('prog-sub-panel').classList.remove('open');
+  document.getElementById('prog-sub-backdrop').classList.remove('show');
   document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
 }
 
@@ -471,6 +472,9 @@ function showStage(program, stage) {
     openSubPanel(program);
   }
   _markSubActive('stage', stage);
+  // Dismiss the sub-panel after selection (it's a menu, not a permanent second column)
+  document.getElementById('prog-sub-panel').classList.remove('open');
+  document.getElementById('prog-sub-backdrop').classList.remove('show');
   _renderSidebarActive();
   _showPane('stage');
   const pm = PROGRAM_META[program];
@@ -492,6 +496,9 @@ function showTool(program, tool) {
     openSubPanel(program);
   }
   _markSubActive('tool', tool);
+  // Dismiss the sub-panel after selection
+  document.getElementById('prog-sub-panel').classList.remove('open');
+  document.getElementById('prog-sub-backdrop').classList.remove('show');
   _renderSidebarActive();
   const paneMap = { local: 'prog-local', fields: 'prog-fields', docs: 'prog-docs' };
   _showPane(paneMap[tool]);
@@ -512,6 +519,7 @@ function showView(name) {
   _navTool    = null;
   // Close sub-panel when navigating to a general view
   document.getElementById('prog-sub-panel')?.classList.remove('open');
+  document.getElementById('prog-sub-backdrop')?.classList.remove('show');
   _renderSidebarActive();
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');

@@ -50,30 +50,42 @@ button { cursor: pointer; border: none; outline: none; }
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 #app { display: flex; height: 100vh; overflow: hidden; }
 
-/* ── Program Sub-Panel (secondary sidebar, slides in from left) ──────────── */
-:root { --sub-panel-w: 196px; }
+/* ── Program Sub-Panel (floating overlay, slides over main content) ───────── */
+:root { --sub-panel-w: 210px; }
 
 #prog-sub-panel {
-  width: 0;
-  min-width: 0;
-  max-width: 0;
+  position: fixed;
+  left: var(--sidebar-w);
+  top: 0;
+  height: 100vh;
+  width: var(--sub-panel-w);
   background: var(--navy);
-  border-right: 0 solid var(--border);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: width 0.22s ease, min-width 0.22s ease, max-width 0.22s ease, border-right-width 0.22s ease;
-  z-index: 9;
-  flex-shrink: 0;
+  transform: translateX(calc(-1 * var(--sub-panel-w) - 4px));
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.22s ease;
+  z-index: 200;
+  box-shadow: none;
 }
 
 #prog-sub-panel.open {
-  width: var(--sub-panel-w);
-  min-width: var(--sub-panel-w);
-  max-width: var(--sub-panel-w);
-  border-right-width: 1px;
+  transform: translateX(0);
   overflow-y: auto;
+  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.45);
 }
+
+/* Backdrop — click anywhere outside to close */
+#prog-sub-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+  background: transparent;
+  display: none;
+}
+#prog-sub-backdrop.show { display: block; }
 
 #prog-sub-header {
   padding: 12px 36px 10px 12px;
