@@ -1318,39 +1318,43 @@ async function createCandidateManual() {
   const btn = document.getElementById('nc-submit-btn');
   btn.disabled = true; btn.textContent = 'Creating…';
 
+  // ── Step 1: Create candidate record ──────────────────────────────────────────
+  let candidateId;
   try {
     const d = await api('POST', '/candidates', { firstName, lastName, email, phone: phone || undefined, nationality: nationality || undefined, positionApplied: positionApplied || undefined, pipeline });
-    const candidateId = d.candidateId;
-
-    // Upload documents if provided
-    const uploads = [];
-    if (resumeFile)    uploads.push({ file: resumeFile,    type: 'RESUME',            label: 'Resume / CV' });
-    if (refLetterFile) uploads.push({ file: refLetterFile, type: 'REFERENCE_LETTER',  label: 'Reference Letter' });
-
-    let uploadFailed = false;
-    for (const u of uploads) {
-      try {
-        btn.textContent = `Uploading ${u.label}…`;
-        const session = await api('POST', `/candidates/${candidateId}/documents/upload-session`, {
-          type: u.type, label: u.label, fileName: u.file.name, fileSizeBytes: u.file.size, mimeType: u.file.type
-        });
-        if (session.uploadUrl) {
-          const upRes = await fetch(session.uploadUrl, { method: 'PUT', body: u.file, headers: { 'Content-Type': u.file.type, 'Content-Length': u.file.size, 'Content-Range': `bytes 0-${u.file.size - 1}/${u.file.size}` } });
-          const upData = await upRes.json();
-          if (upData.id) await api('POST', `/candidates/${candidateId}/documents/${session.sessionId}/confirm-upload`, { oneDriveFileId: upData.id });
-        }
-      } catch (e) { uploadFailed = true; console.warn(`Upload failed for ${u.label}:`, e.message); }
-    }
-
-    closeModal();
-    if (uploadFailed) toast('Applicant created — some document uploads failed. Add them manually from the Documents tab.', 'info');
-    else toast('Applicant created' + (uploads.length ? ' with documents' : ''), 'success');
-    loadCandidates();
-    openCandidateDetail(candidateId);
+    candidateId = d.candidateId;
   } catch (e) {
     toast(e.message, 'error');
     btn.disabled = false; btn.textContent = 'Create Applicant';
+    return;
   }
+
+  // ── Step 2: Close modal & show candidate immediately ─────────────────────────
+  closeModal();
+  loadCandidates();
+  openCandidateDetail(candidateId);
+
+  // ── Step 3: Upload documents in background (won't block or crash creation) ───
+  const uploads = [
+    { file: resumeFile,    type: 'RESUME',           label: 'Resume / CV' },
+    { file: refLetterFile, type: 'REFERENCE_LETTER', label: 'Reference Letter' }
+  ];
+  let uploadFailed = false;
+  for (const u of uploads) {
+    try {
+      const session = await api('POST', `/candidates/${candidateId}/documents/upload-session`, {
+        type: u.type, label: u.label, fileName: u.file.name, fileSizeBytes: u.file.size, mimeType: u.file.type
+      });
+      if (session.uploadUrl) {
+        const upRes = await fetch(session.uploadUrl, { method: 'PUT', body: u.file, headers: { 'Content-Type': u.file.type, 'Content-Length': u.file.size, 'Content-Range': `bytes 0-${u.file.size - 1}/${u.file.size}` } });
+        const upData = await upRes.json().catch(() => ({}));
+        if (upData.id) await api('POST', `/candidates/${candidateId}/documents/${session.sessionId}/confirm-upload`, { oneDriveFileId: upData.id });
+      }
+    } catch (e) { uploadFailed = true; console.warn(`Upload failed for ${u.label}:`, e.message); }
+  }
+
+  if (uploadFailed) toast('Applicant created. Document uploads failed — add them from the Documents tab once storage is configured.', 'info');
+  else toast('Applicant created with documents ✓', 'success');
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
