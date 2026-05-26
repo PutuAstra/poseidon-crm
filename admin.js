@@ -191,7 +191,16 @@ let STATE = {
   currentCandidate: null,
   clients: [],
   recruiters: [],
-  sfFieldConfig: undefined
+  sfFieldConfig: undefined,
+  newSubPage: 1,
+  fiPage: 1,
+  olPage: 1,
+  onbPage: 1,
+  arcPage: 1,
+  newSubPipeline: '',
+  fiPipeline: '',
+  onbPipeline: '',
+  arcPipeline: '',
 };
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -264,7 +273,7 @@ async function doLogin() {
 
 function doLogout() {
   api('POST', '/auth/logout', { refreshToken: STATE.refreshToken }, false).catch(() => {});
-  STATE = { accessToken: null, refreshToken: null, user: null, currentView: null, candidatePage: 1, submissionPage: 1, activePipeline: '', currentCandidate: null, clients: [], recruiters: [], sfFieldConfig: undefined };
+  STATE = { accessToken: null, refreshToken: null, user: null, currentView: null, candidatePage: 1, submissionPage: 1, activePipeline: '', currentCandidate: null, clients: [], recruiters: [], sfFieldConfig: undefined, newSubPage: 1, fiPage: 1, olPage: 1, onbPage: 1, arcPage: 1, newSubPipeline: '', fiPipeline: '', onbPipeline: '', arcPipeline: '' };
   localStorage.removeItem('poseidon_rt');
   document.getElementById('view-app').classList.add('hidden');
   document.getElementById('view-login').style.display = '';
@@ -293,15 +302,20 @@ function bootApp() {
 // ── View router ───────────────────────────────────────────────────────────────
 
 const VIEW_META = {
-  dashboard:   { title: 'Dashboard',          action: null },
-  submissions: { title: 'New Submissions',     action: { label: '+ Manual Entry', fn: openAddCandidateModal } },
-  candidates:  { title: 'Candidates',          action: { label: '+ Add Candidate', fn: openAddCandidateModal } },
-  interviews:  { title: 'Interview Templates', action: { label: '+ New Interview', fn: openNewInterviewModal } },
-  clients:     { title: 'Clients',             action: { label: '+ Add Client', fn: openAddClientModal } },
-  compliance:  { title: 'Document Compliance Filter', action: null },
-  forms:       { title: 'Form Builder',        action: { label: '+ New Form', fn: openNewFormModal } },
-  users:       { title: 'Users',               action: { label: '+ Add User', fn: openAddUserModal } },
-  settings:    { title: 'Settings',            action: null }
+  dashboard:       { title: 'Dashboard',          action: null },
+  submissions:     { title: 'Form Submissions',    action: { label: '+ Manual Entry', fn: openAddCandidateModal } },
+  'new-submissions': { title: 'New Submissions',   action: { label: '+ Add Candidate', fn: openAddCandidateModal } },
+  candidates:      { title: 'Candidates',          action: { label: '+ Add Candidate', fn: openAddCandidateModal } },
+  'final-interview': { title: 'Final Interview',   action: null },
+  'offer-letter':  { title: 'Offer Letter',        action: null },
+  onboarding:      { title: 'Onboarding',          action: null },
+  archive:         { title: 'Archive',             action: null },
+  interviews:      { title: 'Interview Templates', action: { label: '+ New Interview', fn: openNewInterviewModal } },
+  clients:         { title: 'Clients',             action: { label: '+ Add Client', fn: openAddClientModal } },
+  compliance:      { title: 'Compliance Filter',   action: null },
+  forms:           { title: 'Form Builder',        action: null },
+  users:           { title: 'Users',               action: null },
+  settings:        { title: 'Settings',            action: null },
 };
 
 function showView(name) {
@@ -316,14 +330,19 @@ function showView(name) {
   else { btn.style.display = 'none'; }
   STATE.currentView = name;
   localStorage.setItem('poseidon_view', name);
-  if (name === 'dashboard')   loadDashboard();
-  if (name === 'submissions') loadSubmissions();
-  if (name === 'candidates')  loadCandidates();
-  if (name === 'interviews')  loadInterviews();
-  if (name === 'clients')     loadClients();
-  if (name === 'forms')       loadForms();
-  if (name === 'users')       loadUsers();
-  if (name === 'settings')    loadSettings();
+  if (name === 'dashboard')      loadDashboard();
+  if (name === 'submissions')    loadSubmissions();
+  if (name === 'candidates')     loadCandidates();
+  if (name === 'new-submissions') loadNewSubmissions();
+  if (name === 'final-interview') loadFinalInterview();
+  if (name === 'offer-letter')   loadOfferLetter();
+  if (name === 'onboarding')     loadOnboarding();
+  if (name === 'archive')        loadArchive();
+  if (name === 'interviews')     loadInterviews();
+  if (name === 'clients')        loadClients();
+  if (name === 'forms')          loadForms();
+  if (name === 'users')          loadUsers();
+  if (name === 'settings')       loadSettings();
 }
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -400,7 +419,7 @@ async function loadDashboard() {
 async function pollSubmissionBadge() {
   try {
     const d = await api('GET', '/submissions?reviewed=false&limit=1');
-    const badge = document.getElementById('badge-submissions');
+    const badge = document.getElementById('badge-new-submissions');
     if (d && d.total > 0) { badge.textContent = d.total > 99 ? '99+' : d.total; badge.style.display = ''; }
     else badge.style.display = 'none';
   } catch {}
@@ -486,9 +505,38 @@ function setActivePipeline(p) {
   loadCandidates();
 }
 
+function setNewSubPipeline(p) {
+  STATE.newSubPipeline = p; STATE.newSubPage = 1;
+  document.querySelectorAll('#new-sub-pipeline-tabs button').forEach(b => {
+    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
+  });
+  loadNewSubmissions();
+}
+function setFiPipeline(p) {
+  STATE.fiPipeline = p; STATE.fiPage = 1;
+  document.querySelectorAll('#fi-pipeline-tabs button').forEach(b => {
+    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
+  });
+  loadFinalInterview();
+}
+function setOnbPipeline(p) {
+  STATE.onbPipeline = p; STATE.onbPage = 1;
+  document.querySelectorAll('#onb-pipeline-tabs button').forEach(b => {
+    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
+  });
+  loadOnboarding();
+}
+function setArcPipeline(p) {
+  STATE.arcPipeline = p; STATE.arcPage = 1;
+  document.querySelectorAll('#arc-pipeline-tabs button').forEach(b => {
+    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
+  });
+  loadArchive();
+}
+
 async function loadCandidates() {
   const search = document.getElementById('cand-search').value.trim();
-  const status = document.getElementById('cand-status').value;
+  const status = document.getElementById('cand-status').value || 'CANDIDATES';
   const page = STATE.candidatePage;
   const params = new URLSearchParams({ page, limit: 25 });
   if (STATE.activePipeline) params.set('pipeline', STATE.activePipeline);
@@ -509,6 +557,115 @@ async function loadCandidates() {
         <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No candidates found</td></tr>';
     renderPagination('cand-pagination', d.total, 25, page, p => { STATE.candidatePage = p; loadCandidates(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function loadNewSubmissions() {
+  const search = document.getElementById('nsub-search')?.value?.trim() || '';
+  const page = STATE.newSubPage || 1;
+  const params = new URLSearchParams({ page, limit: 25, status: 'NEW_SUBMISSION' });
+  if (STATE.newSubPipeline) params.set('pipeline', STATE.newSubPipeline);
+  if (search) params.set('search', search);
+  try {
+    const d = await api('GET', `/candidates?${params}`);
+    const tbody = document.getElementById('new-submissions-tbody');
+    tbody.innerHTML = (d.candidates || []).map(c => `
+      <tr onclick="openCandidateDetail('${c.id}')">
+        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
+        <td>${pipelineBadge(c.pipeline)}</td>
+        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
+        <td class="text-muted text-sm">${relTime(c.created_at)}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();transitionMoveForward('${c.id}')" style="font-size:11px;padding:3px 10px;">Move Forward</button>
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();transitionNotMovingForward('${c.id}')" style="font-size:11px;padding:3px 8px;color:var(--danger)">Not Moving Forward</button>
+          </div>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No new submissions</td></tr>';
+    renderPagination('nsub-pagination', d.total, 25, page, p => { STATE.newSubPage = p; loadNewSubmissions(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function loadFinalInterview() {
+  const search = document.getElementById('fi-search')?.value?.trim() || '';
+  const page = STATE.fiPage || 1;
+  const params = new URLSearchParams({ page, limit: 25, status: 'FINAL_INTERVIEW' });
+  if (STATE.fiPipeline) params.set('pipeline', STATE.fiPipeline);
+  if (search) params.set('search', search);
+  try {
+    const d = await api('GET', `/candidates?${params}`);
+    const tbody = document.getElementById('final-interview-tbody');
+    tbody.innerHTML = (d.candidates || []).map(c => `
+      <tr onclick="openCandidateDetail('${c.id}')">
+        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
+        <td>${pipelineBadge(c.pipeline)}</td>
+        <td>${c.endorsed_client_name ? `<span style="color:var(--blue);font-weight:500">${esc(c.endorsed_client_name)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
+        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No candidates in Final Interview</td></tr>';
+    renderPagination('fi-pagination', d.total, 25, page, p => { STATE.fiPage = p; loadFinalInterview(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function loadOfferLetter() {
+  const search = document.getElementById('ol-search')?.value?.trim() || '';
+  const page = STATE.olPage || 1;
+  const params = new URLSearchParams({ page, limit: 25, status: 'OFFER_LETTER_SIGNED' });
+  if (search) params.set('search', search);
+  try {
+    const d = await api('GET', `/candidates?${params}`);
+    const tbody = document.getElementById('offer-letter-tbody');
+    tbody.innerHTML = (d.candidates || []).map(c => `
+      <tr onclick="openCandidateDetail('${c.id}')">
+        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
+        <td>${pipelineBadge(c.pipeline)}</td>
+        <td>${c.endorsed_client_name ? `<span style="color:var(--blue)">${esc(c.endorsed_client_name)}</span>` : '—'}</td>
+        <td><span class="badge badge-active">Awaiting Signature</span></td>
+        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No offer letters pending</td></tr>';
+    renderPagination('ol-pagination', d.total, 25, page, p => { STATE.olPage = p; loadOfferLetter(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function loadOnboarding() {
+  const search = document.getElementById('onb-search')?.value?.trim() || '';
+  const page = STATE.onbPage || 1;
+  const params = new URLSearchParams({ page, limit: 25, status: 'ONBOARDING' });
+  if (STATE.onbPipeline) params.set('pipeline', STATE.onbPipeline);
+  if (search) params.set('search', search);
+  try {
+    const d = await api('GET', `/candidates?${params}`);
+    const tbody = document.getElementById('onboarding-tbody');
+    tbody.innerHTML = (d.candidates || []).map(c => `
+      <tr onclick="openCandidateDetail('${c.id}')">
+        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
+        <td>${pipelineBadge(c.pipeline)}</td>
+        <td>${c.endorsed_client_name ? `<span style="color:var(--blue)">${esc(c.endorsed_client_name)}</span>` : '—'}</td>
+        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
+        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No candidates in Onboarding</td></tr>';
+    renderPagination('onb-pagination', d.total, 25, page, p => { STATE.onbPage = p; loadOnboarding(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function loadArchive() {
+  const search = document.getElementById('arc-search')?.value?.trim() || '';
+  const page = STATE.arcPage || 1;
+  const params = new URLSearchParams({ page, limit: 25, status: 'ARCHIVED' });
+  if (STATE.arcPipeline) params.set('pipeline', STATE.arcPipeline);
+  if (search) params.set('search', search);
+  try {
+    const d = await api('GET', `/candidates?${params}`);
+    const tbody = document.getElementById('archive-tbody');
+    tbody.innerHTML = (d.candidates || []).map(c => `
+      <tr onclick="openCandidateDetail('${c.id}')">
+        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
+        <td>${pipelineBadge(c.pipeline)}</td>
+        <td class="text-muted text-sm">${c.archived_at ? fmtDate(c.archived_at) : relTime(c.updated_at)}</td>
+        <td class="text-muted text-sm" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.archive_reason || '—')}</td>
+        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">Archive is empty</td></tr>';
+    renderPagination('arc-pagination', d.total, 25, page, p => { STATE.arcPage = p; loadArchive(); });
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -547,20 +704,36 @@ function renderDetailOverview(c) {
   const el = document.getElementById('dp-tab-overview');
   const SL = `font-size:.72rem;text-transform:uppercase;color:var(--blue);font-weight:700;letter-spacing:.06em;margin-bottom:10px;`;
 
+  const stateActions = (() => {
+    const s = c.status;
+    if (s === 'NEW_SUBMISSION') return `
+      <button class="btn btn-primary btn-sm" onclick="transitionMoveForward('${esc(c.id)}')">✓ Move Forward</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionNotMovingForward('${esc(c.id)}')">✗ Not Moving Forward</button>`;
+    if (s === 'CANDIDATES') return `
+      <button class="btn btn-primary btn-sm" onclick="transitionEndorse('${esc(c.id)}')">→ Endorse to Client</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    if (s === 'FINAL_INTERVIEW') return `
+      <button class="btn btn-primary btn-sm" onclick="transitionClientApproved('${esc(c.id)}')">✓ Client Approved</button>
+      <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Send Offer Letter</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionClientRejected('${esc(c.id)}')">✗ Client Rejected</button>`;
+    if (s === 'OFFER_LETTER_SIGNED') return `
+      <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Resend Offer</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    if (s === 'ONBOARDING') return `
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    if (s === 'ARCHIVED') return `
+      <button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="transitionRestore('${esc(c.id)}')">↩ Restore</button>`;
+    return '';
+  })();
+
   const actionBar = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       ${pipelineBadge(c.pipeline)} ${statusBadge(c.status)}
-      <div style="margin-left:auto;display:flex;gap:6px;">
-        ${!c.portal_activated_at ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendPortalInvite('${esc(c.id)}')">Send Portal Invite</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit Info</button>
-      </div>
-    </div>`;
-
-  const moveStage = `
-    <div style="margin-bottom:12px">
-      <label style="margin-bottom:8px">Move Stage</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${nextStages(c.status, c.pipeline).map(s => `<button class="btn btn-sm btn-ghost" onclick="advanceStage('${c.id}','${s}')">${statusLabel(s)}</button>`).join('')}
+      ${c.endorsed_client_name ? `<span style="background:var(--navy-mid);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--blue)">🏢 ${esc(c.endorsed_client_name)}</span>` : ''}
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+        ${stateActions}
+        ${!c.portal_activated_at ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="sendPortalInvite('${esc(c.id)}')">Portal Invite</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit</button>
       </div>
     </div>`;
 
@@ -630,7 +803,7 @@ function renderDetailOverview(c) {
       sectionsHtml = `<p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">No profile data yet — go to the <strong>Profile</strong> tab to fill it in.</p>`;
     }
 
-    el.innerHTML = `${actionBar}${metaHtml}${sectionsHtml}<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">${moveStage}${assignRecruiter}${notes}`;
+    el.innerHTML = `${actionBar}${metaHtml}${sectionsHtml}<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">${assignRecruiter}${notes}`;
     return;
   }
 
@@ -652,7 +825,7 @@ function renderDetailOverview(c) {
       <div class="info-item"><label>Recruiter</label><span>${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</span></div>
       <div class="info-item"><label>Created</label><span>${relTime(c.created_at)}</span></div>
     </div>
-    ${moveStage}${assignRecruiter}${notes}`;
+    ${assignRecruiter}${notes}`;
 }
 
 async function advanceStage(candidateId, toStatus) {
@@ -661,6 +834,136 @@ async function advanceStage(candidateId, toStatus) {
     toast(`Status → ${statusLabel(toStatus)}`, 'success');
     openCandidateDetail(candidateId);
     loadCandidates();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionMoveForward(candidateId) {
+  if (!confirm('Move this candidate forward to the Candidates section?')) return;
+  try {
+    await api('POST', `/candidates/${candidateId}/transitions/move-forward`, {});
+    toast('Moved to Candidates ✓', 'success');
+    loadNewSubmissions();
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionNotMovingForward(candidateId) {
+  const reason = prompt('Reason for not moving forward (optional):') ?? null;
+  if (reason === null) return; // user hit Cancel
+  try {
+    await api('POST', `/candidates/${candidateId}/transitions/not-moving-forward`, { reason });
+    toast('Candidate archived', 'info');
+    loadNewSubmissions();
+    if (STATE.currentCandidate?.id === candidateId) { closeDetail(); }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionEndorse(candidateId) {
+  // Build client selector modal
+  const clients = STATE.clients.filter(c => c.is_active);
+  if (!clients.length) { toast('No active clients available', 'error'); return; }
+  const opts = clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  openModal('Endorse to Client', `
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Select the client to endorse this candidate to. This will move them to Final Interview.</p>
+    <div class="form-group">
+      <label>Client</label>
+      <select id="endorse-client-sel">${opts}</select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmEndorse('${candidateId}')">Endorse → Final Interview</button>
+    </div>
+  `);
+}
+
+async function confirmEndorse(candidateId) {
+  const clientId = document.getElementById('endorse-client-sel')?.value;
+  if (!clientId) { toast('Select a client', 'error'); return; }
+  try {
+    const d = await api('POST', `/candidates/${candidateId}/transitions/endorse`, { clientId });
+    toast(`Endorsed to ${d.clientName} → Final Interview ✓`, 'success');
+    closeModal();
+    loadCandidates();
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionClientApproved(candidateId) {
+  const notes = prompt('Client approval notes (optional):') ?? null;
+  if (notes === null) return;
+  try {
+    await api('POST', `/candidates/${candidateId}/transitions/client-approved`, { notes });
+    toast('Client approved → Offer Letter ✓', 'success');
+    loadFinalInterview();
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionClientRejected(candidateId) {
+  const reason = prompt('Rejection reason:') ?? null;
+  if (reason === null) return;
+  try {
+    await api('POST', `/candidates/${candidateId}/transitions/client-rejected`, { reason });
+    toast('Candidate archived (client rejected)', 'info');
+    loadFinalInterview();
+    if (STATE.currentCandidate?.id === candidateId) { closeDetail(); }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionArchive(candidateId) {
+  const reason = prompt('Archive reason (required):');
+  if (!reason) return;
+  try {
+    await api('POST', `/candidates/${candidateId}/transitions/archive`, { reason });
+    toast('Candidate archived', 'info');
+    ['loadCandidates','loadFinalInterview','loadOfferLetter','loadOnboarding'].forEach(fn => {
+      if (STATE.currentView === fn.replace('load','').toLowerCase().replace(/([A-Z])/g, m => '-' + m.toLowerCase()).slice(1)) window[fn]?.();
+    });
+    if (STATE.currentCandidate?.id === candidateId) closeDetail();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function transitionRestore(candidateId) {
+  const target = prompt('Restore to which state?\n(NEW_SUBMISSION / CANDIDATES / FINAL_INTERVIEW / OFFER_LETTER_SIGNED / ONBOARDING)');
+  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER_SIGNED','ONBOARDING'];
+  if (!target || !VALID.includes(target.toUpperCase().trim())) { toast('Invalid state', 'error'); return; }
+  try {
+    await api('POST', `/candidates/${candidateId}/transitions/restore`, { restoreToStatus: target.toUpperCase().trim() });
+    toast('Candidate restored ✓', 'success');
+    loadArchive();
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function generateOfferLetter(candidateId) {
+  openModal('Generate Offer Letter', `
+    <div class="form-group">
+      <label>Document URL <span style="color:var(--text-muted)">(OneDrive / SharePoint link)</span></label>
+      <input type="text" id="ol-doc-url" placeholder="https://...">
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="ol-notes" rows="2" placeholder="Optional notes…"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmGenerateOfferLetter('${candidateId}')">Generate & Send</button>
+    </div>
+  `);
+}
+
+async function confirmGenerateOfferLetter(candidateId) {
+  const documentUrl = document.getElementById('ol-doc-url')?.value?.trim();
+  const notes = document.getElementById('ol-notes')?.value?.trim();
+  if (!documentUrl) { toast('Document URL is required', 'error'); return; }
+  try {
+    const ol = await api('POST', `/candidates/${candidateId}/offer-letters`, { documentUrl, notes });
+    await api('POST', `/offer-letters/${ol.id}/send`, {});
+    toast('Offer letter sent for signing ✓', 'success');
+    closeModal();
+    loadFinalInterview();
+    loadOfferLetter();
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -2842,57 +3145,46 @@ function pipelineBadge(p) {
 
 function statusBadge(s) {
   const map = {
-    NEW_SUBMISSION:'badge-new',
-    IN_REVIEW:'badge-active', AVAILABLE:'badge-active', ENGAGED:'badge-active',
-    OFFERED:'badge-approved', HIRED:'badge-deployed',
-    CONSULTATION:'badge-active', INTERVIEW:'badge-active',
-    VISA_PROCESSING:'badge-hold', USA_ONBOARD:'badge-approved', COMPLETED:'badge-deployed',
-    SHORTLISTED:'badge-active',
-    REJECTED:'badge-rejected', WITHDRAWN:'badge-rejected', ARCHIVED:'badge-new'
+    NEW_SUBMISSION:      'badge-new',
+    CANDIDATES:          'badge-active',
+    FINAL_INTERVIEW:     'badge-hold',
+    OFFER_LETTER_SIGNED: 'badge-approved',
+    ONBOARDING:          'badge-deployed',
+    ARCHIVED:            'badge-new',
   };
   return `<span class="badge ${map[s]||'badge-new'}">${statusLabel(s)}</span>`;
 }
 
 function statusLabel(s) {
   const labels = {
-    NEW_SUBMISSION:'New Submission', IN_REVIEW:'In Review', AVAILABLE:'Available',
-    ENGAGED:'Engaged', OFFERED:'Offered', HIRED:'Hired', REJECTED:'Rejected',
+    NEW_SUBMISSION:       'New Submission',
+    CANDIDATES:           'Candidates',
+    FINAL_INTERVIEW:      'Final Interview',
+    OFFER_LETTER_SIGNED:  'Offer Letter',
+    ONBOARDING:           'Onboarding',
+    ARCHIVED:             'Archived',
+    // Legacy labels (still used in history timeline)
+    IN_REVIEW:'In Review', AVAILABLE:'Available', ENGAGED:'Engaged',
+    OFFERED:'Offered', HIRED:'Hired', REJECTED:'Rejected',
     CONSULTATION:'Consultation', INTERVIEW:'Interview',
-    VISA_PROCESSING:'Visa Processing', USA_ONBOARD:'USA Onboard', COMPLETED:'Completed',
-    SHORTLISTED:'Shortlisted', ARCHIVED:'Archived', WITHDRAWN:'Withdrawn'
+    VISA_PROCESSING:'Visa Processing', USA_ONBOARD:'USA Onboard',
+    COMPLETED:'Completed', SHORTLISTED:'Shortlisted',
+    ENDORSED:'Endorsed', CLIENT_APPROVED:'Client Approved',
+    WITHDRAWN:'Withdrawn', DEPLOYED:'Deployed',
   };
   return labels[s] || s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
 function nextStages(current, pipeline) {
-  const maps = {
-    SEA_BASED: {
-      NEW_SUBMISSION: ['IN_REVIEW', 'REJECTED', 'ARCHIVED'],
-      IN_REVIEW:      ['AVAILABLE', 'REJECTED', 'ARCHIVED'],
-      AVAILABLE:      ['ENGAGED',   'REJECTED', 'ARCHIVED'],
-      ENGAGED:        ['OFFERED',   'REJECTED', 'ARCHIVED'],
-      OFFERED:        ['HIRED',     'REJECTED'],
-      HIRED: [], REJECTED: ['IN_REVIEW', 'ARCHIVED']
-    },
-    J1_PROGRAM: {
-      NEW_SUBMISSION:  ['CONSULTATION',    'ARCHIVED'],
-      CONSULTATION:    ['INTERVIEW',       'ARCHIVED'],
-      INTERVIEW:       ['VISA_PROCESSING', 'ARCHIVED'],
-      VISA_PROCESSING: ['USA_ONBOARD',     'ARCHIVED'],
-      USA_ONBOARD:     ['COMPLETED',       'ARCHIVED'],
-      COMPLETED: []
-    },
-    LAND_BASED: {
-      NEW_SUBMISSION: ['IN_REVIEW',   'REJECTED', 'ARCHIVED'],
-      IN_REVIEW:      ['SHORTLISTED', 'REJECTED', 'ARCHIVED'],
-      SHORTLISTED:    ['INTERVIEW',   'REJECTED', 'ARCHIVED'],
-      INTERVIEW:      ['OFFERED',     'REJECTED'],
-      OFFERED:        ['HIRED',       'REJECTED'],
-      HIRED: [], REJECTED: ['IN_REVIEW', 'ARCHIVED']
-    }
+  const map = {
+    NEW_SUBMISSION:      ['CANDIDATES', 'ARCHIVED'],
+    CANDIDATES:          ['FINAL_INTERVIEW', 'ARCHIVED'],
+    FINAL_INTERVIEW:     ['OFFER_LETTER_SIGNED', 'ARCHIVED'],
+    OFFER_LETTER_SIGNED: ['ONBOARDING', 'ARCHIVED'],
+    ONBOARDING:          ['ARCHIVED'],
+    ARCHIVED:            ['NEW_SUBMISSION', 'CANDIDATES'],
   };
-  const p = pipeline || 'SEA_BASED';
-  return (maps[p] || maps.SEA_BASED)[current] || [];
+  return map[current] || [];
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
@@ -3060,10 +3352,9 @@ async function saveJ1Plan(candidateId) {
 
 // ── CSV Export ────────────────────────────────────────────────────────────────
 
-async function exportCandidatesCSV() {
-  const pipeline = document.getElementById('cand-status')?.closest('.pane')?.querySelector('#cand-status')?.value
-    || STATE.activePipeline || '';
-  const status   = document.getElementById('cand-status')?.value || '';
+async function exportCandidatesCSV(forceStatus) {
+  const pipeline = STATE.activePipeline || '';
+  const status = forceStatus || document.getElementById('cand-status')?.value || '';
   const params   = new URLSearchParams();
   if (pipeline) params.set('pipeline', pipeline);
   if (status)   params.set('status', status);

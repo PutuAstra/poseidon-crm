@@ -83,20 +83,38 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         Dashboard
       </div>
-      <div class="nav-item" data-view="submissions" onclick="showView('submissions')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        New Submissions
-        <span class="nav-badge" id="badge-submissions" style="display:none">0</span>
-      </div>
 
       <div class="sidebar-section">Pipeline</div>
+      <div class="nav-item" data-view="new-submissions" onclick="showView('new-submissions')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        New Submissions
+        <span class="nav-badge" id="badge-new-submissions" style="display:none">0</span>
+      </div>
       <div class="nav-item" data-view="candidates" onclick="showView('candidates')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Candidates
       </div>
-      <div class="nav-item" data-view="interviews" onclick="showView('interviews')">
+      <div class="nav-item" data-view="final-interview" onclick="showView('final-interview')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        Final Interview
+      </div>
+      <div class="nav-item" data-view="offer-letter" onclick="showView('offer-letter')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Offer Letter
+      </div>
+      <div class="nav-item" data-view="onboarding" onclick="showView('onboarding')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Onboarding
+      </div>
+      <div class="nav-item" data-view="interviews" onclick="showView('interviews')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Interviews
+      </div>
+
+      <div class="sidebar-section">Archive</div>
+      <div class="nav-item" data-view="archive" onclick="showView('archive')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+        Archive
       </div>
 
       <div class="sidebar-section">Clients</div>
@@ -215,24 +233,8 @@
             </div>
             <button class="btn btn-ghost btn-sm" onclick="exportCandidatesCSV()" title="Export CSV" style="white-space:nowrap;">⬇ Export CSV</button>
             <select id="cand-status" onchange="loadCandidates()">
-              <option value="">All Statuses</option>
-              <option value="NEW_SUBMISSION">New Submission</option>
-              <option value="SCREENING">Screening</option>
-              <option value="OWI_INVITED">OWI Invited</option>
-              <option value="OWI_SUBMITTED">OWI Submitted</option>
-              <option value="TWI_SCHEDULED">TWI Scheduled</option>
-              <option value="TWI_COMPLETED">TWI Completed</option>
-              <option value="BOOKING_INVITED">Booking Invited</option>
-              <option value="BOOKING_COMPLETED">Booking Completed</option>
-              <option value="PRE_QUAL_APPROVED">Pre-Qual Approved</option>
-              <option value="ENDORSED">Endorsed</option>
-              <option value="CLIENT_APPROVED">Client Approved</option>
-              <option value="ONBOARDING">Onboarding</option>
-              <option value="DOCUMENT_REVIEW">Doc Review</option>
-              <option value="COMPLIANCE_HOLD">Compliance Hold</option>
-              <option value="DEPLOYED">Deployed</option>
-              <option value="WITHDRAWN">Withdrawn</option>
-              <option value="ARCHIVED">Archived</option>
+              <option value="CANDIDATES" selected>Candidates</option>
+              <option value="">All Active States</option>
             </select>
           </div>
           <div class="table-wrap">
@@ -244,6 +246,116 @@
             </table>
           </div>
           <div class="pagination" id="cand-pagination"></div>
+        </div>
+
+        <!-- New Submissions (pipeline stage 1) -->
+        <div id="pane-new-submissions" class="pane hidden">
+          <div class="pipeline-tab" id="new-sub-pipeline-tabs">
+            <button onclick="setNewSubPipeline('')" class="active-all" data-pipeline="">All</button>
+            <button onclick="setNewSubPipeline('SEA_BASED')" data-pipeline="SEA_BASED">🚢 Sea-Based</button>
+            <button onclick="setNewSubPipeline('LAND_BASED')" data-pipeline="LAND_BASED">🏨 Land-Based</button>
+            <button onclick="setNewSubPipeline('J1_PROGRAM')" data-pipeline="J1_PROGRAM">🎓 J1 Program</button>
+          </div>
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="nsub-search" placeholder="Search…" oninput="debounce(loadNewSubmissions,400)()">
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Applicant</th><th>Pipeline</th><th>Recruiter</th><th>Submitted</th><th>Actions</th></tr></thead>
+              <tbody id="new-submissions-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="nsub-pagination"></div>
+        </div>
+
+        <!-- Final Interview (pipeline stage 3) -->
+        <div id="pane-final-interview" class="pane hidden">
+          <div class="pipeline-tab" id="fi-pipeline-tabs">
+            <button onclick="setFiPipeline('')" class="active-all" data-pipeline="">All</button>
+            <button onclick="setFiPipeline('SEA_BASED')" data-pipeline="SEA_BASED">🚢 Sea-Based</button>
+            <button onclick="setFiPipeline('LAND_BASED')" data-pipeline="LAND_BASED">🏨 Land-Based</button>
+            <button onclick="setFiPipeline('J1_PROGRAM')" data-pipeline="J1_PROGRAM">🎓 J1 Program</button>
+          </div>
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="fi-search" placeholder="Search candidates…" oninput="debounce(loadFinalInterview,400)()">
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Candidate</th><th>Pipeline</th><th>Endorsed To</th><th>Recruiter</th><th>Updated</th></tr></thead>
+              <tbody id="final-interview-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="fi-pagination"></div>
+        </div>
+
+        <!-- Offer Letter Signed (pipeline stage 4) -->
+        <div id="pane-offer-letter" class="pane hidden">
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="ol-search" placeholder="Search candidates…" oninput="debounce(loadOfferLetter,400)()">
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Candidate</th><th>Pipeline</th><th>Client</th><th>Offer Status</th><th>Updated</th></tr></thead>
+              <tbody id="offer-letter-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="ol-pagination"></div>
+        </div>
+
+        <!-- Onboarding (pipeline stage 5) -->
+        <div id="pane-onboarding" class="pane hidden">
+          <div class="pipeline-tab" id="onb-pipeline-tabs">
+            <button onclick="setOnbPipeline('')" class="active-all" data-pipeline="">All</button>
+            <button onclick="setOnbPipeline('SEA_BASED')" data-pipeline="SEA_BASED">🚢 Sea-Based</button>
+            <button onclick="setOnbPipeline('LAND_BASED')" data-pipeline="LAND_BASED">🏨 Land-Based</button>
+            <button onclick="setOnbPipeline('J1_PROGRAM')" data-pipeline="J1_PROGRAM">🎓 J1 Program</button>
+          </div>
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="onb-search" placeholder="Search onboarding…" oninput="debounce(loadOnboarding,400)()">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="exportCandidatesCSV('ONBOARDING')" title="Export CSV" style="white-space:nowrap;">⬇ Export CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Candidate</th><th>Pipeline</th><th>Client</th><th>Recruiter</th><th>Updated</th></tr></thead>
+              <tbody id="onboarding-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="onb-pagination"></div>
+        </div>
+
+        <!-- Archive -->
+        <div id="pane-archive" class="pane hidden">
+          <div class="pipeline-tab" id="arc-pipeline-tabs">
+            <button onclick="setArcPipeline('')" class="active-all" data-pipeline="">All</button>
+            <button onclick="setArcPipeline('SEA_BASED')" data-pipeline="SEA_BASED">🚢 Sea-Based</button>
+            <button onclick="setArcPipeline('LAND_BASED')" data-pipeline="LAND_BASED">🏨 Land-Based</button>
+            <button onclick="setArcPipeline('J1_PROGRAM')" data-pipeline="J1_PROGRAM">🎓 J1 Program</button>
+          </div>
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="arc-search" placeholder="Search archive…" oninput="debounce(loadArchive,400)()">
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Candidate</th><th>Pipeline</th><th>Archived At</th><th>Reason</th><th>Updated</th></tr></thead>
+              <tbody id="archive-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="arc-pagination"></div>
         </div>
 
         <!-- Interviews -->
