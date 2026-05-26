@@ -451,6 +451,13 @@
 
         <!-- Users -->
         <div id="pane-users" class="pane hidden">
+          <div class="pane-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div class="pane-title">Users</div>
+              <div class="pane-sub" style="font-size:12px;color:var(--text-muted)">Manage team members and their access roles</div>
+            </div>
+            <button class="btn btn-primary" onclick="openAddUserModal()">+ Add User</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last Login</th><th>Actions</th></tr></thead>
