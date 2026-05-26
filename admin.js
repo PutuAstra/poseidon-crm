@@ -269,6 +269,7 @@ function bootApp() {
   if (!['SUPER_ADMIN', 'ADMIN'].includes(u.role)) {
     document.getElementById('admin-only-section').style.display = 'none';
     document.getElementById('nav-users').style.display = 'none';
+    document.getElementById('nav-settings').style.display = 'none';
   }
   loadClientsList();
   loadRecruitersList();
@@ -288,7 +289,8 @@ const VIEW_META = {
   clients:     { title: 'Clients',             action: { label: '+ Add Client', fn: openAddClientModal } },
   compliance:  { title: 'Document Compliance Filter', action: null },
   forms:       { title: 'Form Builder',        action: { label: '+ New Form', fn: openNewFormModal } },
-  users:       { title: 'Users',               action: { label: '+ Add User', fn: openAddUserModal } }
+  users:       { title: 'Users',               action: { label: '+ Add User', fn: openAddUserModal } },
+  settings:    { title: 'Settings',            action: null }
 };
 
 function showView(name) {
@@ -310,6 +312,7 @@ function showView(name) {
   if (name === 'clients')     loadClients();
   if (name === 'forms')       loadForms();
   if (name === 'users')       loadUsers();
+  if (name === 'settings')    loadSettings();
 }
 
 // ── Debounce ──────────────────────────────────────────────────────────────────
@@ -1584,10 +1587,7 @@ function renderDetailProfile(c) {
     let html = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h4 style="margin:0;font-size:.9rem;">Seafarer Profile</h4>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-ghost btn-sm" onclick="openSfFieldSettings()">⚙ Configure Fields</button>
-          <button class="btn btn-primary btn-sm" onclick="openEditSeafarerProfileModal('${esc(c.id)}')">Edit Profile</button>
-        </div>
+        <button class="btn btn-primary btn-sm" onclick="openEditSeafarerProfileModal('${esc(c.id)}')">Edit Profile</button>
       </div>`;
 
     config.sections.forEach(section => {
@@ -1855,6 +1855,50 @@ async function deleteCert(certId, candidateId) {
     STATE.currentCandidate.certificates = (STATE.currentCandidate.certificates||[]).filter(x=>x.id!==certId);
     renderDetailProfile(STATE.currentCandidate);
   } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Settings View ─────────────────────────────────────────────────────────────
+
+function loadSettings() {
+  const el = document.getElementById('settings-content');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="max-width:860px">
+
+      <div style="margin-bottom:32px">
+        <h3 style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:600;margin:0 0 16px">Field Configuration</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
+
+          <div onclick="openSfFieldSettings()" style="background:var(--navy-light);border:1px solid var(--border);border-radius:10px;padding:20px;cursor:pointer;transition:border-color .15s,background .15s;"
+               onmouseenter="this.style.borderColor='var(--blue)';this.style.background='#1e3a5f22'"
+               onmouseleave="this.style.borderColor='var(--border)';this.style.background='var(--navy-light)'">
+            <div style="width:40px;height:40px;background:#1e3a5f;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">Sea-Based Fields</div>
+            <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Configure sections, field order, labels, dropdown options and visibility for Sea-Based candidate profiles.</div>
+          </div>
+
+          <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:10px;padding:20px;opacity:.45;cursor:not-allowed">
+            <div style="width:40px;height:40px;background:var(--navy-mid);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">J1 Program Fields <span style="font-size:.7rem;background:var(--navy-mid);padding:2px 6px;border-radius:4px;margin-left:4px;font-weight:400">Soon</span></div>
+            <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Configure field layout for J1 Program candidate profiles.</div>
+          </div>
+
+          <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:10px;padding:20px;opacity:.45;cursor:not-allowed">
+            <div style="width:40px;height:40px;background:var(--navy-mid);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </div>
+            <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">Land-Based Fields <span style="font-size:.7rem;background:var(--navy-mid);padding:2px 6px;border-radius:4px;margin-left:4px;font-weight:400">Soon</span></div>
+            <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Configure field layout for Land-Based candidate profiles.</div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>`;
 }
 
 // ── Seafarer Field Settings ───────────────────────────────────────────────────
