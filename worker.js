@@ -1218,6 +1218,23 @@ R.put('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// SETTINGS
+// ═════════════════════════════════════════════════════════════════════════════
+
+R.get('/api/v1/settings/seafarer-fields', async (req, env) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const config = await env.KV.get('seafarer_field_config', { type: 'json' });
+  return json(config || {});
+});
+
+R.put('/api/v1/settings/seafarer-fields', async (req, env) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const b = await req.json();
+  await env.KV.put('seafarer_field_config', JSON.stringify(b));
+  return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // SEAFARER CERTIFICATES
 // ═════════════════════════════════════════════════════════════════════════════
 

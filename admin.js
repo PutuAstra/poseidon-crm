@@ -43,6 +43,132 @@ const CERT_ID_TYPES    = ['PASSPORT','SEAMAN_BOOK','MEDICAL'];
 const CERT_STCW_TYPES  = ['BST','PSCRB','ATV','BID','CRISIS_MGT','CROWD_MGT','ETR','SAT','SDB','COC_COE','IGF_BASIC_COP','RATING_II4','RATING_II5','RATING_III4','PROF_CERT_1','PROF_CERT_2','MCV','WELDER_CERT','WHITE_STAR'];
 const CERT_VISA_TYPES  = ['C1_VISA','C1D_VISA','D_VISA','SCHENGEN','SPAIN_SCHENGEN','CANADIAN_VISA','NZETA_VISA','OTHER_VISA'];
 
+const SEAFARER_FIELD_REGISTRY = [
+  // Personal
+  { key:'salutation',                    label:'Salutation',              type:'select',   section:'personal',    source:'sp', options:['Mr.','Ms.','Mrs.','Dr.','Capt.'] },
+  { key:'date_of_birth',                 label:'Date of Birth',           type:'date',     section:'personal',    source:'sp' },
+  { key:'place_of_birth',                label:'Place of Birth',          type:'text',     section:'personal',    source:'sp' },
+  { key:'nationality',                   label:'Nationality',             type:'text',     section:'personal',    source:'c'  },
+  { key:'height',                        label:'Height (cm)',             type:'number',   section:'personal',    source:'sp' },
+  { key:'weight',                        label:'Weight (kg)',             type:'number',   section:'personal',    source:'sp' },
+  { key:'eye_color',                     label:'Eye Color',               type:'select',   section:'personal',    source:'sp', options:['Brown','Black','Blue','Green','Hazel','Gray'] },
+  { key:'hair_color',                    label:'Hair Color',              type:'select',   section:'personal',    source:'sp', options:['Black','Brown','Blonde','Gray','White','Red'] },
+  // Onboarding
+  { key:'position_hired',                label:'Position Hired',          type:'text',     section:'onboarding',  source:'sp' },
+  { key:'department',                    label:'Department',              type:'text',     section:'onboarding',  source:'sp' },
+  { key:'cruise_line',                   label:'Cruise Line',             type:'text',     section:'onboarding',  source:'sp' },
+  { key:'joining_ship',                  label:'Joining Ship',            type:'text',     section:'onboarding',  source:'sp' },
+  { key:'sign_on_date',                  label:'Sign-On Date',            type:'date',     section:'onboarding',  source:'sp' },
+  { key:'sign_off_date',                 label:'Sign-Off Date',           type:'date',     section:'onboarding',  source:'sp' },
+  { key:'sign_on_port',                  label:'Sign-On Port',            type:'text',     section:'onboarding',  source:'sp' },
+  { key:'gateway_airport',               label:'Gateway Airport',         type:'text',     section:'onboarding',  source:'sp' },
+  { key:'seafarers_status',              label:'Seafarer Status',         type:'select',   section:'onboarding',  source:'c',  options:['Active','Available','On Leave','Resigned','Terminated'] },
+  { key:'onboarding_status',             label:'Onboarding Status',       type:'select',   section:'onboarding',  source:'c',  options:['Pending','Processing','Complete','On Hold','Cancelled'] },
+  { key:'rescheduled_sign_on_date',      label:'Rescheduled Sign-On',     type:'date',     section:'onboarding',  source:'sp' },
+  { key:'rescheduled_reasons',           label:'Rescheduled Reason',      type:'text',     section:'onboarding',  source:'sp' },
+  { key:'change_joining_ship_1',         label:'New Ship 1',              type:'text',     section:'onboarding',  source:'sp' },
+  { key:'change_joining_port_1',         label:'New Port 1',              type:'text',     section:'onboarding',  source:'sp' },
+  { key:'change_sign_on_date_1',         label:'New Sign-On 1',           type:'date',     section:'onboarding',  source:'sp' },
+  { key:'change_sign_off_date_1',        label:'New Sign-Off 1',          type:'date',     section:'onboarding',  source:'sp' },
+  { key:'change_joining_ship_2',         label:'New Ship 2',              type:'text',     section:'onboarding',  source:'sp' },
+  { key:'change_joining_port_2',         label:'New Port 2',              type:'text',     section:'onboarding',  source:'sp' },
+  { key:'change_sign_on_date_2',         label:'New Sign-On 2',           type:'date',     section:'onboarding',  source:'sp' },
+  { key:'change_sign_off_date_2',        label:'New Sign-Off 2',          type:'date',     section:'onboarding',  source:'sp' },
+  // Employment
+  { key:'current_job_title',             label:'Current Job Title',       type:'text',     section:'employment',  source:'sp' },
+  { key:'placement_sector',              label:'Placement Sector',        type:'text',     section:'employment',  source:'sp' },
+  { key:'project',                       label:'Project',                 type:'text',     section:'employment',  source:'sp' },
+  { key:'contract_number',               label:'Contract No.',            type:'text',     section:'employment',  source:'sp' },
+  { key:'hired_date',                    label:'Hired Date',              type:'date',     section:'employment',  source:'sp' },
+  { key:'rotation_ready_date',           label:'Rotation Ready',          type:'date',     section:'employment',  source:'sp' },
+  { key:'sign_off_reason',               label:'Sign-Off Reason',         type:'select',   section:'employment',  source:'sp', options:['Completed Contract','Resignation','Medical','Family','Terminated','Other'] },
+  { key:'sign_off_report_date',          label:'Sign-Off Report',         type:'date',     section:'employment',  source:'sp' },
+  { key:'resignation_date',              label:'Resignation Date',        type:'date',     section:'employment',  source:'sp' },
+  { key:'resignation_reasons',           label:'Resignation Reason',      type:'text',     section:'employment',  source:'sp' },
+  { key:'skill_set',                     label:'Skill Set',               type:'textarea', section:'employment',  source:'sp' },
+  { key:'go_video_link',                 label:'Go Video Link',           type:'url',      section:'employment',  source:'sp' },
+  { key:'temporary_id',                  label:'Temporary ID',            type:'text',     section:'employment',  source:'sp' },
+  { key:'crew_id_2',                     label:'Crew ID 2',               type:'text',     section:'employment',  source:'sp' },
+  { key:'previous_office',               label:'Previous Office',         type:'text',     section:'employment',  source:'sp' },
+  { key:'additional_info',               label:'Additional Info',         type:'textarea', section:'employment',  source:'sp' },
+  { key:'comment_result',                label:'Comment Result',          type:'textarea', section:'employment',  source:'sp' },
+  // Marlins
+  { key:'marlins_code',                  label:'Code',                    type:'text',     section:'marlins',     source:'sp' },
+  { key:'marlins_score',                 label:'Score',                   type:'number',   section:'marlins',     source:'sp' },
+  { key:'marlins_test_result',           label:'Result',                  type:'select',   section:'marlins',     source:'sp', options:['Pass','Fail','Pending'] },
+  { key:'marlins_test_duration',         label:'Duration',                type:'text',     section:'marlins',     source:'sp' },
+  // Compliance
+  { key:'mistral_status',                label:'Mistral Status',          type:'select',   section:'compliance',  source:'sp', options:['Active','Pending','Expired','Not Required'] },
+  { key:'oktb_status',                   label:'OKTB Status',             type:'select',   section:'compliance',  source:'sp', options:['OK to Board','Pending','Rejected','Not Required'] },
+  { key:'completed_vaccination',         label:'Vaccination',             type:'text',     section:'compliance',  source:'sp' },
+  { key:'date_mmr1_completed',           label:'MMR1 Completed',          type:'date',     section:'compliance',  source:'sp' },
+  { key:'crew_compliance_audit_call',    label:'Compliance Audit Call',   type:'date',     section:'compliance',  source:'sp' },
+  { key:'compliance_notes',              label:'Compliance Notes',        type:'textarea', section:'compliance',  source:'sp' },
+  // Banking
+  { key:'bank_name',                     label:'Bank Name',               type:'select',   section:'banking',     source:'sp', options:['BCA','BNI','BRI','Mandiri','CIMB Niaga','Danamon','Other'] },
+  { key:'bank_account_number',           label:'Account Number',          type:'text',     section:'banking',     source:'sp' },
+  // Costs
+  { key:'medical_cost',                  label:'Medical',                 type:'currency', section:'costs',       source:'sp' },
+  { key:'meal_allowance_cost',           label:'Meal Allowance',          type:'currency', section:'costs',       source:'sp' },
+  { key:'rt_pcr_cost',                   label:'RT-PCR',                  type:'currency', section:'costs',       source:'sp' },
+  { key:'vaccination_cost',              label:'Vaccination Cost',        type:'currency', section:'costs',       source:'sp' },
+  { key:'reimbursement_date',            label:'Reimbursement Date',      type:'date',     section:'costs',       source:'sp' },
+  // Emergency
+  { key:'emergency_contact_name',        label:'Name',                    type:'text',     section:'emergency',   source:'sp' },
+  { key:'emergency_contact_number',      label:'Number',                  type:'text',     section:'emergency',   source:'sp' },
+  { key:'emergency_relationship',        label:'Relationship',            type:'select',   section:'emergency',   source:'sp', options:['Parent','Spouse','Sibling','Child','Friend','Other'] },
+  { key:'emergency_contact_city',        label:'City',                    type:'text',     section:'emergency',   source:'sp' },
+  { key:'emergency_contact_address',     label:'Street Address',          type:'text',     section:'emergency',   source:'sp' },
+  // Address
+  { key:'address_street',                label:'Street',                  type:'text',     section:'address',     source:'sp' },
+  { key:'address_city',                  label:'City',                    type:'text',     section:'address',     source:'sp' },
+  { key:'address_province',              label:'Province',                type:'text',     section:'address',     source:'sp' },
+  { key:'address_country',               label:'Country',                 type:'text',     section:'address',     source:'sp' },
+  { key:'address_postal_code',           label:'Postal Code',             type:'text',     section:'address',     source:'sp' },
+];
+
+const DEFAULT_SF_SECTIONS = [
+  { id:'personal',    label:'Personal Information'   },
+  { id:'onboarding',  label:'Onboarding Information' },
+  { id:'employment',  label:'Employment'             },
+  { id:'marlins',     label:'Marlins Test'           },
+  { id:'compliance',  label:'Compliance'             },
+  { id:'banking',     label:'Banking'                },
+  { id:'costs',       label:'Costs'                  },
+  { id:'emergency',   label:'Emergency Contact'      },
+  { id:'address',     label:'Address'                },
+];
+
+let _sfCurrentSection = 'personal';
+
+function getMergedSfConfig() {
+  const saved = STATE.sfFieldConfig || {};
+  const fields = SEAFARER_FIELD_REGISTRY.map((r, i) => ({
+    key: r.key, label: r.label, type: r.type, section: r.section, source: r.source,
+    order: i, visible: true,
+    options: r.options ? [...r.options] : undefined,
+  }));
+  if (saved.fields) {
+    saved.fields.forEach(sf => {
+      const f = fields.find(x => x.key === sf.key);
+      if (!f) return;
+      if (sf.label   !== undefined) f.label   = sf.label;
+      if (sf.section !== undefined) f.section = sf.section;
+      if (sf.order   !== undefined) f.order   = sf.order;
+      if (sf.visible !== undefined) f.visible = sf.visible;
+      if (sf.options !== undefined) f.options = sf.options;
+    });
+  }
+  const sectionOrder = {};
+  (saved.sections || DEFAULT_SF_SECTIONS).forEach((s, i) => { sectionOrder[s.id] = i; });
+  fields.sort((a, b) => {
+    const sA = sectionOrder[a.section] ?? 999, sB = sectionOrder[b.section] ?? 999;
+    if (sA !== sB) return sA - sB;
+    return a.order - b.order;
+  });
+  return { sections: saved.sections || DEFAULT_SF_SECTIONS, fields };
+}
+
 let STATE = {
   accessToken: null,
   refreshToken: null,
@@ -53,7 +179,8 @@ let STATE = {
   activePipeline: '',
   currentCandidate: null,
   clients: [],
-  recruiters: []
+  recruiters: [],
+  sfFieldConfig: undefined
 };
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -126,7 +253,7 @@ async function doLogin() {
 
 function doLogout() {
   api('POST', '/auth/logout', { refreshToken: STATE.refreshToken }, false).catch(() => {});
-  STATE = { accessToken: null, refreshToken: null, user: null, currentView: null, candidatePage: 1, submissionPage: 1, activePipeline: '', currentCandidate: null, clients: [], recruiters: [] };
+  STATE = { accessToken: null, refreshToken: null, user: null, currentView: null, candidatePage: 1, submissionPage: 1, activePipeline: '', currentCandidate: null, clients: [], recruiters: [], sfFieldConfig: undefined };
   localStorage.removeItem('poseidon_rt');
   document.getElementById('view-app').classList.add('hidden');
   document.getElementById('view-login').style.display = '';
@@ -620,8 +747,9 @@ function switchDetailTab(name, el) {
     const c = STATE.currentCandidate;
     if (c.pipeline === 'SEA_BASED') {
       const fetches = [];
-      if (!c.seafarerProfile) fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
-      if (!c.certificates)    fetches.push(api('GET', `/candidates/${c.id}/certificates`).then(certs => { STATE.currentCandidate.certificates = certs; }));
+      if (!c.seafarerProfile)      fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
+      if (!c.certificates)         fetches.push(api('GET', `/candidates/${c.id}/certificates`).then(certs => { STATE.currentCandidate.certificates = certs; }));
+      if (STATE.sfFieldConfig === undefined) fetches.push(api('GET', '/settings/seafarer-fields').then(cfg => { STATE.sfFieldConfig = cfg || {}; }).catch(() => { STATE.sfFieldConfig = {}; }));
       if (fetches.length) Promise.all(fetches).then(() => renderDetailProfile(STATE.currentCandidate)).catch(() => {});
       else renderDetailProfile(STATE.currentCandidate);
     } else if (c.pipeline === 'J1_PROGRAM' && !c.j1Profile) {
@@ -1441,142 +1569,66 @@ function renderDetailProfile(c) {
   if (!el) return;
 
   if (c.pipeline === 'SEA_BASED') {
-    const sp = c.seafarerProfile || {};
+    const sp    = c.seafarerProfile || {};
     const certs = c.certificates || [];
-    const idCerts   = certs.filter(x => CERT_ID_TYPES.includes(x.cert_type));
-    const stcwCerts = certs.filter(x => CERT_STCW_TYPES.includes(x.cert_type));
-    const visaCerts = certs.filter(x => CERT_VISA_TYPES.includes(x.cert_type));
-    const otherCerts= certs.filter(x => ![...CERT_ID_TYPES,...CERT_STCW_TYPES,...CERT_VISA_TYPES].includes(x.cert_type));
+    const config = getMergedSfConfig();
     const SL = `font-size:.72rem;text-transform:uppercase;color:var(--blue);font-weight:700;letter-spacing:.06em;margin-bottom:10px;`;
-    el.innerHTML = `
+
+    // Group visible fields by section, sorted by order
+    const fieldsBySec = {};
+    config.fields.filter(f => f.visible !== false).forEach(f => {
+      if (!fieldsBySec[f.section]) fieldsBySec[f.section] = [];
+      fieldsBySec[f.section].push(f);
+    });
+
+    let html = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h4 style="margin:0;font-size:.9rem;">Seafarer Profile</h4>
-        <button class="btn btn-primary btn-sm" onclick="openEditSeafarerProfileModal('${esc(c.id)}')">Edit Profile</button>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Personal Information</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Salutation</label><span>${esc(sp.salutation||'—')}</span></div>
-          <div class="info-item"><label>Date of Birth</label><span>${fmtDate(sp.date_of_birth)}</span></div>
-          <div class="info-item"><label>Place of Birth</label><span>${esc(sp.place_of_birth||'—')}</span></div>
-          <div class="info-item"><label>Nationality</label><span>${esc(c.nationality||'—')}</span></div>
-          <div class="info-item"><label>Height (cm)</label><span>${sp.height!=null?sp.height:'—'}</span></div>
-          <div class="info-item"><label>Weight (kg)</label><span>${sp.weight!=null?sp.weight:'—'}</span></div>
-          <div class="info-item"><label>Eye Color</label><span>${esc(sp.eye_color||'—')}</span></div>
-          <div class="info-item"><label>Hair Color</label><span>${esc(sp.hair_color||'—')}</span></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost btn-sm" onclick="openSfFieldSettings()">⚙ Configure Fields</button>
+          <button class="btn btn-primary btn-sm" onclick="openEditSeafarerProfileModal('${esc(c.id)}')">Edit Profile</button>
         </div>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Onboarding Information</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Position Hired</label><span>${esc(sp.position_hired||'—')}</span></div>
-          <div class="info-item"><label>Department</label><span>${esc(sp.department||'—')}</span></div>
-          <div class="info-item"><label>Cruise Line</label><span>${esc(sp.cruise_line||'—')}</span></div>
-          <div class="info-item"><label>Joining Ship</label><span>${esc(sp.joining_ship||'—')}</span></div>
-          <div class="info-item"><label>Sign-On Date</label><span>${fmtDate(sp.sign_on_date)}</span></div>
-          <div class="info-item"><label>Sign-Off Date</label><span>${fmtDate(sp.sign_off_date)}</span></div>
-          <div class="info-item"><label>Sign-On Port</label><span>${esc(sp.sign_on_port||'—')}</span></div>
-          <div class="info-item"><label>Gateway Airport</label><span>${esc(sp.gateway_airport||'—')}</span></div>
-          <div class="info-item"><label>Seafarer Status</label><span>${esc(c.seafarers_status||'—')}</span></div>
-          <div class="info-item"><label>Onboarding Status</label><span>${esc(c.onboarding_status||'—')}</span></div>
-          ${sp.rescheduled_sign_on_date?`<div class="info-item"><label>Rescheduled Sign-On</label><span>${fmtDate(sp.rescheduled_sign_on_date)}</span></div><div class="info-item"><label>Rescheduled Reason</label><span>${esc(sp.rescheduled_reasons||'—')}</span></div>`:''}
-        </div>
-      </div>
-      ${sp.change_joining_ship_1||sp.change_sign_on_date_1?`
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Contract Changes</div>
-        <div class="info-grid">
-          <div class="info-item"><label>New Ship 1</label><span>${esc(sp.change_joining_ship_1||'—')}</span></div>
-          <div class="info-item"><label>New Port 1</label><span>${esc(sp.change_joining_port_1||'—')}</span></div>
-          <div class="info-item"><label>New Sign-On 1</label><span>${fmtDate(sp.change_sign_on_date_1)}</span></div>
-          <div class="info-item"><label>New Sign-Off 1</label><span>${fmtDate(sp.change_sign_off_date_1)}</span></div>
-          ${sp.change_joining_ship_2?`<div class="info-item"><label>New Ship 2</label><span>${esc(sp.change_joining_ship_2||'—')}</span></div><div class="info-item"><label>New Port 2</label><span>${esc(sp.change_joining_port_2||'—')}</span></div><div class="info-item"><label>New Sign-On 2</label><span>${fmtDate(sp.change_sign_on_date_2)}</span></div><div class="info-item"><label>New Sign-Off 2</label><span>${fmtDate(sp.change_sign_off_date_2)}</span></div>`:''}
-        </div>
-      </div>`:''}
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Employment</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Current Job Title</label><span>${esc(sp.current_job_title||'—')}</span></div>
-          <div class="info-item"><label>Placement Sector</label><span>${esc(sp.placement_sector||'—')}</span></div>
-          <div class="info-item"><label>Project</label><span>${esc(sp.project||'—')}</span></div>
-          <div class="info-item"><label>Contract No.</label><span>${esc(sp.contract_number||'—')}</span></div>
-          <div class="info-item"><label>Hired Date</label><span>${fmtDate(sp.hired_date)}</span></div>
-          <div class="info-item"><label>Rotation Ready</label><span>${fmtDate(sp.rotation_ready_date)}</span></div>
-          <div class="info-item"><label>Sign-Off Reason</label><span>${esc(sp.sign_off_reason||'—')}</span></div>
-          <div class="info-item"><label>Sign-Off Report</label><span>${fmtDate(sp.sign_off_report_date)}</span></div>
-          ${sp.resignation_date?`<div class="info-item"><label>Resignation Date</label><span>${fmtDate(sp.resignation_date)}</span></div><div class="info-item"><label>Resignation Reason</label><span>${esc(sp.resignation_reasons||'—')}</span></div>`:''}
-          ${sp.skill_set?`<div class="info-item" style="grid-column:1/-1"><label>Skill Set</label><span style="white-space:pre-wrap">${esc(sp.skill_set)}</span></div>`:''}
-        </div>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Marlins Test</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Code</label><span>${esc(sp.marlins_code||'—')}</span></div>
-          <div class="info-item"><label>Score</label><span>${sp.marlins_score!=null?sp.marlins_score:'—'}</span></div>
-          <div class="info-item"><label>Result</label><span>${esc(sp.marlins_test_result||'—')}</span></div>
-          <div class="info-item"><label>Duration</label><span>${esc(sp.marlins_test_duration||'—')}</span></div>
-        </div>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Compliance</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Mistral Status</label><span>${esc(sp.mistral_status||'—')}</span></div>
-          <div class="info-item"><label>OKTB Status</label><span>${esc(sp.oktb_status||'—')}</span></div>
-          <div class="info-item"><label>Vaccination</label><span>${esc(sp.completed_vaccination||'—')}</span></div>
-          <div class="info-item"><label>MMR1 Completed</label><span>${fmtDate(sp.date_mmr1_completed)}</span></div>
-          <div class="info-item"><label>Compliance Audit Call</label><span>${fmtDate(sp.crew_compliance_audit_call)}</span></div>
-          ${sp.compliance_notes?`<div class="info-item" style="grid-column:1/-1"><label>Compliance Notes</label><span style="white-space:pre-wrap">${esc(sp.compliance_notes)}</span></div>`:''}
-        </div>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Banking</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Bank Name</label><span>${esc(sp.bank_name||'—')}</span></div>
-          <div class="info-item"><label>Account Number</label><span>${esc(sp.bank_account_number||'—')}</span></div>
-        </div>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Costs</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Medical</label><span>${sp.medical_cost!=null?'$'+Number(sp.medical_cost).toLocaleString():'—'}</span></div>
-          <div class="info-item"><label>Meal Allowance</label><span>${sp.meal_allowance_cost!=null?'$'+Number(sp.meal_allowance_cost).toLocaleString():'—'}</span></div>
-          <div class="info-item"><label>RT-PCR</label><span>${sp.rt_pcr_cost!=null?'$'+Number(sp.rt_pcr_cost).toLocaleString():'—'}</span></div>
-          <div class="info-item"><label>Vaccination</label><span>${sp.vaccination_cost!=null?'$'+Number(sp.vaccination_cost).toLocaleString():'—'}</span></div>
-          <div class="info-item"><label>Reimbursement Date</label><span>${fmtDate(sp.reimbursement_date)}</span></div>
-        </div>
-      </div>
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Emergency Contact</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Name</label><span>${esc(sp.emergency_contact_name||'—')}</span></div>
-          <div class="info-item"><label>Number</label><span>${esc(sp.emergency_contact_number||'—')}</span></div>
-          <div class="info-item"><label>Relationship</label><span>${esc(sp.emergency_relationship||'—')}</span></div>
-          <div class="info-item"><label>City</label><span>${esc(sp.emergency_contact_city||'—')}</span></div>
-          ${sp.emergency_contact_address?`<div class="info-item" style="grid-column:1/-1"><label>Street Address</label><span>${esc(sp.emergency_contact_address)}</span></div>`:''}
-        </div>
-      </div>
-      <div style="margin-bottom:24px">
-        <div style="${SL}">Address</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Street</label><span>${esc(sp.address_street||'—')}</span></div>
-          <div class="info-item"><label>City</label><span>${esc(sp.address_city||'—')}</span></div>
-          <div class="info-item"><label>Province</label><span>${esc(sp.address_province||'—')}</span></div>
-          <div class="info-item"><label>Country</label><span>${esc(sp.address_country||'—')}</span></div>
-          <div class="info-item"><label>Postal Code</label><span>${esc(sp.address_postal_code||'—')}</span></div>
-        </div>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:20px;margin-bottom:20px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div style="${SL}margin-bottom:0">Identity Documents</div>
-          <button class="btn btn-ghost btn-sm" onclick="openAddCertModal('${esc(c.id)}')">+ Add Certificate</button>
-        </div>
-        ${renderCertGroup(idCerts, c.id)}
-        <div style="${SL}margin-top:16px">STCW Certificates</div>
-        ${renderCertGroup(stcwCerts, c.id)}
-        <div style="${SL}margin-top:16px">Visas</div>
-        ${renderCertGroup(visaCerts, c.id)}
-        ${otherCerts.length?`<div style="${SL}margin-top:16px">Other</div>${renderCertGroup(otherCerts, c.id)}`:''}
       </div>`;
+
+    config.sections.forEach(section => {
+      const fields = fieldsBySec[section.id];
+      if (!fields || !fields.length) return;
+      html += `<div style="margin-bottom:20px"><div style="${SL}">${esc(section.label)}</div><div class="info-grid">`;
+      fields.forEach(f => {
+        const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === f.key) || {};
+        const rawVal = (reg.source === 'c' ? c : sp)[f.key];
+        let disp;
+        if (rawVal == null || rawVal === '') { disp = '—'; }
+        else if (reg.type === 'date')     { disp = fmtDate(rawVal); }
+        else if (reg.type === 'currency') { disp = '$' + Number(rawVal).toLocaleString(); }
+        else if (reg.type === 'textarea') { disp = `<span style="white-space:pre-wrap">${esc(String(rawVal))}</span>`; }
+        else if (reg.type === 'url')      { disp = `<a href="${esc(String(rawVal))}" target="_blank" style="color:var(--blue)">${esc(String(rawVal))}</a>`; }
+        else { disp = esc(String(rawVal)); }
+        const full = reg.type === 'textarea' ? ' style="grid-column:1/-1"' : '';
+        html += `<div class="info-item"${full}><label>${esc(f.label)}</label><span>${disp}</span></div>`;
+      });
+      html += `</div></div>`;
+    });
+
+    // Certificates — always at the bottom
+    const idCerts    = certs.filter(x => CERT_ID_TYPES.includes(x.cert_type));
+    const stcwCerts  = certs.filter(x => CERT_STCW_TYPES.includes(x.cert_type));
+    const visaCerts  = certs.filter(x => CERT_VISA_TYPES.includes(x.cert_type));
+    const otherCerts = certs.filter(x => ![...CERT_ID_TYPES,...CERT_STCW_TYPES,...CERT_VISA_TYPES].includes(x.cert_type));
+    html += `<div style="border-top:1px solid var(--border);padding-top:20px;margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="${SL}margin-bottom:0">Identity Documents</div>
+        <button class="btn btn-ghost btn-sm" onclick="openAddCertModal('${esc(c.id)}')">+ Add Certificate</button>
+      </div>
+      ${renderCertGroup(idCerts, c.id)}
+      <div style="${SL}margin-top:16px">STCW Certificates</div>
+      ${renderCertGroup(stcwCerts, c.id)}
+      <div style="${SL}margin-top:16px">Visas</div>
+      ${renderCertGroup(visaCerts, c.id)}
+      ${otherCerts.length ? `<div style="${SL}margin-top:16px">Other</div>${renderCertGroup(otherCerts, c.id)}` : ''}
+    </div>`;
+
+    el.innerHTML = html;
     return;
   }
 
@@ -1802,6 +1854,180 @@ async function deleteCert(certId, candidateId) {
     toast('Certificate deleted', 'success');
     STATE.currentCandidate.certificates = (STATE.currentCandidate.certificates||[]).filter(x=>x.id!==certId);
     renderDetailProfile(STATE.currentCandidate);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Seafarer Field Settings ───────────────────────────────────────────────────
+
+async function openSfFieldSettings() {
+  if (STATE.sfFieldConfig === undefined) {
+    try { STATE.sfFieldConfig = await api('GET', '/settings/seafarer-fields') || {}; }
+    catch { STATE.sfFieldConfig = {}; }
+  }
+  STATE._sfEditConfig = JSON.parse(JSON.stringify(getMergedSfConfig()));
+  _sfCurrentSection = STATE._sfEditConfig.sections[0]?.id || 'personal';
+  _renderSfSettingsModal();
+}
+
+function _renderSfSettingsModal() {
+  const config = STATE._sfEditConfig;
+  const sidebar = config.sections.map(s =>
+    `<div class="sf-sec-tab" id="sf-sectab-${esc(s.id)}" onclick="selectSfSection('${esc(s.id)}')"
+      style="padding:8px 12px;cursor:pointer;border-radius:6px;font-size:13px;margin-bottom:2px;${s.id===_sfCurrentSection?'background:var(--navy-mid);color:var(--text);font-weight:600;':'color:var(--text-muted);'}">${esc(s.label)}</div>`
+  ).join('');
+
+  openModal('Configure Seafarer Fields', `
+    <div style="display:flex;gap:16px;min-height:460px">
+      <div style="width:170px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;overflow-y:auto">${sidebar}</div>
+      <div style="flex:1;overflow-y:auto" id="sf-fields-content">${_buildSfSectionRows(_sfCurrentSection)}</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSfFieldConfig()">Save Changes</button>
+    </div>`, 'modal-xl');
+}
+
+function _buildSfSectionRows(sectionId) {
+  const config = STATE._sfEditConfig;
+  const fields  = config.fields.filter(f => f.section === sectionId).sort((a,b) => a.order - b.order);
+  if (!fields.length) return `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No fields in this section.</p>`;
+  const sectionOpts = config.sections.map(s => `<option value="${esc(s.id)}" ${s.id===sectionId?'selected':''}>${esc(s.label)}</option>`).join('');
+  const rows = fields.map((f, i) => {
+    const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === f.key) || {};
+    const hasOpts = reg.type === 'select' || (f.options && f.options.length);
+    const visColor = f.visible !== false ? '#4ade80' : 'var(--text-muted)';
+    return `<tr data-key="${esc(f.key)}" style="border-bottom:1px solid #ffffff0a">
+      <td style="padding:7px 4px;color:var(--text-muted);font-size:16px;cursor:default;user-select:none">≡</td>
+      <td style="padding:7px 8px;min-width:140px">
+        <input type="text" value="${esc(f.label)}"
+          onchange="sfFieldSetLabel('${esc(f.key)}',this.value)"
+          style="background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:13px;width:100%;outline:none;"
+          onfocus="this.style.borderBottomColor='var(--blue)'"
+          onblur="this.style.borderBottomColor='transparent'">
+      </td>
+      <td style="padding:7px 6px;font-size:11px;color:var(--text-muted);width:64px">${reg.type||'text'}</td>
+      <td style="padding:7px 6px;width:140px">
+        <select onchange="sfFieldMoveToSection('${esc(f.key)}',this.value)"
+          style="font-size:11px;background:var(--navy-mid);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;width:100%">${sectionOpts}</select>
+      </td>
+      <td style="padding:7px 4px;white-space:nowrap;width:64px">
+        ${i>0?`<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px" onclick="sfFieldMoveUp('${esc(f.key)}')">↑</button>`:'<span style="display:inline-block;width:28px"></span>'}
+        ${i<fields.length-1?`<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px" onclick="sfFieldMoveDown('${esc(f.key)}')">↓</button>`:''}
+      </td>
+      <td style="padding:7px 6px;white-space:nowrap;width:90px">
+        ${hasOpts?`<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openSfFieldOpts('${esc(f.key)}')">Edit Options</button>`:''}
+      </td>
+      <td style="padding:7px 6px;width:70px;text-align:center">
+        <label style="cursor:pointer;font-size:11px;color:${visColor};white-space:nowrap">
+          <input type="checkbox" ${f.visible!==false?'checked':''} onchange="sfFieldToggleVisible('${esc(f.key)}',this.checked)" style="margin-right:3px">
+          ${f.visible!==false?'Visible':'Hidden'}
+        </label>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="font-size:10px;color:var(--text-muted);padding:6px 4px"></th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px 8px;text-align:left">Label</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Type</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Section</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visibility</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function selectSfSection(sectionId) {
+  _sfCurrentSection = sectionId;
+  document.querySelectorAll('.sf-sec-tab').forEach(t => {
+    const active = t.id === `sf-sectab-${sectionId}`;
+    t.style.background = active ? 'var(--navy-mid)' : '';
+    t.style.color      = active ? 'var(--text)'     : 'var(--text-muted)';
+    t.style.fontWeight = active ? '600'              : '';
+  });
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(sectionId);
+}
+
+function sfFieldSetLabel(key, value) {
+  const f = STATE._sfEditConfig.fields.find(x => x.key === key);
+  if (f) f.label = value;
+}
+
+function sfFieldMoveToSection(key, newSec) {
+  const f = STATE._sfEditConfig.fields.find(x => x.key === key);
+  if (!f) return;
+  f.section = newSec;
+  const maxOrd = Math.max(-1, ...STATE._sfEditConfig.fields.filter(x => x.section === newSec && x.key !== key).map(x => x.order));
+  f.order = maxOrd + 1;
+  selectSfSection(_sfCurrentSection);
+}
+
+function sfFieldMoveUp(key) {
+  const fields = STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection).sort((a,b) => a.order - b.order);
+  const idx = fields.findIndex(f => f.key === key);
+  if (idx <= 0) return;
+  [fields[idx].order, fields[idx-1].order] = [fields[idx-1].order, fields[idx].order];
+  fields.sort((a,b)=>a.order-b.order).forEach((f,i) => f.order = i);
+  selectSfSection(_sfCurrentSection);
+}
+
+function sfFieldMoveDown(key) {
+  const fields = STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection).sort((a,b) => a.order - b.order);
+  const idx = fields.findIndex(f => f.key === key);
+  if (idx < 0 || idx >= fields.length - 1) return;
+  [fields[idx].order, fields[idx+1].order] = [fields[idx+1].order, fields[idx].order];
+  fields.sort((a,b)=>a.order-b.order).forEach((f,i) => f.order = i);
+  selectSfSection(_sfCurrentSection);
+}
+
+function sfFieldToggleVisible(key, visible) {
+  const f = STATE._sfEditConfig.fields.find(x => x.key === key);
+  if (f) { f.visible = visible; selectSfSection(_sfCurrentSection); }
+}
+
+function openSfFieldOpts(key) {
+  const existing = document.getElementById(`sf-opts-row-${key}`);
+  if (existing) { existing.remove(); return; }
+  const f   = STATE._sfEditConfig.fields.find(x => x.key === key);
+  const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === key) || {};
+  const opts = (f?.options || reg.options || []).join('\n');
+  const tr   = document.querySelector(`tr[data-key="${key}"]`);
+  if (!tr) return;
+  const editorRow = document.createElement('tr');
+  editorRow.id = `sf-opts-row-${key}`;
+  editorRow.innerHTML = `<td colspan="7" style="padding:10px 12px;background:var(--navy-mid);border-bottom:1px solid var(--border)">
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Options for <strong style="color:var(--text)">${esc(f?.label||key)}</strong> — one per line:</div>
+    <textarea id="sf-opts-ta-${key}" rows="6"
+      style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;font-family:inherit">${esc(opts)}</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary btn-sm" onclick="sfSaveOpts('${esc(key)}')">Save Options</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('sf-opts-row-${key}').remove()">Cancel</button>
+    </div>
+  </td>`;
+  tr.after(editorRow);
+}
+
+function sfSaveOpts(key) {
+  const ta = document.getElementById(`sf-opts-ta-${key}`);
+  if (!ta) return;
+  const opts = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+  const f = STATE._sfEditConfig.fields.find(x => x.key === key);
+  if (f) f.options = opts;
+  document.getElementById(`sf-opts-row-${key}`)?.remove();
+  toast('Options saved — click Save Changes to apply', 'info');
+}
+
+async function saveSfFieldConfig() {
+  try {
+    await api('PUT', '/settings/seafarer-fields', STATE._sfEditConfig);
+    STATE.sfFieldConfig = STATE._sfEditConfig;
+    delete STATE._sfEditConfig;
+    closeModal();
+    toast('Field configuration saved', 'success');
+    if (STATE.currentCandidate) renderDetailProfile(STATE.currentCandidate);
   } catch(e) { toast(e.message, 'error'); }
 }
 
