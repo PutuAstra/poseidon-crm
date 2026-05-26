@@ -346,6 +346,7 @@ async function openCandidateDetail(id) {
     renderDetailDocuments(c);
     renderDetailEndorsements(c);
     renderDetailHistory(c);
+    renderDetailProfile(c);
     document.getElementById('dp-tab-j1plan').innerHTML = '<p style="color:var(--text-muted);padding:24px 0;">Loading J1 plan…</p>';
     document.querySelectorAll('.detail-body .tab').forEach((t, i) => { t.classList.toggle('active', i === 0); });
     document.querySelectorAll('[id^="dp-tab-"]').forEach((t, i) => { t.classList.toggle('hidden', i !== 0); });
@@ -368,7 +369,11 @@ function renderDetailOverview(c) {
     <div class="info-grid" style="margin-bottom:16px">
       <div class="info-item"><label>Phone</label><span>${esc(c.phone || '—')}</span></div>
       <div class="info-item"><label>Nationality</label><span>${esc(c.nationality || '—')}</span></div>
+      <div class="info-item"><label>Gender</label><span>${esc(c.gender || '—')}</span></div>
       <div class="info-item"><label>Date of Birth</label><span>${esc(c.date_of_birth || '—')}</span></div>
+      <div class="info-item"><label>CTI Office</label><span>${esc(c.cti_office || '—')}</span></div>
+      <div class="info-item"><label>Employment Status</label><span>${esc(c.employment_status || '—')}</span></div>
+      <div class="info-item"><label>Origin</label><span>${esc(c.origin || '—')}</span></div>
       <div class="info-item"><label>Portal</label><span>${c.portal_activated_at ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--text-muted)">Not activated</span>'}</span></div>
       <div class="info-item"><label>Recruiter</label><span>${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</span></div>
       <div class="info-item"><label>Created</label><span>${relTime(c.created_at)}</span></div>
@@ -376,13 +381,9 @@ function renderDetailOverview(c) {
     <div style="margin-bottom:12px">
       <label style="margin-bottom:8px">Move Stage</label>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${nextStages(c.status).map(s => `<button class="btn btn-sm btn-ghost" onclick="advanceStage('${c.id}','${s}')">${statusLabel(s)}</button>`).join('')}
+        ${nextStages(c.status, c.pipeline).map(s => `<button class="btn btn-sm btn-ghost" onclick="advanceStage('${c.id}','${s}')">${statusLabel(s)}</button>`).join('')}
       </div>
     </div>
-    ${['PRE_QUAL_APPROVED', 'ENDORSED'].includes(c.status) ? `
-    <div style="margin-bottom:12px">
-      <button class="btn btn-primary btn-sm" onclick="openEndorseModal('${c.id}')">Endorse to Client</button>
-    </div>` : ''}
     <div>
       <label style="margin-bottom:6px">Assign Recruiter</label>
       <div style="display:flex;gap:8px">
@@ -575,6 +576,14 @@ function switchDetailTab(name, el) {
   el.classList.add('active');
   document.getElementById(`dp-tab-${name}`).classList.remove('hidden');
   if (name === 'j1plan' && STATE.currentCandidate) loadJ1Plan(STATE.currentCandidate.id);
+  if (name === 'profile' && STATE.currentCandidate) {
+    const c = STATE.currentCandidate;
+    if (c.pipeline === 'SEA_BASED' && !c.seafarerProfile) {
+      api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; renderDetailProfile(STATE.currentCandidate); }).catch(() => {});
+    } else if (c.pipeline === 'J1_PROGRAM' && !c.j1Profile) {
+      api('GET', `/candidates/${c.id}/j1-profile`).then(jp => { STATE.currentCandidate.j1Profile = jp; renderDetailProfile(STATE.currentCandidate); }).catch(() => {});
+    }
+  }
 }
 
 // ── Interviews ────────────────────────────────────────────────────────────────
@@ -1277,7 +1286,26 @@ function openAddCandidateModal() {
       <div class="form-group"><label>Phone</label><input type="tel" id="nc-phone" placeholder="+63 9XX XXX XXXX"></div>
       <div class="form-group"><label>Nationality</label><input type="text" id="nc-nationality" placeholder="e.g. Filipino"></div>
     </div>
-    <div class="form-group"><label>Position Applied</label><input type="text" id="nc-position" placeholder="e.g. Waiter / Hotel Staff / J1 Intern"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Gender</label>
+        <select id="nc-gender"><option value="">— Select —</option><option value="Male">Male</option><option value="Female">Female</option></select>
+      </div>
+      <div class="form-group"><label>Employment Status</label>
+        <select id="nc-emp-status"><option value="New">New</option><option value="Repeater">Repeater</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>CTI Office</label>
+        <select id="nc-cti-office">
+          <option value="">— Select Office —</option>
+          <option value="CTI Indonesia">CTI Indonesia</option>
+          <option value="CTI Group Myanmar">CTI Group Myanmar</option>
+          <option value="CTI Philippines">CTI Philippines</option>
+          <option value="CTI Group USA">CTI Group USA</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Position Applied</label><input type="text" id="nc-position" placeholder="e.g. Waiter / J1 Intern"></div>
+    </div>
     <div class="form-group"><label>Pipeline <span style="color:var(--danger)">*</span></label>
       <select id="nc-pipeline"><option value="SEA_BASED">Sea-Based</option><option value="LAND_BASED">Land-Based</option><option value="J1_PROGRAM">J1 Program</option></select>
     </div>
@@ -1306,6 +1334,9 @@ async function createCandidateManual() {
   const email           = document.getElementById('nc-email').value.trim();
   const phone           = document.getElementById('nc-phone').value.trim();
   const nationality     = document.getElementById('nc-nationality').value.trim();
+  const gender          = document.getElementById('nc-gender').value;
+  const employmentStatus = document.getElementById('nc-emp-status').value;
+  const ctiOffice       = document.getElementById('nc-cti-office').value;
   const positionApplied = document.getElementById('nc-position').value.trim();
   const pipeline        = document.getElementById('nc-pipeline').value;
   const resumeFile      = document.getElementById('nc-resume')?.files[0];
@@ -1321,7 +1352,7 @@ async function createCandidateManual() {
   // ── Step 1: Create candidate record ──────────────────────────────────────────
   let candidateId;
   try {
-    const d = await api('POST', '/candidates', { firstName, lastName, email, phone: phone || undefined, nationality: nationality || undefined, positionApplied: positionApplied || undefined, pipeline });
+    const d = await api('POST', '/candidates', { firstName, lastName, email, phone: phone || undefined, nationality: nationality || undefined, gender: gender || undefined, employmentStatus: employmentStatus || undefined, ctiOffice: ctiOffice || undefined, positionApplied: positionApplied || undefined, pipeline });
     candidateId = d.candidateId;
   } catch (e) {
     toast(e.message, 'error');
@@ -1355,6 +1386,337 @@ async function createCandidateManual() {
 
   if (uploadFailed) toast('Applicant created. Document uploads failed — add them from the Documents tab once storage is configured.', 'info');
   else toast('Applicant created with documents ✓', 'success');
+}
+
+// ── Pipeline Profiles ─────────────────────────────────────────────────────────
+
+function renderDetailProfile(c) {
+  const el = document.getElementById('dp-tab-profile');
+  if (!el) return;
+
+  if (c.pipeline === 'SEA_BASED') {
+    const sp = c.seafarerProfile || {};
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h4 style="margin:0;font-size:.9rem;">Seafarer Profile</h4>
+        <button class="btn btn-primary btn-sm" onclick="openEditSeafarerProfileModal('${esc(c.id)}')">Edit Profile</button>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Onboarding Information</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Position Hired</label><span>${esc(sp.position_hired||'—')}</span></div>
+          <div class="info-item"><label>Department</label><span>${esc(sp.department||'—')}</span></div>
+          <div class="info-item"><label>Cruise Line</label><span>${esc(sp.cruise_line||'—')}</span></div>
+          <div class="info-item"><label>Joining Ship</label><span>${esc(sp.joining_ship||'—')}</span></div>
+          <div class="info-item"><label>Sign-On Date</label><span>${fmtDate(sp.sign_on_date)}</span></div>
+          <div class="info-item"><label>Sign-Off Date</label><span>${fmtDate(sp.sign_off_date)}</span></div>
+          <div class="info-item"><label>Sign-On Port</label><span>${esc(sp.sign_on_port||'—')}</span></div>
+          <div class="info-item"><label>Gateway Airport</label><span>${esc(sp.gateway_airport||'—')}</span></div>
+          <div class="info-item"><label>Seafarer Status</label><span>${esc(c.seafarers_status||'—')}</span></div>
+          <div class="info-item"><label>Onboarding Status</label><span>${esc(c.onboarding_status||'—')}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Marlins Test</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Marlins Code</label><span>${esc(sp.marlins_code||'—')}</span></div>
+          <div class="info-item"><label>Marlins Score</label><span>${sp.marlins_score!=null?esc(sp.marlins_score):'—'}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Emergency Contact</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Name</label><span>${esc(sp.emergency_contact_name||'—')}</span></div>
+          <div class="info-item"><label>Number</label><span>${esc(sp.emergency_contact_number||'—')}</span></div>
+          <div class="info-item"><label>Relationship</label><span>${esc(sp.emergency_relationship||'—')}</span></div>
+          <div class="info-item"><label>City</label><span>${esc(sp.emergency_contact_city||'—')}</span></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Address</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Street</label><span>${esc(sp.address_street||'—')}</span></div>
+          <div class="info-item"><label>City</label><span>${esc(sp.address_city||'—')}</span></div>
+          <div class="info-item"><label>Province</label><span>${esc(sp.address_province||'—')}</span></div>
+          <div class="info-item"><label>Country</label><span>${esc(sp.address_country||'—')}</span></div>
+          <div class="info-item"><label>Postal Code</label><span>${esc(sp.address_postal_code||'—')}</span></div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (c.pipeline === 'J1_PROGRAM') {
+    const jp = c.j1Profile || {};
+    let eligibleTags = '—';
+    if (jp.eligible_programs) {
+      try {
+        const arr = JSON.parse(jp.eligible_programs);
+        eligibleTags = Array.isArray(arr) && arr.length
+          ? arr.map(p2 => `<span style="display:inline-block;background:var(--navy-mid);border-radius:4px;padding:2px 8px;font-size:.78rem;margin:2px">${esc(p2)}</span>`).join(' ')
+          : esc(jp.eligible_programs);
+      } catch { eligibleTags = esc(jp.eligible_programs); }
+    }
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h4 style="margin:0;font-size:.9rem;">J1 Profile</h4>
+        <button class="btn btn-primary btn-sm" onclick="openEditJ1ProfileModal('${esc(c.id)}')">Edit Profile</button>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Application Info</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Application Status</label><span>${esc(jp.j1_application_status||'—')}</span></div>
+          <div class="info-item"><label>Program Sources</label><span>${esc(jp.j1_program_sources||'—')}</span></div>
+          <div class="info-item"><label>CTI USA Review</label><span>${esc(jp.cti_usa_review||'—')}</span></div>
+          <div class="info-item" style="grid-column:1/-1"><label>Eligible Programs</label><span>${eligibleTags}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Consultation Call</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Call Date</label><span>${fmtDate(jp.consultation_call_date)}</span></div>
+          <div class="info-item"><label>Called By</label><span>${esc(jp.consultation_call_by||'—')}</span></div>
+          <div class="info-item"><label>Call Status</label><span>${esc(jp.consultation_call_status||'—')}</span></div>
+          <div class="info-item" style="grid-column:1/-1"><label>Call Notes</label><span style="white-space:pre-wrap">${esc(jp.consultation_call_notes||'—')}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Assessment</div>
+        <div class="info-grid">
+          <div class="info-item"><label>English Assessment</label><span>${esc(jp.english_assessment||'—')}</span></div>
+          <div class="info-item"><label>Participant Rating</label><span>${esc(jp.participant_rating||'—')}</span></div>
+          <div class="info-item"><label>Attendance</label><span>${esc(jp.attendance||'—')}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Program Placement</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Hosting Company</label><span>${esc(jp.hosting_company||'—')}</span></div>
+          <div class="info-item"><label>Selected Job</label><span>${esc(jp.selected_job||'—')}</span></div>
+          <div class="info-item"><label>Occupational Fields</label><span>${esc(jp.occupational_fields||'—')}</span></div>
+          <div class="info-item"><label>Processing Sponsor</label><span>${esc(jp.processing_sponsor||'—')}</span></div>
+          <div class="info-item"><label>Ticket Pricing</label><span>${jp.ticket_pricing!=null?`$${Number(jp.ticket_pricing).toLocaleString()}`:'—'}</span></div>
+          <div class="info-item"><label>Program Start</label><span>${fmtDate(jp.program_start_date)}</span></div>
+          <div class="info-item"><label>Program End</label><span>${fmtDate(jp.program_end_date)}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Investment</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Total Paid</label><span>${jp.total_paid_investment!=null?`$${Number(jp.total_paid_investment).toLocaleString()}`:'—'}</span></div>
+          <div class="info-item"><label>Stage 1</label><span>${jp.stage1_investment!=null?`$${Number(jp.stage1_investment).toLocaleString()}`:'—'}</span></div>
+          <div class="info-item"><label>Stage 2</label><span>${jp.stage2_investment!=null?`$${Number(jp.stage2_investment).toLocaleString()}`:'—'}</span></div>
+          <div class="info-item"><label>Stage 3</label><span>${jp.stage3_investment!=null?`$${Number(jp.stage3_investment).toLocaleString()}`:'—'}</span></div>
+          <div class="info-item"><label>Stage 4</label><span>${jp.stage4_investment!=null?`$${Number(jp.stage4_investment).toLocaleString()}`:'—'}</span></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Housing</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Landlord</label><span>${esc(jp.housing_landlord||'—')}</span></div>
+          <div class="info-item"><label>Address</label><span>${esc(jp.housing_address||'—')}</span></div>
+          <div class="info-item"><label>Sponsor Invoice Status</label><span>${esc(jp.program_sponsor_invoice_status||'—')}</span></div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="margin-bottom:16px"><h4 style="margin:0;font-size:.9rem;">Land-Based Profile</h4></div>
+    <div class="info-grid" style="margin-bottom:16px">
+      <div class="info-item"><label>Position Applied</label><span>${esc(c.position_applied||'—')}</span></div>
+    </div>
+    <p class="text-sm" style="color:var(--text-muted)">Land-Based profile fields coming soon.</p>`;
+}
+
+function openEditSeafarerProfileModal(candidateId) {
+  const sp = STATE.currentCandidate?.seafarerProfile || {};
+  openModal('Edit Seafarer Profile', `
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Onboarding Information</div>
+    <div class="form-row">
+      <div class="form-group"><label>Department</label><input type="text" id="sf-department" value="${esc(sp.department||'')}"></div>
+      <div class="form-group"><label>Position Hired</label><input type="text" id="sf-position-hired" value="${esc(sp.position_hired||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Cruise Line</label><input type="text" id="sf-cruise-line" value="${esc(sp.cruise_line||'')}"></div>
+      <div class="form-group"><label>Joining Ship</label><input type="text" id="sf-joining-ship" value="${esc(sp.joining_ship||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Sign-On Date</label><input type="date" id="sf-sign-on-date" value="${esc(sp.sign_on_date||'')}"></div>
+      <div class="form-group"><label>Sign-Off Date</label><input type="date" id="sf-sign-off-date" value="${esc(sp.sign_off_date||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Sign-On Port</label><input type="text" id="sf-sign-on-port" value="${esc(sp.sign_on_port||'')}"></div>
+      <div class="form-group"><label>Gateway Airport</label><input type="text" id="sf-gateway-airport" value="${esc(sp.gateway_airport||'')}"></div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Marlins Test</div>
+    <div class="form-row">
+      <div class="form-group"><label>Marlins Code</label><input type="text" id="sf-marlins-code" value="${esc(sp.marlins_code||'')}"></div>
+      <div class="form-group"><label>Marlins Score</label><input type="number" id="sf-marlins-score" value="${sp.marlins_score!=null?sp.marlins_score:''}"></div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Emergency Contact</div>
+    <div class="form-row">
+      <div class="form-group"><label>Name</label><input type="text" id="sf-ec-name" value="${esc(sp.emergency_contact_name||'')}"></div>
+      <div class="form-group"><label>Number</label><input type="text" id="sf-ec-number" value="${esc(sp.emergency_contact_number||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Relationship</label><input type="text" id="sf-ec-relationship" value="${esc(sp.emergency_relationship||'')}"></div>
+      <div class="form-group"><label>City</label><input type="text" id="sf-ec-city" value="${esc(sp.emergency_contact_city||'')}"></div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Address</div>
+    <div class="form-group"><label>Street</label><input type="text" id="sf-addr-street" value="${esc(sp.address_street||'')}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>City</label><input type="text" id="sf-addr-city" value="${esc(sp.address_city||'')}"></div>
+      <div class="form-group"><label>Province</label><input type="text" id="sf-addr-province" value="${esc(sp.address_province||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Country</label><input type="text" id="sf-addr-country" value="${esc(sp.address_country||'')}"></div>
+      <div class="form-group"><label>Postal Code</label><input type="text" id="sf-addr-postal" value="${esc(sp.address_postal_code||'')}"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSeafarerProfile('${esc(candidateId)}')">Save</button>
+    </div>`, 'modal-lg');
+}
+
+async function saveSeafarerProfile(candidateId) {
+  const body = {
+    department:             document.getElementById('sf-department').value.trim()      || undefined,
+    positionHired:          document.getElementById('sf-position-hired').value.trim()  || undefined,
+    cruiseLine:             document.getElementById('sf-cruise-line').value.trim()      || undefined,
+    joiningShip:            document.getElementById('sf-joining-ship').value.trim()     || undefined,
+    signOnDate:             document.getElementById('sf-sign-on-date').value            || undefined,
+    signOffDate:            document.getElementById('sf-sign-off-date').value           || undefined,
+    signOnPort:             document.getElementById('sf-sign-on-port').value.trim()     || undefined,
+    gatewayAirport:         document.getElementById('sf-gateway-airport').value.trim()  || undefined,
+    marlinsCode:            document.getElementById('sf-marlins-code').value.trim()     || undefined,
+    marlinsScore:           document.getElementById('sf-marlins-score').value !== '' ? Number(document.getElementById('sf-marlins-score').value) : undefined,
+    emergencyContactName:   document.getElementById('sf-ec-name').value.trim()          || undefined,
+    emergencyContactNumber: document.getElementById('sf-ec-number').value.trim()        || undefined,
+    emergencyRelationship:  document.getElementById('sf-ec-relationship').value.trim()  || undefined,
+    emergencyContactCity:   document.getElementById('sf-ec-city').value.trim()          || undefined,
+    addressStreet:          document.getElementById('sf-addr-street').value.trim()      || undefined,
+    addressCity:            document.getElementById('sf-addr-city').value.trim()        || undefined,
+    addressProvince:        document.getElementById('sf-addr-province').value.trim()    || undefined,
+    addressCountry:         document.getElementById('sf-addr-country').value.trim()     || undefined,
+    addressPostalCode:      document.getElementById('sf-addr-postal').value.trim()      || undefined,
+  };
+  try {
+    await api('PUT', `/candidates/${candidateId}/seafarer-profile`, body);
+    closeModal(); toast('Seafarer profile updated', 'success');
+    openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openEditJ1ProfileModal(candidateId) {
+  const jp = STATE.currentCandidate?.j1Profile || {};
+  let eligibleVal = '';
+  if (jp.eligible_programs) { try { eligibleVal = JSON.parse(jp.eligible_programs).join(', '); } catch { eligibleVal = jp.eligible_programs; } }
+  openModal('Edit J1 Profile', `
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Application Info</div>
+    <div class="form-row">
+      <div class="form-group"><label>Application Status</label>
+        <select id="j1p-app-status">${['NEW_SUBMISSION','CONSULTATION','INTERVIEW','VISA_PROCESSING','USA_ONBOARD','COMPLETED','ARCHIVED'].map(s=>`<option value="${s}" ${jp.j1_application_status===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Program Sources</label><input type="text" id="j1p-sources" value="${esc(jp.j1_program_sources||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>CTI USA Review</label><input type="text" id="j1p-cti-review" value="${esc(jp.cti_usa_review||'')}"></div>
+      <div class="form-group"><label>Eligible Programs <small style="font-weight:400">(comma-separated)</small></label><input type="text" id="j1p-eligible" value="${esc(eligibleVal)}"></div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Consultation Call</div>
+    <div class="form-row">
+      <div class="form-group"><label>Call Date</label><input type="date" id="j1p-call-date" value="${esc(jp.consultation_call_date||'')}"></div>
+      <div class="form-group"><label>Called By</label><input type="text" id="j1p-call-by" value="${esc(jp.consultation_call_by||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Call Status</label>
+        <select id="j1p-call-status"><option value="">— Select —</option>${['Pending','Approved','Rejected'].map(s=>`<option value="${s}" ${jp.consultation_call_status===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group"><label>Call Notes</label><textarea id="j1p-call-notes" rows="3" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(jp.consultation_call_notes||'')}</textarea></div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Assessment</div>
+    <div class="form-row">
+      <div class="form-group"><label>English Assessment</label><input type="text" id="j1p-english" value="${esc(jp.english_assessment||'')}"></div>
+      <div class="form-group"><label>Participant Rating</label>
+        <select id="j1p-rating"><option value="">— Select —</option>${['Excellent','Good','Average','Poor'].map(s=>`<option value="${s}" ${jp.participant_rating===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Attendance</label>
+        <select id="j1p-attendance"><option value="">— Select —</option>${['Attended','Absent','Pending'].map(s=>`<option value="${s}" ${jp.attendance===s?'selected':''}>${s}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Program Placement</div>
+    <div class="form-row">
+      <div class="form-group"><label>Hosting Company</label><input type="text" id="j1p-hosting" value="${esc(jp.hosting_company||'')}"></div>
+      <div class="form-group"><label>Selected Job</label><input type="text" id="j1p-job" value="${esc(jp.selected_job||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Occupational Fields</label><input type="text" id="j1p-occ-fields" value="${esc(jp.occupational_fields||'')}"></div>
+      <div class="form-group"><label>Processing Sponsor</label><input type="text" id="j1p-sponsor" value="${esc(jp.processing_sponsor||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Ticket Pricing ($)</label><input type="number" step="0.01" id="j1p-ticket" value="${jp.ticket_pricing!=null?jp.ticket_pricing:''}"></div>
+      <div class="form-group"><label>Program Start</label><input type="date" id="j1p-prog-start" value="${esc(jp.program_start_date||'')}"></div>
+      <div class="form-group"><label>Program End</label><input type="date" id="j1p-prog-end" value="${esc(jp.program_end_date||'')}"></div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Investment</div>
+    <div class="form-row">
+      <div class="form-group"><label>Total Paid ($)</label><input type="number" step="0.01" id="j1p-total-inv" value="${jp.total_paid_investment!=null?jp.total_paid_investment:''}"></div>
+      <div class="form-group"><label>Stage 1 ($)</label><input type="number" step="0.01" id="j1p-stage1" value="${jp.stage1_investment!=null?jp.stage1_investment:''}"></div>
+      <div class="form-group"><label>Stage 2 ($)</label><input type="number" step="0.01" id="j1p-stage2" value="${jp.stage2_investment!=null?jp.stage2_investment:''}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Stage 3 ($)</label><input type="number" step="0.01" id="j1p-stage3" value="${jp.stage3_investment!=null?jp.stage3_investment:''}"></div>
+      <div class="form-group"><label>Stage 4 ($)</label><input type="number" step="0.01" id="j1p-stage4" value="${jp.stage4_investment!=null?jp.stage4_investment:''}"></div>
+    </div>
+    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Housing</div>
+    <div class="form-row">
+      <div class="form-group"><label>Landlord</label><input type="text" id="j1p-landlord" value="${esc(jp.housing_landlord||'')}"></div>
+      <div class="form-group"><label>Sponsor Invoice Status</label><input type="text" id="j1p-invoice-status" value="${esc(jp.program_sponsor_invoice_status||'')}"></div>
+    </div>
+    <div class="form-group"><label>Housing Address</label><input type="text" id="j1p-housing-addr" value="${esc(jp.housing_address||'')}"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveJ1Profile('${esc(candidateId)}')">Save</button>
+    </div>`, 'modal-lg');
+}
+
+async function saveJ1Profile(candidateId) {
+  const eligibleRaw = document.getElementById('j1p-eligible').value;
+  const eligiblePrograms = eligibleRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const n = id => { const v = document.getElementById(id).value; return v !== '' ? Number(v) : undefined; };
+  const body = {
+    j1ApplicationStatus:         document.getElementById('j1p-app-status').value       || undefined,
+    j1ProgramSources:            document.getElementById('j1p-sources').value.trim()   || undefined,
+    ctiUsaReview:                document.getElementById('j1p-cti-review').value.trim()|| undefined,
+    eligiblePrograms:            eligiblePrograms.length ? eligiblePrograms : undefined,
+    consultationCallDate:        document.getElementById('j1p-call-date').value         || undefined,
+    consultationCallBy:          document.getElementById('j1p-call-by').value.trim()    || undefined,
+    consultationCallStatus:      document.getElementById('j1p-call-status').value       || undefined,
+    consultationCallNotes:       document.getElementById('j1p-call-notes').value.trim() || undefined,
+    englishAssessment:           document.getElementById('j1p-english').value.trim()    || undefined,
+    participantRating:           document.getElementById('j1p-rating').value            || undefined,
+    attendance:                  document.getElementById('j1p-attendance').value        || undefined,
+    hostingCompany:              document.getElementById('j1p-hosting').value.trim()    || undefined,
+    selectedJob:                 document.getElementById('j1p-job').value.trim()        || undefined,
+    occupationalFields:          document.getElementById('j1p-occ-fields').value.trim()|| undefined,
+    processingSponsor:           document.getElementById('j1p-sponsor').value.trim()    || undefined,
+    ticketPricing:               n('j1p-ticket'),
+    programStartDate:            document.getElementById('j1p-prog-start').value        || undefined,
+    programEndDate:              document.getElementById('j1p-prog-end').value          || undefined,
+    totalPaidInvestment:         n('j1p-total-inv'),
+    stage1Investment:            n('j1p-stage1'),
+    stage2Investment:            n('j1p-stage2'),
+    stage3Investment:            n('j1p-stage3'),
+    stage4Investment:            n('j1p-stage4'),
+    housingLandlord:             document.getElementById('j1p-landlord').value.trim()       || undefined,
+    housingAddress:              document.getElementById('j1p-housing-addr').value.trim()   || undefined,
+    programSponsorInvoiceStatus: document.getElementById('j1p-invoice-status').value.trim() || undefined,
+  };
+  try {
+    await api('PUT', `/candidates/${candidateId}/j1-profile`, body);
+    closeModal(); toast('J1 profile updated', 'success');
+    openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
@@ -1432,42 +1794,57 @@ function pipelineBadge(p) {
 
 function statusBadge(s) {
   const map = {
-    NEW_SUBMISSION:'badge-new', SCREENING:'badge-active', DUPLICATE_FLAGGED:'badge-hold',
-    OWI_INVITED:'badge-active', OWI_SUBMITTED:'badge-active', TWI_SCHEDULED:'badge-active',
-    TWI_COMPLETED:'badge-active', BOOKING_INVITED:'badge-active', BOOKING_CONFIRMED:'badge-active',
-    BOOKING_COMPLETED:'badge-active', PRE_QUAL_APPROVED:'badge-approved',
-    PRE_QUAL_REJECTED:'badge-rejected', ENDORSED:'badge-active', CLIENT_APPROVED:'badge-approved',
-    ONBOARDING:'badge-active', DOCUMENT_REVIEW:'badge-hold', COMPLIANCE_HOLD:'badge-hold',
-    DEPLOYED:'badge-deployed', WITHDRAWN:'badge-rejected', ARCHIVED:'badge-new'
+    NEW_SUBMISSION:'badge-new',
+    IN_REVIEW:'badge-active', AVAILABLE:'badge-active', ENGAGED:'badge-active',
+    OFFERED:'badge-approved', HIRED:'badge-deployed',
+    CONSULTATION:'badge-active', INTERVIEW:'badge-active',
+    VISA_PROCESSING:'badge-hold', USA_ONBOARD:'badge-approved', COMPLETED:'badge-deployed',
+    SHORTLISTED:'badge-active',
+    REJECTED:'badge-rejected', WITHDRAWN:'badge-rejected', ARCHIVED:'badge-new'
   };
   return `<span class="badge ${map[s]||'badge-new'}">${statusLabel(s)}</span>`;
 }
 
 function statusLabel(s) {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+  const labels = {
+    NEW_SUBMISSION:'New Submission', IN_REVIEW:'In Review', AVAILABLE:'Available',
+    ENGAGED:'Engaged', OFFERED:'Offered', HIRED:'Hired', REJECTED:'Rejected',
+    CONSULTATION:'Consultation', INTERVIEW:'Interview',
+    VISA_PROCESSING:'Visa Processing', USA_ONBOARD:'USA Onboard', COMPLETED:'Completed',
+    SHORTLISTED:'Shortlisted', ARCHIVED:'Archived', WITHDRAWN:'Withdrawn'
+  };
+  return labels[s] || s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
 }
 
-function nextStages(current) {
-  const map = {
-    NEW_SUBMISSION:['SCREENING','ARCHIVED'],
-    SCREENING:['OWI_INVITED','TWI_SCHEDULED','DUPLICATE_FLAGGED','ARCHIVED'],
-    DUPLICATE_FLAGGED:['SCREENING','ARCHIVED'],
-    OWI_INVITED:['OWI_SUBMITTED','ARCHIVED'],
-    OWI_SUBMITTED:['TWI_SCHEDULED','ARCHIVED'],
-    TWI_SCHEDULED:['TWI_COMPLETED','ARCHIVED'],
-    TWI_COMPLETED:['BOOKING_INVITED','PRE_QUAL_APPROVED','ARCHIVED'],
-    BOOKING_INVITED:['BOOKING_CONFIRMED','ARCHIVED'],
-    BOOKING_CONFIRMED:['BOOKING_COMPLETED'],
-    BOOKING_COMPLETED:['PRE_QUAL_APPROVED','PRE_QUAL_REJECTED'],
-    PRE_QUAL_APPROVED:['ENDORSED','ARCHIVED'],
-    PRE_QUAL_REJECTED:['SCREENING','ARCHIVED'],
-    ENDORSED:['CLIENT_APPROVED','ARCHIVED'],
-    CLIENT_APPROVED:['ONBOARDING'],
-    ONBOARDING:['DOCUMENT_REVIEW','COMPLIANCE_HOLD'],
-    DOCUMENT_REVIEW:['DEPLOYED','COMPLIANCE_HOLD'],
-    COMPLIANCE_HOLD:['DOCUMENT_REVIEW'],
+function nextStages(current, pipeline) {
+  const maps = {
+    SEA_BASED: {
+      NEW_SUBMISSION: ['IN_REVIEW', 'REJECTED', 'ARCHIVED'],
+      IN_REVIEW:      ['AVAILABLE', 'REJECTED', 'ARCHIVED'],
+      AVAILABLE:      ['ENGAGED',   'REJECTED', 'ARCHIVED'],
+      ENGAGED:        ['OFFERED',   'REJECTED', 'ARCHIVED'],
+      OFFERED:        ['HIRED',     'REJECTED'],
+      HIRED: [], REJECTED: ['IN_REVIEW', 'ARCHIVED']
+    },
+    J1_PROGRAM: {
+      NEW_SUBMISSION:  ['CONSULTATION',    'ARCHIVED'],
+      CONSULTATION:    ['INTERVIEW',       'ARCHIVED'],
+      INTERVIEW:       ['VISA_PROCESSING', 'ARCHIVED'],
+      VISA_PROCESSING: ['USA_ONBOARD',     'ARCHIVED'],
+      USA_ONBOARD:     ['COMPLETED',       'ARCHIVED'],
+      COMPLETED: []
+    },
+    LAND_BASED: {
+      NEW_SUBMISSION: ['IN_REVIEW',   'REJECTED', 'ARCHIVED'],
+      IN_REVIEW:      ['SHORTLISTED', 'REJECTED', 'ARCHIVED'],
+      SHORTLISTED:    ['INTERVIEW',   'REJECTED', 'ARCHIVED'],
+      INTERVIEW:      ['OFFERED',     'REJECTED'],
+      OFFERED:        ['HIRED',       'REJECTED'],
+      HIRED: [], REJECTED: ['IN_REVIEW', 'ARCHIVED']
+    }
   };
-  return map[current] || [];
+  const p = pipeline || 'SEA_BASED';
+  return (maps[p] || maps.SEA_BASED)[current] || [];
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
@@ -1779,8 +2156,37 @@ function openEditCandidateModal(candidateId) {
       <div class="form-group"><label>Nationality</label><input type="text" id="ec-nat" value="${esc(c.nationality||'')}"></div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label>Gender</label>
+        <select id="ec-gender">
+          <option value="">— Select —</option>
+          <option value="Male" ${c.gender==='Male'?'selected':''}>Male</option>
+          <option value="Female" ${c.gender==='Female'?'selected':''}>Female</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Marital Status</label>
+        <select id="ec-marital">
+          <option value="">— Select —</option>
+          ${['Single','Married','Divorced','Widowed'].map(s=>`<option value="${s}" ${c.marital_status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
       <div class="form-group"><label>Date of Birth</label><input type="date" id="ec-dob" value="${esc(c.date_of_birth||'')}"></div>
-      <div class="form-group"><label>Years Experience</label><input type="number" id="ec-exp" min="0" value="${esc(c.years_experience||'')}"></div>
+      <div class="form-group"><label>Language Proficiency</label><input type="text" id="ec-lang" value="${esc(c.language_proficiency||'')}" placeholder="e.g. English, Japanese"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>CTI Office</label>
+        <select id="ec-cti-office">
+          <option value="">— Select Office —</option>
+          ${['CTI Indonesia','CTI Group Myanmar','CTI Philippines','CTI Group USA'].map(o=>`<option value="${o}" ${c.cti_office===o?'selected':''}>${o}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Employment Status</label>
+        <select id="ec-emp-status">
+          <option value="New" ${c.employment_status==='New'?'selected':''}>New</option>
+          <option value="Repeater" ${c.employment_status==='Repeater'?'selected':''}>Repeater</option>
+        </select>
+      </div>
     </div>
     <div class="form-group"><label>Internal Notes</label><textarea id="ec-notes" rows="3" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(c.internal_notes||'')}</textarea></div>
     <div class="modal-footer">
@@ -1791,13 +2197,18 @@ function openEditCandidateModal(candidateId) {
 
 async function saveEditCandidate(candidateId) {
   const body = {
-    firstName:    document.getElementById('ec-fn').value.trim()    || undefined,
-    lastName:     document.getElementById('ec-ln').value.trim()    || undefined,
-    middleName:   document.getElementById('ec-mn').value.trim()    || undefined,
-    phone:        document.getElementById('ec-phone').value.trim() || undefined,
-    nationality:  document.getElementById('ec-nat').value.trim()   || undefined,
-    dateOfBirth:  document.getElementById('ec-dob').value          || undefined,
-    internalNotes: document.getElementById('ec-notes').value.trim() || undefined,
+    firstName:          document.getElementById('ec-fn').value.trim()         || undefined,
+    lastName:           document.getElementById('ec-ln').value.trim()         || undefined,
+    middleName:         document.getElementById('ec-mn').value.trim()         || undefined,
+    phone:              document.getElementById('ec-phone').value.trim()      || undefined,
+    nationality:        document.getElementById('ec-nat').value.trim()        || undefined,
+    gender:             document.getElementById('ec-gender').value            || undefined,
+    maritalStatus:      document.getElementById('ec-marital').value           || undefined,
+    dateOfBirth:        document.getElementById('ec-dob').value               || undefined,
+    languageProficiency: document.getElementById('ec-lang').value.trim()      || undefined,
+    ctiOffice:          document.getElementById('ec-cti-office').value        || undefined,
+    employmentStatus:   document.getElementById('ec-emp-status').value        || undefined,
+    internalNotes:      document.getElementById('ec-notes').value.trim()      || undefined,
   };
   // Remove undefined keys
   Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);

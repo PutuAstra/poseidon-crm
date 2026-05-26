@@ -342,7 +342,7 @@ R.post('/api/v1/auth/reset-password', async (req, env) => {
 
 R.post('/api/v1/candidates', async (req, env) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { firstName, lastName, email, phone, pipeline, positionApplied, nationality, internalNotes } = await req.json();
+  const { firstName, lastName, email, phone, pipeline, positionApplied, nationality, gender, ctiOffice, employmentStatus, origin, internalNotes } = await req.json();
   if (!firstName || !lastName || !email || !pipeline) return err('firstName, lastName, email, pipeline required');
   const VALID_PIPELINES = ['SEA_BASED', 'LAND_BASED', 'J1_PROGRAM'];
   if (!VALID_PIPELINES.includes(pipeline)) return err('Invalid pipeline');
@@ -350,12 +350,11 @@ R.post('/api/v1/candidates', async (req, env) => {
   if (existing) return err('A candidate with this email already exists', 409);
   const id = cuid();
   await env.DB.batch([
-    env.DB.prepare('INSERT INTO candidates(id,first_name,last_name,email,phone,pipeline,status,assigned_recruiter_id,internal_notes)VALUES(?,?,?,?,?,?,\'NEW_SUBMISSION\',?,?)')
-      .bind(id, firstName, lastName, email, phone || null, pipeline, u.id, internalNotes || null),
+    env.DB.prepare('INSERT INTO candidates(id,first_name,last_name,email,phone,pipeline,status,position_applied,nationality,gender,cti_office,employment_status,origin,assigned_recruiter_id,internal_notes)VALUES(?,?,?,?,?,?,\'NEW_SUBMISSION\',?,?,?,?,?,?,?,?)')
+      .bind(id, firstName, lastName, email, phone || null, pipeline, positionApplied || null, nationality || null, gender || null, ctiOffice || null, employmentStatus || 'New', origin || 'Applied', u.id, internalNotes || null),
     env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,NULL,'NEW_SUBMISSION',?,'Manually created')")
       .bind(cuid(), id, u.id)
   ]);
-  if (positionApplied) await env.DB.prepare("UPDATE candidates SET position_applied=? WHERE id=?").bind(positionApplied, id).run();
   return json({ candidateId: id }, 201);
 });
 
@@ -404,19 +403,21 @@ R.get('/api/v1/candidates/:id', async (req, env, ctx, p) => {
   const c = await env.DB.prepare('SELECT*FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   if (u.role === 'RECRUITER' && c.assigned_recruiter_id !== u.id) return err('Forbidden', 403);
-  const [ci, ce, docs, hist] = await Promise.all([
+  const [ci, ce, docs, hist, seaProf, j1Prof] = await Promise.all([
     env.DB.prepare('SELECT ci.*,i.title,i.type FROM candidate_interviews ci JOIN interviews i ON ci.interview_id=i.id WHERE ci.candidate_id=? ORDER BY ci.invited_at DESC').bind(p.id).all(),
     env.DB.prepare('SELECT ce.*,cl.name client_name,cl.type client_type FROM client_endorsements ce JOIN clients cl ON ce.client_id=cl.id WHERE ce.candidate_id=?').bind(p.id).all(),
     env.DB.prepare('SELECT*FROM documents WHERE candidate_id=? ORDER BY created_at DESC').bind(p.id).all(),
-    env.DB.prepare('SELECT h.*,u2.first_name fn,u2.last_name ln FROM pipeline_stage_history h LEFT JOIN users u2 ON h.triggered_by_id=u2.id WHERE h.candidate_id=? ORDER BY h.created_at DESC LIMIT 30').bind(p.id).all()
+    env.DB.prepare('SELECT h.*,u2.first_name fn,u2.last_name ln FROM pipeline_stage_history h LEFT JOIN users u2 ON h.triggered_by_id=u2.id WHERE h.candidate_id=? ORDER BY h.created_at DESC LIMIT 30').bind(p.id).all(),
+    env.DB.prepare('SELECT*FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first().catch(() => null),
+    env.DB.prepare('SELECT*FROM j1_profiles WHERE candidate_id=?').bind(p.id).first().catch(() => null)
   ]);
-  return json({ ...c, interviews: ci.results, endorsements: ce.results, documents: docs.results, stageHistory: hist.results });
+  return json({ ...c, interviews: ci.results, endorsements: ce.results, documents: docs.results, stageHistory: hist.results, seafarerProfile: seaProf || null, j1Profile: j1Prof || null });
 });
 
 R.patch('/api/v1/candidates/:id', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
   const b = await req.json();
-  const map = { first_name: b.firstName, last_name: b.lastName, middle_name: b.middleName, phone: b.phone, date_of_birth: b.dateOfBirth, nationality: b.nationality, address: b.address ? JSON.stringify(b.address) : undefined, internal_notes: b.internalNotes, tags: b.tags ? JSON.stringify(b.tags) : undefined };
+  const map = { first_name: b.firstName, last_name: b.lastName, middle_name: b.middleName, phone: b.phone, date_of_birth: b.dateOfBirth, nationality: b.nationality, gender: b.gender, marital_status: b.maritalStatus, language_proficiency: b.languageProficiency, cti_office: b.ctiOffice, employment_status: b.employmentStatus, onboarding_status: b.onboardingStatus, seafarers_status: b.seafarersStatus, origin: b.origin, rating: b.rating, position_applied: b.positionApplied, address: b.address ? JSON.stringify(b.address) : undefined, internal_notes: b.internalNotes, tags: b.tags ? JSON.stringify(b.tags) : undefined };
   const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
   if (!Object.keys(upd).length) return err('No valid fields');
   upd.updated_at = new Date().toISOString();
@@ -431,34 +432,45 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
   if (!toStatus) return err('toStatus required');
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
-  const ALLOWED = {
-    NEW_SUBMISSION: ['SCREENING', 'ARCHIVED', 'WITHDRAWN'],
-    SCREENING: ['DUPLICATE_FLAGGED', 'OWI_INVITED', 'TWI_SCHEDULED', 'ARCHIVED', 'WITHDRAWN'],
-    DUPLICATE_FLAGGED: ['SCREENING', 'ARCHIVED', 'WITHDRAWN'],
-    OWI_INVITED: ['OWI_SUBMITTED', 'ARCHIVED', 'WITHDRAWN'],
-    OWI_SUBMITTED: ['TWI_SCHEDULED', 'ARCHIVED', 'WITHDRAWN'],
-    TWI_SCHEDULED: ['TWI_COMPLETED', 'ARCHIVED', 'WITHDRAWN'],
-    TWI_COMPLETED: ['BOOKING_INVITED', 'PRE_QUAL_APPROVED', 'ARCHIVED', 'WITHDRAWN'],
-    BOOKING_INVITED: ['BOOKING_CONFIRMED', 'ARCHIVED', 'WITHDRAWN'],
-    BOOKING_CONFIRMED: ['BOOKING_COMPLETED', 'ARCHIVED', 'WITHDRAWN'],
-    BOOKING_COMPLETED: ['PRE_QUAL_APPROVED', 'PRE_QUAL_REJECTED', 'WITHDRAWN'],
-    PRE_QUAL_APPROVED: ['ENDORSED', 'ARCHIVED', 'WITHDRAWN'],
-    PRE_QUAL_REJECTED: ['ARCHIVED', 'WITHDRAWN', 'SCREENING'],
-    ENDORSED: ['CLIENT_APPROVED', 'ARCHIVED', 'WITHDRAWN'],
-    CLIENT_APPROVED: ['ONBOARDING', 'WITHDRAWN'],
-    ONBOARDING: ['DOCUMENT_REVIEW', 'COMPLIANCE_HOLD', 'WITHDRAWN'],
-    DOCUMENT_REVIEW: ['COMPLIANCE_HOLD', 'DEPLOYED', 'WITHDRAWN'],
-    COMPLIANCE_HOLD: ['DOCUMENT_REVIEW', 'WITHDRAWN'],
-    DEPLOYED: ['WITHDRAWN'],
-    WITHDRAWN: [], ARCHIVED: []
+  const PIPELINE_STAGES = {
+    SEA_BASED: {
+      NEW_SUBMISSION: ['IN_REVIEW', 'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      IN_REVIEW:      ['AVAILABLE', 'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      AVAILABLE:      ['ENGAGED',   'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      ENGAGED:        ['OFFERED',   'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      OFFERED:        ['HIRED',     'REJECTED', 'WITHDRAWN'],
+      HIRED:          ['WITHDRAWN'],
+      REJECTED:       ['IN_REVIEW', 'ARCHIVED'],
+      ARCHIVED: [], WITHDRAWN: []
+    },
+    J1_PROGRAM: {
+      NEW_SUBMISSION:  ['CONSULTATION',    'ARCHIVED', 'WITHDRAWN'],
+      CONSULTATION:    ['INTERVIEW',       'ARCHIVED', 'WITHDRAWN'],
+      INTERVIEW:       ['VISA_PROCESSING', 'ARCHIVED', 'WITHDRAWN'],
+      VISA_PROCESSING: ['USA_ONBOARD',     'ARCHIVED', 'WITHDRAWN'],
+      USA_ONBOARD:     ['COMPLETED',       'ARCHIVED', 'WITHDRAWN'],
+      COMPLETED:       ['ARCHIVED'],
+      ARCHIVED: [], WITHDRAWN: []
+    },
+    LAND_BASED: {
+      NEW_SUBMISSION: ['IN_REVIEW',    'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      IN_REVIEW:      ['SHORTLISTED',  'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      SHORTLISTED:    ['INTERVIEW',    'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
+      INTERVIEW:      ['OFFERED',      'REJECTED', 'WITHDRAWN'],
+      OFFERED:        ['HIRED',        'REJECTED', 'WITHDRAWN'],
+      HIRED:          ['WITHDRAWN'],
+      REJECTED:       ['IN_REVIEW', 'ARCHIVED'],
+      ARCHIVED: [], WITHDRAWN: []
+    }
   };
-  if (!ALLOWED[c.status]?.includes(toStatus)) return err(`Invalid transition: ${c.status} → ${toStatus}`, 422);
+  const stageMap = PIPELINE_STAGES[c.pipeline] || PIPELINE_STAGES.SEA_BASED;
+  if (!stageMap[c.status]?.includes(toStatus)) return err(`Invalid transition: ${c.status} → ${toStatus}`, 422);
   await env.DB.batch([
     env.DB.prepare("UPDATE candidates SET status=?,updated_at=datetime('now')WHERE id=?").bind(toStatus, p.id),
     env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)')
       .bind(cuid(), p.id, c.status, toStatus, u.id, reason || null, metadata ? JSON.stringify(metadata) : null)
   ]);
-  if (toStatus === 'CLIENT_APPROVED') await provisionPortal(env, p.id);
+  if (toStatus === 'HIRED') await provisionPortal(env, p.id);
   return json({ success: true, fromStatus: c.status, toStatus });
 });
 
@@ -1031,6 +1043,109 @@ R.put('/api/v1/candidates/:id/j1-plan', async (req, env, ctx, p) => {
   } else {
     const id = cuid(); const keys = ['id', 'candidate_id', ...Object.keys(upd)];
     await env.DB.prepare(`INSERT INTO j1_training_plans(${keys.join()})VALUES(${keys.map(() => '?').join()})`).bind(id, p.id, ...Object.values(upd)).run();
+  }
+  return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SEAFARER PROFILES
+// ═════════════════════════════════════════════════════════════════════════════
+
+R.get('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const profile = await env.DB.prepare('SELECT*FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first();
+  return json(profile || {});
+});
+
+R.put('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json();
+  const cols = {
+    department:                b.department,
+    position_hired:            b.positionHired,
+    cruise_line:               b.cruiseLine,
+    joining_ship:              b.joiningShip,
+    sign_on_date:              b.signOnDate,
+    sign_off_date:             b.signOffDate,
+    sign_on_port:              b.signOnPort,
+    gateway_airport:           b.gatewayAirport,
+    marlins_code:              b.marlinsCode,
+    marlins_score:             b.marlinsScore !== undefined ? Number(b.marlinsScore) : undefined,
+    emergency_contact_name:    b.emergencyContactName,
+    emergency_contact_number:  b.emergencyContactNumber,
+    emergency_relationship:    b.emergencyRelationship,
+    emergency_contact_city:    b.emergencyContactCity,
+    emergency_contact_address: b.emergencyContactAddress,
+    address_street:            b.addressStreet,
+    address_postal_code:       b.addressPostalCode,
+    address_city:              b.addressCity,
+    address_province:          b.addressProvince,
+    address_country:           b.addressCountry
+  };
+  const upd = Object.fromEntries(Object.entries(cols).filter(([, v]) => v !== undefined));
+  const ex = await env.DB.prepare('SELECT id FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first();
+  if (ex) {
+    upd.updated_at = new Date().toISOString();
+    if (Object.keys(upd).length) await env.DB.prepare(`UPDATE seafarer_profiles SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE candidate_id=?`).bind(...Object.values(upd), p.id).run();
+  } else {
+    const id = cuid(); const keys = ['id', 'candidate_id', ...Object.keys(upd)];
+    await env.DB.prepare(`INSERT INTO seafarer_profiles(${keys.join()})VALUES(${keys.map(() => '?').join()})`).bind(id, p.id, ...Object.values(upd)).run();
+  }
+  return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// J1 PROFILES
+// ═════════════════════════════════════════════════════════════════════════════
+
+R.get('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const profile = await env.DB.prepare('SELECT*FROM j1_profiles WHERE candidate_id=?').bind(p.id).first();
+  return json(profile || {});
+});
+
+R.put('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json();
+  const cols = {
+    j1_application_status:          b.j1ApplicationStatus,
+    j1_program_sources:             b.j1ProgramSources,
+    cti_usa_review:                 b.ctiUsaReview,
+    eligible_programs:              b.eligiblePrograms !== undefined ? (Array.isArray(b.eligiblePrograms) ? JSON.stringify(b.eligiblePrograms) : b.eligiblePrograms) : undefined,
+    consultation_call_date:         b.consultationCallDate,
+    consultation_call_by:           b.consultationCallBy,
+    consultation_call_notes:        b.consultationCallNotes,
+    consultation_call_status:       b.consultationCallStatus,
+    english_assessment:             b.englishAssessment,
+    participant_rating:             b.participantRating,
+    attendance:                     b.attendance,
+    hosting_company:                b.hostingCompany,
+    selected_job:                   b.selectedJob,
+    occupational_fields:            b.occupationalFields,
+    ticket_pricing:                 b.ticketPricing !== undefined ? Number(b.ticketPricing) : undefined,
+    program_start_date:             b.programStartDate,
+    program_end_date:               b.programEndDate,
+    processing_sponsor:             b.processingSponsor,
+    total_paid_investment:          b.totalPaidInvestment !== undefined ? Number(b.totalPaidInvestment) : undefined,
+    stage1_investment:              b.stage1Investment !== undefined ? Number(b.stage1Investment) : undefined,
+    stage2_investment:              b.stage2Investment !== undefined ? Number(b.stage2Investment) : undefined,
+    stage3_investment:              b.stage3Investment !== undefined ? Number(b.stage3Investment) : undefined,
+    stage4_investment:              b.stage4Investment !== undefined ? Number(b.stage4Investment) : undefined,
+    housing_landlord:               b.housingLandlord,
+    housing_address:                b.housingAddress,
+    program_sponsor_invoice_status: b.programSponsorInvoiceStatus,
+    application_withdrawal_reason:  b.applicationWithdrawalReason,
+    withdrawal_date:                b.withdrawalDate,
+    archive_reason:                 b.archiveReason
+  };
+  const upd = Object.fromEntries(Object.entries(cols).filter(([, v]) => v !== undefined));
+  const ex = await env.DB.prepare('SELECT id FROM j1_profiles WHERE candidate_id=?').bind(p.id).first();
+  if (ex) {
+    upd.updated_at = new Date().toISOString();
+    if (Object.keys(upd).length) await env.DB.prepare(`UPDATE j1_profiles SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE candidate_id=?`).bind(...Object.values(upd), p.id).run();
+  } else {
+    const id = cuid(); const keys = ['id', 'candidate_id', ...Object.keys(upd)];
+    await env.DB.prepare(`INSERT INTO j1_profiles(${keys.join()})VALUES(${keys.map(() => '?').join()})`).bind(id, p.id, ...Object.values(upd)).run();
   }
   return json({ success: true });
 });
