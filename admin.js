@@ -1933,16 +1933,16 @@ function _buildSfSidebar() {
   const n = config.sections.length;
   return config.sections.map((s, i) => {
     const active = s.id === _sfCurrentSection;
-    return `<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;border-radius:6px;padding:4px 6px;cursor:pointer;${active?'background:var(--navy-mid);':''}"
+    return `<div id="sf-sec-row-${esc(s.id)}" style="display:flex;align-items:center;gap:3px;margin-bottom:2px;border-radius:6px;padding:4px 6px;cursor:pointer;${active?'background:var(--navy-mid);':''}"
       onclick="selectSfSection('${esc(s.id)}')">
       <input type="text" value="${esc(s.label)}"
-        onclick="event.stopPropagation();selectSfSection('${esc(s.id)}')"
+        onclick="event.stopPropagation()"
+        onfocus="selectSfSection('${esc(s.id)}');this.style.borderBottomColor='var(--blue)';this.style.cursor='text'"
+        onblur="this.style.borderBottomColor='transparent';this.style.cursor='pointer'"
         onchange="sfSecRename('${esc(s.id)}',this.value)"
         style="flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid transparent;
           color:${active?'var(--text)':'var(--text-muted)'};font-size:13px;${active?'font-weight:600;':''}
-          outline:none;cursor:pointer;"
-        onfocus="this.style.borderBottomColor='var(--blue)';this.style.cursor='text'"
-        onblur="this.style.borderBottomColor='transparent';this.style.cursor='pointer'">
+          outline:none;cursor:pointer;">
       <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sfSecMoveUp('${esc(s.id)}')"
           style="padding:1px 5px;font-size:10px;line-height:1.3;min-width:0;${i===0?'opacity:.2;pointer-events:none;':''}">▲</button>
@@ -1951,6 +1951,20 @@ function _buildSfSidebar() {
       </div>
     </div>`;
   }).join('');
+}
+
+function _refreshSfSidebarStyles() {
+  STATE._sfEditConfig.sections.forEach(s => {
+    const row = document.getElementById(`sf-sec-row-${s.id}`);
+    if (!row) return;
+    const active = s.id === _sfCurrentSection;
+    row.style.background = active ? 'var(--navy-mid)' : '';
+    const inp = row.querySelector('input[type="text"]');
+    if (inp && document.activeElement !== inp) {
+      inp.style.color = active ? 'var(--text)' : 'var(--text-muted)';
+      inp.style.fontWeight = active ? '600' : '';
+    }
+  });
 }
 
 function _buildSfSectionRows(sectionId) {
@@ -2006,9 +2020,9 @@ function _buildSfSectionRows(sectionId) {
 }
 
 function selectSfSection(sectionId) {
+  if (_sfCurrentSection === sectionId) return;
   _sfCurrentSection = sectionId;
-  const sidebar = document.getElementById('sf-sections-sidebar');
-  if (sidebar) sidebar.innerHTML = _buildSfSidebar();
+  _refreshSfSidebarStyles();
   const content = document.getElementById('sf-fields-content');
   if (content) content.innerHTML = _buildSfSectionRows(sectionId);
 }
