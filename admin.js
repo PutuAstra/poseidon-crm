@@ -1282,14 +1282,14 @@ function openAddCandidateModal() {
       <select id="nc-pipeline"><option value="SEA_BASED">Sea-Based</option><option value="LAND_BASED">Land-Based</option><option value="J1_PROGRAM">J1 Program</option></select>
     </div>
     <div style="border-top:1px solid var(--border);margin:16px 0 12px;padding-top:14px;">
-      <p style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 12px;">Documents <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional — can be added later)</span></p>
+      <p style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 12px;">Documents</p>
       <div class="form-row">
         <div class="form-group">
-          <label>Resume / CV</label>
+          <label>Resume / CV <span style="color:var(--danger)">*</span></label>
           <input type="file" id="nc-resume" accept=".pdf,.doc,.docx" style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem;width:100%;cursor:pointer;">
         </div>
         <div class="form-group">
-          <label>Reference Letter</label>
+          <label>Reference Letter <span style="color:var(--danger)">*</span></label>
           <input type="file" id="nc-refletter" accept=".pdf,.doc,.docx" style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem;width:100%;cursor:pointer;">
         </div>
       </div>
@@ -1312,6 +1312,8 @@ async function createCandidateManual() {
   const refLetterFile   = document.getElementById('nc-refletter')?.files[0];
 
   if (!firstName || !lastName || !email) { toast('First name, last name, and email are required', 'error'); return; }
+  if (!resumeFile)    { toast('Resume / CV is required', 'error'); return; }
+  if (!refLetterFile) { toast('Reference Letter is required', 'error'); return; }
 
   const btn = document.getElementById('nc-submit-btn');
   btn.disabled = true; btn.textContent = 'Creating…';
