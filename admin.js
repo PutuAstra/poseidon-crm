@@ -286,11 +286,7 @@ function bootApp() {
   document.getElementById('user-name').textContent = `${u.firstName} ${u.lastName}`;
   document.getElementById('user-role').textContent = u.role.replace(/_/g, ' ');
   document.getElementById('user-avatar').textContent = (u.firstName[0] + u.lastName[0]).toUpperCase();
-  if (!['SUPER_ADMIN', 'ADMIN'].includes(u.role)) {
-    document.getElementById('admin-only-section').style.display = 'none';
-    document.getElementById('nav-users').style.display = 'none';
-    document.getElementById('nav-settings').style.display = 'none';
-  }
+  // Role-based visibility is now handled inside openProgSwitcher() popup rendering
   loadClientsList();
   loadRecruitersList();
   const savedView = localStorage.getItem('poseidon_view') || 'dashboard';
@@ -427,25 +423,66 @@ function _markSidebarActive(kind, id) {
   }
 }
 
+// ── Per-workspace state cache (preserves last active stage/tool per workspace) ──
+const _workspaceCache = {};
+
 // ── Workspace switcher popup ──────────────────────────────────────────────────
 
 function openProgSwitcher() {
   const panel    = document.getElementById('prog-sub-panel');
   const backdrop = document.getElementById('prog-sub-backdrop');
+  const u        = STATE.user;
+  const isAdmin  = ['SUPER_ADMIN', 'ADMIN'].includes(u?.role);
+
+  // Brand header
   document.getElementById('prog-sub-header').innerHTML = `
-    <svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
-    </svg>
-    <span>Switch Workspace</span>`;
-  document.getElementById('prog-sub-body').innerHTML =
-    `<div style="padding:8px 0">${Object.entries(PROGRAM_META).map(([key, pm]) => `
+    <img src="logo-cti.png" style="width:26px;height:26px;border-radius:4px;object-fit:contain;background:#fff;padding:2px;flex-shrink:0" alt="">
+    <div>
+      <div style="font-weight:700;font-size:13px;color:var(--text);letter-spacing:.04em;line-height:1.2">POSEIDON</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:1px">CTI Group CRM</div>
+    </div>`;
+
+  // Two-section body
+  document.getElementById('prog-sub-body').innerHTML = `
+    <div class="popup-section-label">Workspace</div>
+
+    ${Object.entries(PROGRAM_META).map(([key, pm]) => `
       <div class="prog-popup-item${_navProgram === key ? ' active' : ''}" data-prog="${key}" onclick="switchProgram('${key}')">
-        <span style="font-size:18px;line-height:1;flex-shrink:0">${pm.icon}</span>
+        <span style="font-size:17px;line-height:1;flex-shrink:0">${pm.icon}</span>
         <span>${pm.label}</span>
         ${_navProgram === key
-          ? `<svg style="width:12px;height:12px;margin-left:auto;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`
+          ? `<svg style="width:11px;height:11px;margin-left:auto;flex-shrink:0;opacity:.9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`
           : ''}
-      </div>`).join('')}</div>`;
+      </div>`).join('')}
+
+    <div class="popup-section-label" style="margin-top:6px">General</div>
+
+    <div class="popup-general-item" onclick="closeProgSwitcher();showView('dashboard')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      <span>Dashboard</span>
+    </div>
+    <div class="popup-general-item" onclick="closeProgSwitcher();showView('clients')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Clients</span>
+    </div>
+    <div class="popup-general-item" onclick="closeProgSwitcher();showView('interviews')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+      <span>Interview Setup</span>
+    </div>
+    <div class="popup-general-item" onclick="closeProgSwitcher();showView('forms')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      <span>Form Builder</span>
+    </div>
+    ${isAdmin ? `
+    <div class="popup-general-item" onclick="closeProgSwitcher();showView('users')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Users</span>
+    </div>
+    <div class="popup-general-item" onclick="closeProgSwitcher();showView('settings')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>General Settings</span>
+    </div>` : ''}`;
+
   panel.classList.add('open');
   backdrop.classList.add('show');
 }
@@ -456,12 +493,20 @@ function closeProgSwitcher() {
 }
 
 function switchProgram(prog) {
+  // Save current workspace state before leaving
+  if (_navProgram && PIPELINE_STAGES[_navProgram]) {
+    _workspaceCache[_navProgram] = { stage: _navStage, tool: _navTool };
+  }
   closeProgSwitcher();
   _navProgram = prog;
   _navStage   = null;
   _navTool    = null;
   _renderSidebarStages(prog);
-  showStage(prog, 'NEW_SUBMISSION');
+  // Restore last known state for this workspace, or default to NEW_SUBMISSION
+  const cached = _workspaceCache[prog];
+  if (cached?.tool)       showTool(prog, cached.tool);
+  else if (cached?.stage) showStage(prog, cached.stage);
+  else                    showStage(prog, 'NEW_SUBMISSION');
 }
 
 // ── Permanent sidebar stage/tool rendering ────────────────────────────────────

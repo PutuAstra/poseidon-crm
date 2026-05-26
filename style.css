@@ -87,16 +87,12 @@ button { cursor: pointer; border: none; outline: none; }
 #prog-sub-backdrop.show { display: block; }
 
 #prog-sub-header {
-  padding: 12px 36px 10px 12px;
+  padding: 14px 40px 14px 14px;  /* right padding clears the close button */
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
+  gap: 10px;
   flex-shrink: 0;
-  white-space: nowrap;
   position: relative;
 }
 
@@ -105,8 +101,8 @@ button { cursor: pointer; border: none; outline: none; }
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -117,7 +113,37 @@ button { cursor: pointer; border: none; outline: none; }
 }
 #prog-sub-close:hover { background: var(--navy-mid); color: var(--text); }
 
-#prog-sub-body { padding-bottom: 20px; }
+#prog-sub-body { padding-bottom: 24px; }
+
+/* ── Popup section labels (WORKSPACE / GENERAL) ────────────────────────────── */
+.popup-section-label {
+  padding: 12px 16px 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+/* ── General nav items inside the popup ────────────────────────────────────── */
+.popup-general-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  margin: 1px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: background 0.12s, color 0.12s;
+  user-select: none;
+}
+.popup-general-item:hover { background: var(--navy-mid); color: var(--text); }
+.popup-general-item svg { flex-shrink: 0; opacity: 0.65; transition: opacity 0.12s; }
+.popup-general-item:hover svg { opacity: 1; }
 
 .sub-group-label {
   padding: 14px 12px 4px;
