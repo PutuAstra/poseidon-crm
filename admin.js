@@ -151,12 +151,22 @@ function getMergedSfConfig() {
   if (saved.fields) {
     saved.fields.forEach(sf => {
       const f = fields.find(x => x.key === sf.key);
-      if (!f) return;
-      if (sf.label   !== undefined) f.label   = sf.label;
-      if (sf.section !== undefined) f.section = sf.section;
-      if (sf.order   !== undefined) f.order   = sf.order;
-      if (sf.visible !== undefined) f.visible = sf.visible;
-      if (sf.options !== undefined) f.options = sf.options;
+      if (f) {
+        if (sf.label   !== undefined) f.label   = sf.label;
+        if (sf.section !== undefined) f.section = sf.section;
+        if (sf.order   !== undefined) f.order   = sf.order;
+        if (sf.visible !== undefined) f.visible = sf.visible;
+        if (sf.options !== undefined) f.options = sf.options;
+      } else if (sf.custom) {
+        // custom field not in registry — include it from KV
+        fields.push({
+          key: sf.key, label: sf.label, type: sf.type || 'text',
+          section: sf.section, source: 'custom', order: sf.order ?? 999,
+          visible: sf.visible !== false,
+          options: sf.options ? [...sf.options] : undefined,
+          custom: true
+        });
+      }
     });
   }
   const sectionOrder = {};
@@ -1916,9 +1926,12 @@ async function openSfFieldSettings() {
 function _renderSfSettingsModal() {
   openModal('Configure Seafarer Fields', `
     <div style="display:flex;gap:16px;min-height:460px">
-      <div style="width:210px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;overflow-y:auto">
+      <div style="width:220px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;display:flex;flex-direction:column">
         <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding:0 4px">Sections</div>
-        <div id="sf-sections-sidebar">${_buildSfSidebar()}</div>
+        <div id="sf-sections-sidebar" style="flex:1;overflow-y:auto">${_buildSfSidebar()}</div>
+        <div style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px">
+          <button class="btn btn-ghost btn-sm" onclick="sfSecAdd()" style="width:100%;font-size:12px">+ Add Section</button>
+        </div>
       </div>
       <div style="flex:1;overflow-y:auto" id="sf-fields-content">${_buildSfSectionRows(_sfCurrentSection)}</div>
     </div>
@@ -1949,6 +1962,9 @@ function _buildSfSidebar() {
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sfSecMoveDown('${esc(s.id)}')"
           style="padding:1px 5px;font-size:10px;line-height:1.3;min-width:0;${i===n-1?'opacity:.2;pointer-events:none;':''}">▼</button>
       </div>
+      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sfSecDelete('${esc(s.id)}')"
+        style="padding:1px 5px;font-size:13px;line-height:1.3;min-width:0;color:var(--danger);opacity:.6;flex-shrink:0"
+        title="Delete section">×</button>
     </div>`;
   }).join('');
 }
@@ -1969,54 +1985,96 @@ function _refreshSfSidebarStyles() {
 
 function _buildSfSectionRows(sectionId) {
   const config = STATE._sfEditConfig;
-  const fields  = config.fields.filter(f => f.section === sectionId).sort((a,b) => a.order - b.order);
-  if (!fields.length) return `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No fields in this section.</p>`;
+  const fields = config.fields.filter(f => f.section === sectionId && !f._removed).sort((a,b) => a.order - b.order);
   const sectionOpts = config.sections.map(s => `<option value="${esc(s.id)}" ${s.id===sectionId?'selected':''}>${esc(s.label)}</option>`).join('');
   const rows = fields.map((f, i) => {
     const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === f.key) || {};
-    const hasOpts = reg.type === 'select' || (f.options && f.options.length);
+    const hasOpts = (f.type||reg.type) === 'select' || (f.options && f.options.length);
     const visColor = f.visible !== false ? '#4ade80' : 'var(--text-muted)';
+    const fieldType = f.type || reg.type || 'text';
     return `<tr data-key="${esc(f.key)}" style="border-bottom:1px solid #ffffff0a">
       <td style="padding:7px 4px;color:var(--text-muted);font-size:16px;cursor:default;user-select:none">≡</td>
-      <td style="padding:7px 8px;min-width:140px">
+      <td style="padding:7px 8px;min-width:130px">
         <input type="text" value="${esc(f.label)}"
           onchange="sfFieldSetLabel('${esc(f.key)}',this.value)"
           style="background:transparent;border:none;border-bottom:1px solid transparent;color:var(--text);font-size:13px;width:100%;outline:none;"
           onfocus="this.style.borderBottomColor='var(--blue)'"
           onblur="this.style.borderBottomColor='transparent'">
       </td>
-      <td style="padding:7px 6px;font-size:11px;color:var(--text-muted);width:64px">${reg.type||'text'}</td>
-      <td style="padding:7px 6px;width:140px">
+      <td style="padding:7px 6px;font-size:11px;color:var(--text-muted);width:64px">${fieldType}</td>
+      <td style="padding:7px 6px;width:130px">
         <select onchange="sfFieldMoveToSection('${esc(f.key)}',this.value)"
           style="font-size:11px;background:var(--navy-mid);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;width:100%">${sectionOpts}</select>
       </td>
-      <td style="padding:7px 4px;white-space:nowrap;width:64px">
-        ${i>0?`<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px" onclick="sfFieldMoveUp('${esc(f.key)}')">↑</button>`:'<span style="display:inline-block;width:28px"></span>'}
-        ${i<fields.length-1?`<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px" onclick="sfFieldMoveDown('${esc(f.key)}')">↓</button>`:''}
+      <td style="padding:7px 4px;white-space:nowrap;width:56px">
+        ${i>0?`<button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:11px" onclick="sfFieldMoveUp('${esc(f.key)}')">↑</button>`:'<span style="display:inline-block;width:24px"></span>'}
+        ${i<fields.length-1?`<button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:11px" onclick="sfFieldMoveDown('${esc(f.key)}')">↓</button>`:''}
       </td>
-      <td style="padding:7px 6px;white-space:nowrap;width:90px">
-        ${hasOpts?`<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openSfFieldOpts('${esc(f.key)}')">Edit Options</button>`:''}
+      <td style="padding:7px 6px;white-space:nowrap;width:84px">
+        ${hasOpts?`<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="openSfFieldOpts('${esc(f.key)}')">Edit Options</button>`:''}
       </td>
-      <td style="padding:7px 6px;width:70px;text-align:center">
+      <td style="padding:7px 4px;width:64px;text-align:center">
         <label style="cursor:pointer;font-size:11px;color:${visColor};white-space:nowrap">
           <input type="checkbox" ${f.visible!==false?'checked':''} onchange="sfFieldToggleVisible('${esc(f.key)}',this.checked)" style="margin-right:3px">
-          ${f.visible!==false?'Visible':'Hidden'}
+          ${f.visible!==false?'On':'Off'}
         </label>
+      </td>
+      <td style="padding:7px 4px;width:28px;text-align:center">
+        <button class="btn btn-ghost btn-sm" onclick="sfFieldDelete('${esc(f.key)}')"
+          style="padding:1px 6px;font-size:14px;color:var(--danger);opacity:.6;min-width:0" title="Delete field">×</button>
       </td>
     </tr>`;
   }).join('');
-  return `<table style="width:100%;border-collapse:collapse">
-    <thead><tr style="border-bottom:1px solid var(--border)">
-      <th style="font-size:10px;color:var(--text-muted);padding:6px 4px"></th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px 8px;text-align:left">Label</th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Type</th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Section</th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visibility</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+
+  const tableHtml = fields.length
+    ? `<table style="width:100%;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="font-size:10px;color:var(--text-muted);padding:6px 4px"></th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px 8px;text-align:left">Label</th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Type</th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Section</th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visible</th>
+          <th style="font-size:10px;color:var(--text-muted);padding:6px"></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`
+    : `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No fields in this section.</p>`;
+
+  return `${tableHtml}
+    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
+      <button class="btn btn-ghost btn-sm" onclick="sfShowAddFieldRow()" style="font-size:12px">+ Add Field</button>
+    </div>
+    <div id="sf-add-field-form" style="display:none;margin-top:10px;background:var(--navy-mid);border:1px solid var(--blue);border-radius:8px;padding:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:10px">New Field</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div style="flex:1;min-width:130px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Label</div>
+          <input type="text" id="sf-new-label" placeholder="e.g. Passport Country"
+            style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;outline:none;box-sizing:border-box">
+        </div>
+        <div style="min-width:120px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Type</div>
+          <select id="sf-new-type"
+            style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;outline:none">
+            <option value="text">Text</option>
+            <option value="number">Number</option>
+            <option value="date">Date</option>
+            <option value="select">Dropdown</option>
+            <option value="checkbox">Checkbox</option>
+            <option value="textarea">Textarea</option>
+            <option value="email">Email</option>
+            <option value="phone">Phone</option>
+            <option value="currency">Currency</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" onclick="sfAddFieldCommit()">Add</button>
+          <button class="btn btn-ghost btn-sm" onclick="sfShowAddFieldRow()">Cancel</button>
+        </div>
+      </div>
+    </div>`;
 }
 
 function selectSfSection(sectionId) {
@@ -2053,6 +2111,75 @@ function sfSecMoveDown(id) {
   if (sidebar) sidebar.innerHTML = _buildSfSidebar();
 }
 
+function sfSecAdd() {
+  const id = 'custom_sec_' + Date.now();
+  STATE._sfEditConfig.sections.push({ id, label: 'New Section' });
+  _sfCurrentSection = id;
+  const sidebar = document.getElementById('sf-sections-sidebar');
+  if (sidebar) sidebar.innerHTML = _buildSfSidebar();
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(id);
+  // auto-focus the new section name for immediate rename
+  setTimeout(() => {
+    const row = document.getElementById(`sf-sec-row-${id}`);
+    const inp = row?.querySelector('input[type="text"]');
+    if (inp) { inp.select(); inp.focus(); }
+  }, 40);
+}
+
+function sfSecDelete(id) {
+  const secs = STATE._sfEditConfig.sections;
+  if (secs.length <= 1) { toast('Cannot delete the last section', 'error'); return; }
+  const firstOther = secs.find(s => s.id !== id);
+  // move all fields from deleted section to the nearest other section
+  STATE._sfEditConfig.fields.forEach(f => { if (f.section === id) f.section = firstOther.id; });
+  STATE._sfEditConfig.sections = secs.filter(s => s.id !== id);
+  if (_sfCurrentSection === id) _sfCurrentSection = STATE._sfEditConfig.sections[0].id;
+  const sidebar = document.getElementById('sf-sections-sidebar');
+  if (sidebar) sidebar.innerHTML = _buildSfSidebar();
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
+  toast(`Section deleted — fields moved to "${firstOther.label}"`, 'info');
+}
+
+function sfFieldDelete(key) {
+  const f = STATE._sfEditConfig.fields.find(x => x.key === key);
+  if (!f) return;
+  if (f.custom) {
+    STATE._sfEditConfig.fields = STATE._sfEditConfig.fields.filter(x => x.key !== key);
+  } else {
+    // registry field: hide rather than truly delete (will restore on next config load)
+    f.visible = false;
+    f._removed = true;
+  }
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
+}
+
+function sfShowAddFieldRow() {
+  const form = document.getElementById('sf-add-field-form');
+  if (!form) return;
+  const visible = form.style.display !== 'none';
+  form.style.display = visible ? 'none' : '';
+  if (!visible) setTimeout(() => document.getElementById('sf-new-label')?.focus(), 30);
+}
+
+function sfAddFieldCommit() {
+  const label = document.getElementById('sf-new-label')?.value.trim();
+  const type  = document.getElementById('sf-new-type')?.value || 'text';
+  if (!label) { toast('Enter a field label', 'error'); return; }
+  const key = 'custom_' + Date.now();
+  const maxOrd = Math.max(-1, ...STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection).map(f => f.order));
+  STATE._sfEditConfig.fields.push({
+    key, label, type, section: _sfCurrentSection, source: 'custom',
+    order: maxOrd + 1, visible: true,
+    options: type === 'select' ? [] : undefined,
+    custom: true
+  });
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
+}
+
 function sfFieldSetLabel(key, value) {
   const f = STATE._sfEditConfig.fields.find(x => x.key === key);
   if (f) f.label = value;
@@ -2064,30 +2191,33 @@ function sfFieldMoveToSection(key, newSec) {
   f.section = newSec;
   const maxOrd = Math.max(-1, ...STATE._sfEditConfig.fields.filter(x => x.section === newSec && x.key !== key).map(x => x.order));
   f.order = maxOrd + 1;
-  selectSfSection(_sfCurrentSection);
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
 }
 
 function sfFieldMoveUp(key) {
-  const fields = STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection).sort((a,b) => a.order - b.order);
+  const fields = STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection && !f._removed).sort((a,b) => a.order - b.order);
   const idx = fields.findIndex(f => f.key === key);
   if (idx <= 0) return;
   [fields[idx].order, fields[idx-1].order] = [fields[idx-1].order, fields[idx].order];
   fields.sort((a,b)=>a.order-b.order).forEach((f,i) => f.order = i);
-  selectSfSection(_sfCurrentSection);
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
 }
 
 function sfFieldMoveDown(key) {
-  const fields = STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection).sort((a,b) => a.order - b.order);
+  const fields = STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection && !f._removed).sort((a,b) => a.order - b.order);
   const idx = fields.findIndex(f => f.key === key);
   if (idx < 0 || idx >= fields.length - 1) return;
   [fields[idx].order, fields[idx+1].order] = [fields[idx+1].order, fields[idx].order];
   fields.sort((a,b)=>a.order-b.order).forEach((f,i) => f.order = i);
-  selectSfSection(_sfCurrentSection);
+  const content = document.getElementById('sf-fields-content');
+  if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
 }
 
 function sfFieldToggleVisible(key, visible) {
   const f = STATE._sfEditConfig.fields.find(x => x.key === key);
-  if (f) { f.visible = visible; selectSfSection(_sfCurrentSection); }
+  if (f) { f.visible = visible; }
 }
 
 function openSfFieldOpts(key) {
