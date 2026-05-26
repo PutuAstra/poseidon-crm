@@ -3049,6 +3049,10 @@ async function openClientDetail(id) {
   const [c, endr] = await Promise.all([api('GET', `/clients/${id}`), api('GET', `/clients/${id}/endorsements`)]);
   const contacts = c.contacts || [];
   openModal(c.name, `
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">
+      <button class="btn btn-ghost btn-sm" onclick="openEditClientModal('${esc(id)}')">✏ Edit</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--${c.is_active ? 'danger' : 'success'})" onclick="toggleClientActive('${esc(id)}',${c.is_active ? 1 : 0})">${c.is_active ? '⛔ Deactivate' : '✅ Reactivate'}</button>
+    </div>
     <div class="info-grid" style="margin-bottom:20px">
       <div class="info-item"><label>Type</label><span>${esc(c.type.replace('_', ' '))}</span></div>
       <div class="info-item"><label>Country</label><span>${esc(c.country || '—')}</span></div>
@@ -3087,6 +3091,67 @@ async function openClientDetail(id) {
         </div>` : `<span class="badge ${e.status === 'APPROVED' ? 'badge-approved' : 'badge-rejected'}">${esc(e.status)}</span>`}
       </div>`).join('') || '<div class="text-muted text-sm" style="padding:12px 0">No endorsements yet</div>'}
     `, 'modal-lg');
+}
+
+async function openEditClientModal(id) {
+  let c;
+  try { c = await api('GET', `/clients/${id}`); } catch (e) { toast(e.message, 'error'); return; }
+  openModal('Edit Client', `
+    <div class="form-row">
+      <div class="form-group"><label>Client Name *</label><input type="text" id="ec-name" value="${esc(c.name || '')}"></div>
+      <div class="form-group"><label>Type</label>
+        <select id="ec-type">
+          <option value="CRUISE_LINE" ${c.type==='CRUISE_LINE'?'selected':''}>Cruise Line</option>
+          <option value="LAND_BASED"  ${c.type==='LAND_BASED'?'selected':''}>Land-Based</option>
+          <option value="J1_SPONSOR"  ${c.type==='J1_SPONSOR'?'selected':''}>J1 Sponsor</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Country</label><input type="text" id="ec-country" value="${esc(c.country || '')}"></div>
+      <div class="form-group"><label>Contact Email</label><input type="email" id="ec-email" value="${esc(c.contact_email || '')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Contact Phone</label><input type="text" id="ec-phone" value="${esc(c.contact_phone || '')}"></div>
+      <div class="form-group"><label>Website</label><input type="text" id="ec-website" value="${esc(c.website || '')}"></div>
+    </div>
+    <div class="form-group"><label>Notes</label><textarea id="ec-notes" rows="3">${esc(c.notes || '')}</textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="updateClient('${esc(id)}')">Save Changes</button>
+    </div>`);
+}
+
+async function updateClient(id) {
+  const name = document.getElementById('ec-name').value.trim();
+  if (!name) { toast('Client name is required', 'error'); return; }
+  try {
+    await api('PATCH', `/clients/${id}`, {
+      name,
+      type:         document.getElementById('ec-type').value,
+      country:      document.getElementById('ec-country').value.trim(),
+      contactEmail: document.getElementById('ec-email').value.trim(),
+      contactPhone: document.getElementById('ec-phone').value.trim(),
+      website:      document.getElementById('ec-website').value.trim(),
+      notes:        document.getElementById('ec-notes').value.trim(),
+    });
+    closeModal();
+    toast('Client updated', 'success');
+    loadClients();
+    loadClientsList();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function toggleClientActive(id, currentlyActive) {
+  const action = currentlyActive ? 'deactivate' : 'reactivate';
+  const ok = await showConfirm(`Are you sure you want to ${action} this client?`);
+  if (!ok) return;
+  try {
+    await api('PATCH', `/clients/${id}`, { isActive: !currentlyActive });
+    toast(`Client ${action}d`, 'success');
+    closeModal();
+    loadClients();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 function openAddContactToClientModal(clientId) {
