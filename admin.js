@@ -114,7 +114,7 @@ function bootApp() {
 
 const VIEW_META = {
   dashboard:   { title: 'Dashboard',          action: null },
-  submissions: { title: 'New Submissions',     action: { label: '+ Convert to Candidate', fn: null } },
+  submissions: { title: 'New Submissions',     action: { label: '+ Manual Entry', fn: openAddCandidateModal } },
   candidates:  { title: 'Candidates',          action: { label: '+ Add Candidate', fn: openAddCandidateModal } },
   interviews:  { title: 'Interview Templates', action: { label: '+ New Interview', fn: openNewInterviewModal } },
   clients:     { title: 'Clients',             action: { label: '+ Add Client', fn: openAddClientModal } },
