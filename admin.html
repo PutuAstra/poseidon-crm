@@ -78,29 +78,20 @@
         <div class="brand">POSEIDON<div style="font-size:.62em;font-weight:400;color:var(--text-muted);letter-spacing:.04em;">CTI Group CRM</div></div>
       </div>
 
-      <!-- Master Dashboard -->
-      <div class="nav-item" data-view="dashboard" onclick="showView('dashboard')" style="margin-top:8px">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        Dashboard
+      <!-- ── WORKSPACE SWITCHER (click to open workspace picker popup) ── -->
+      <div id="prog-switcher-btn" data-prog="J1_PROGRAM" onclick="openProgSwitcher()" style="margin-top:8px">
+        <span id="prog-sw-icon">🎓</span>
+        <span id="prog-sw-label">J1 Program</span>
+        <svg style="width:11px;height:11px;margin-left:auto;flex-shrink:0;opacity:0.55" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
       </div>
 
-      <!-- ── PROGRAMS (click to open slide-in sub-panel) ───────────── -->
-      <div class="sidebar-section" style="margin-top:4px">Programs</div>
-      <div class="prog-nav-item" data-prog="J1_PROGRAM" onclick="openSubPanel('J1_PROGRAM')">
-        <span style="font-size:15px">🎓</span>
-        <span>J1 Program</span>
-        <svg style="width:12px;height:12px;margin-left:auto;opacity:0.45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>
-      <div class="prog-nav-item" data-prog="SEA_BASED" onclick="openSubPanel('SEA_BASED')">
-        <span style="font-size:15px">🚢</span>
-        <span>Sea-Based</span>
-        <svg style="width:12px;height:12px;margin-left:auto;opacity:0.45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>
-      <div class="prog-nav-item" data-prog="LAND_BASED" onclick="openSubPanel('LAND_BASED')">
-        <span style="font-size:15px">🏨</span>
-        <span>Land-Based</span>
-        <svg style="width:12px;height:12px;margin-left:auto;opacity:0.45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>
+      <!-- ── PIPELINE — permanent, changes per workspace ─────────────── -->
+      <div class="sidebar-section" style="margin-top:6px">Pipeline</div>
+      <div id="sidebar-stages"></div>
+
+      <!-- ── TOOLS — permanent, changes per workspace ─────────────────── -->
+      <div class="sidebar-section">Tools</div>
+      <div id="sidebar-tools"></div>
 
       <!-- ── GENERAL ────────────────────────────────────────────────── -->
       <div class="sidebar-section" id="admin-only-section" style="margin-top:8px">General</div>
@@ -136,13 +127,13 @@
       </div>
     </nav>
 
-    <!-- Backdrop: click outside to dismiss sub-panel -->
-    <div id="prog-sub-backdrop" onclick="closeSubPanel()"></div>
+    <!-- Backdrop: click outside to dismiss workspace picker -->
+    <div id="prog-sub-backdrop" onclick="closeProgSwitcher()"></div>
 
-    <!-- Slide-in secondary sub-panel (programs) -->
+    <!-- Workspace picker popup (slides in from left over sidebar) -->
     <div id="prog-sub-panel">
       <div id="prog-sub-header"></div>
-      <div id="prog-sub-close" onclick="closeSubPanel()" title="Close">
+      <div id="prog-sub-close" onclick="closeProgSwitcher()" title="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </div>
       <div id="prog-sub-body"></div>

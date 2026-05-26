@@ -294,17 +294,21 @@ function bootApp() {
   loadClientsList();
   loadRecruitersList();
   const savedView = localStorage.getItem('poseidon_view') || 'dashboard';
-  // Restore program:stage or program:tool views
+  // Determine default program and pre-render sidebar stages
+  let defaultProg = 'J1_PROGRAM';
+  if (savedView.includes(':')) {
+    const [p] = savedView.split(':');
+    if (PIPELINE_STAGES[p]) defaultProg = p;
+  }
+  _navProgram = defaultProg;
+  _renderSidebarStages(defaultProg);
+  // Restore navigation state
   if (savedView.includes(':')) {
     const [prog, sub] = savedView.split(':');
     if (PIPELINE_STAGES[prog]) {
-      const isStage = Object.values(PIPELINE_STAGES).some(arr => arr.some(s => s.id === sub));
-      const isTool  = ['local','fields','docs'].includes(sub);
-      // PIPELINE_STAGES not defined yet at this point, resolved after assignment
-      // safe to call after DOM ready
       setTimeout(() => {
-        if (isTool)  showTool(prog, sub);
-        else         showStage(prog, sub);
+        if (['local','fields','docs'].includes(sub)) showTool(prog, sub);
+        else                                          showStage(prog, sub);
       }, 0);
     } else { showView('dashboard'); }
   } else {
@@ -403,79 +407,102 @@ function _showPane(name) {
   document.getElementById(`pane-${name}`)?.classList.remove('hidden');
 }
 
+// ── Sidebar active state ─────────────────────────────────────────────────────
+
 function _renderSidebarActive() {
+  // Clear general nav active
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
-  if (_navProgram) {
-    document.querySelector(`.prog-nav-item[data-prog="${_navProgram}"]`)?.classList.add('active');
+  // Clear stage/tool active
+  document.querySelectorAll('#sidebar-stages .sidebar-stage-item, #sidebar-tools .sidebar-stage-item')
+    .forEach(el => el.classList.remove('active'));
+}
+
+function _markSidebarActive(kind, id) {
+  document.querySelectorAll('#sidebar-stages .sidebar-stage-item, #sidebar-tools .sidebar-stage-item')
+    .forEach(el => el.classList.remove('active'));
+  if (kind === 'stage') {
+    document.querySelector(`#sidebar-stages .sidebar-stage-item[data-stage="${id}"]`)?.classList.add('active');
+  } else {
+    document.querySelector(`#sidebar-tools .sidebar-stage-item[data-tool="${id}"]`)?.classList.add('active');
   }
 }
 
-function openSubPanel(prog) {
+// ── Workspace switcher popup ──────────────────────────────────────────────────
+
+function openProgSwitcher() {
   const panel    = document.getElementById('prog-sub-panel');
   const backdrop = document.getElementById('prog-sub-backdrop');
-  _navProgram    = prog;
-  panel.setAttribute('data-prog', prog);
-  _renderSubPanel(prog);
-  // Mark active sub-item if we're already on this program
-  if (_navStage) _markSubActive('stage', _navStage);
-  if (_navTool)  _markSubActive('tool',  _navTool);
+  document.getElementById('prog-sub-header').innerHTML = `
+    <svg style="width:14px;height:14px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+    </svg>
+    <span>Switch Workspace</span>`;
+  document.getElementById('prog-sub-body').innerHTML =
+    `<div style="padding:8px 0">${Object.entries(PROGRAM_META).map(([key, pm]) => `
+      <div class="prog-popup-item${_navProgram === key ? ' active' : ''}" data-prog="${key}" onclick="switchProgram('${key}')">
+        <span style="font-size:18px;line-height:1;flex-shrink:0">${pm.icon}</span>
+        <span>${pm.label}</span>
+        ${_navProgram === key
+          ? `<svg style="width:12px;height:12px;margin-left:auto;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`
+          : ''}
+      </div>`).join('')}</div>`;
   panel.classList.add('open');
   backdrop.classList.add('show');
-  document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
-  document.querySelector(`.prog-nav-item[data-prog="${prog}"]`)?.classList.add('active');
 }
 
-function closeSubPanel() {
+function closeProgSwitcher() {
   document.getElementById('prog-sub-panel').classList.remove('open');
   document.getElementById('prog-sub-backdrop').classList.remove('show');
-  document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
 }
 
-function _renderSubPanel(prog) {
+function switchProgram(prog) {
+  closeProgSwitcher();
+  _navProgram = prog;
+  _navStage   = null;
+  _navTool    = null;
+  _renderSidebarStages(prog);
+  showStage(prog, 'NEW_SUBMISSION');
+}
+
+// ── Permanent sidebar stage/tool rendering ────────────────────────────────────
+
+function _renderSidebarStages(prog) {
   const pm     = PROGRAM_META[prog];
   const stages = PIPELINE_STAGES[prog] || [];
-  document.getElementById('prog-sub-header').innerHTML =
-    `<span style="font-size:18px;line-height:1">${pm.icon}</span><span style="font-weight:600;font-size:13px">${pm.label}</span>`;
-  document.getElementById('prog-sub-body').innerHTML = `
-    <div class="sub-group-label">Pipeline</div>
-    ${stages.map(s => `
-      <div class="sub-stage-item" data-prog="${prog}" data-stage="${s.id}" onclick="showStage('${prog}','${s.id}')">
-        <span>${s.icon}</span><span>${s.label}</span>
-        ${s.id === 'NEW_SUBMISSION' ? `<span class="nav-badge" id="nb-${prog}-NEW_SUBMISSION" style="display:none;margin-left:auto"></span>` : ''}
-      </div>`).join('')}
-    <div class="sub-group-label">Tools</div>
-    <div class="sub-tool-item" data-prog="${prog}" data-tool="local"  onclick="showTool('${prog}','local')"><span>⚙</span><span>Local Settings</span></div>
-    <div class="sub-tool-item" data-prog="${prog}" data-tool="fields" onclick="showTool('${prog}','fields')"><span>📋</span><span>Stage Fields</span></div>
-    <div class="sub-tool-item" data-prog="${prog}" data-tool="docs"   onclick="showTool('${prog}','docs')"><span>📁</span><span>Documents</span></div>`;
+  // Update switcher button
+  document.getElementById('prog-sw-icon').textContent  = pm.icon;
+  document.getElementById('prog-sw-label').textContent = pm.label;
+  const btn = document.getElementById('prog-switcher-btn');
+  btn.setAttribute('data-prog', prog);
+  document.getElementById('sidebar').setAttribute('data-prog', prog);
+  // Render pipeline stages
+  document.getElementById('sidebar-stages').innerHTML = stages.map(s => `
+    <div class="sidebar-stage-item" data-stage="${s.id}" onclick="showStage('${prog}','${s.id}')">
+      <span class="stage-icon-sm">${s.icon}</span>
+      <span>${s.label}</span>
+      ${s.id === 'NEW_SUBMISSION'
+        ? `<span class="nav-badge" id="nb-${prog}-NEW_SUBMISSION" style="display:none;margin-left:auto"></span>`
+        : ''}
+    </div>`).join('');
+  // Render tools
+  document.getElementById('sidebar-tools').innerHTML = `
+    <div class="sidebar-stage-item" data-tool="local"  onclick="showTool('${prog}','local')"><span class="stage-icon-sm">⚙</span><span>Local Settings</span></div>
+    <div class="sidebar-stage-item" data-tool="fields" onclick="showTool('${prog}','fields')"><span class="stage-icon-sm">📋</span><span>Stage Fields</span></div>
+    <div class="sidebar-stage-item" data-tool="docs"   onclick="showTool('${prog}','docs')"><span class="stage-icon-sm">📁</span><span>Documents</span></div>`;
 }
 
-function _markSubActive(kind, id) {
-  document.querySelectorAll('.sub-stage-item, .sub-tool-item').forEach(el => el.classList.remove('active'));
-  if (kind === 'stage') {
-    document.querySelector(`#prog-sub-body .sub-stage-item[data-stage="${id}"]`)?.classList.add('active');
-  } else {
-    document.querySelector(`#prog-sub-body .sub-tool-item[data-tool="${id}"]`)?.classList.add('active');
-  }
-}
+function _ensureProgOpen(prog) { /* no-op */ }
 
-function _ensureProgOpen(prog) { /* no-op — sub-panel opened explicitly */ }
+// ── Navigation ────────────────────────────────────────────────────────────────
 
 function showStage(program, stage) {
   _navProgram    = program;
   _navStage      = stage;
   _navTool       = null;
   _stagePanePage = 1;
-  // Ensure sub-panel is open and rendered for this program
-  const panel = document.getElementById('prog-sub-panel');
-  if (!panel.classList.contains('open') || panel.getAttribute('data-prog') !== program) {
-    openSubPanel(program);
-  }
-  _markSubActive('stage', stage);
-  // Dismiss the sub-panel after selection (it's a menu, not a permanent second column)
-  document.getElementById('prog-sub-panel').classList.remove('open');
-  document.getElementById('prog-sub-backdrop').classList.remove('show');
+  closeProgSwitcher();
   _renderSidebarActive();
+  _markSidebarActive('stage', stage);
   _showPane('stage');
   const pm = PROGRAM_META[program];
   const sm = PIPELINE_STAGES[program]?.find(s => s.id === stage);
@@ -490,16 +517,9 @@ function showTool(program, tool) {
   _navProgram = program;
   _navStage   = null;
   _navTool    = tool;
-  // Ensure sub-panel is open and rendered for this program
-  const panel = document.getElementById('prog-sub-panel');
-  if (!panel.classList.contains('open') || panel.getAttribute('data-prog') !== program) {
-    openSubPanel(program);
-  }
-  _markSubActive('tool', tool);
-  // Dismiss the sub-panel after selection
-  document.getElementById('prog-sub-panel').classList.remove('open');
-  document.getElementById('prog-sub-backdrop').classList.remove('show');
+  closeProgSwitcher();
   _renderSidebarActive();
+  _markSidebarActive('tool', tool);
   const paneMap = { local: 'prog-local', fields: 'prog-fields', docs: 'prog-docs' };
   _showPane(paneMap[tool]);
   const pm = PROGRAM_META[program];
@@ -514,12 +534,10 @@ function showTool(program, tool) {
 }
 
 function showView(name) {
-  _navProgram = null;
-  _navStage   = null;
-  _navTool    = null;
-  // Close sub-panel when navigating to a general view
-  document.getElementById('prog-sub-panel')?.classList.remove('open');
-  document.getElementById('prog-sub-backdrop')?.classList.remove('show');
+  // Keep _navProgram — sidebar stages stay visible for last active workspace
+  _navStage = null;
+  _navTool  = null;
+  closeProgSwitcher();
   _renderSidebarActive();
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');

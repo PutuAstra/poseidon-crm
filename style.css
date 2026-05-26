@@ -155,31 +155,78 @@ button { cursor: pointer; border: none; outline: none; }
 #prog-sub-panel[data-prog="SEA_BASED"]  .sub-stage-item.active  { background: #0c4a6e55; border-color: #38bdf8; }
 #prog-sub-panel[data-prog="LAND_BASED"] .sub-stage-item.active  { background: #14532d55; border-color: var(--success); }
 
-/* Program nav items in primary sidebar */
-.prog-nav-item {
+/* ── Workspace switcher button (permanent in sidebar) ─────────────────────── */
+#prog-switcher-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0 8px;
   border-radius: var(--radius);
-  margin: 1px 6px;
-  color: var(--text-muted);
+  border: 1px solid var(--border);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   user-select: none;
 }
+#prog-switcher-btn:hover { background: var(--navy-mid); color: var(--text); }
+#prog-switcher-btn[data-prog="J1_PROGRAM"] { border-color: #6d28d9; color: #a78bfa; }
+#prog-switcher-btn[data-prog="SEA_BASED"]  { border-color: #0e7490; color: #38bdf8; }
+#prog-switcher-btn[data-prog="LAND_BASED"] { border-color: #15803d; color: #4ade80; }
 
-.prog-nav-item:hover { background: var(--navy-mid); color: var(--text); }
-.prog-nav-item.active {
-  color: var(--text);
-  background: var(--navy-mid);
+/* ── Permanent sidebar stage / tool items ─────────────────────────────────── */
+.sidebar-stage-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+}
+.sidebar-stage-item:hover { background: var(--navy-mid); color: var(--text); }
+.sidebar-stage-item.active {
+  color: #fff;
+  border-left: 3px solid var(--border);
+  padding-left: 11px;
+}
+#sidebar[data-prog="J1_PROGRAM"] .sidebar-stage-item.active { background: #3b0764aa; border-color: #8b5cf6; }
+#sidebar[data-prog="SEA_BASED"]  .sidebar-stage-item.active { background: #082f49aa; border-color: #38bdf8; }
+#sidebar[data-prog="LAND_BASED"] .sidebar-stage-item.active { background: #052e16aa; border-color: #4ade80; }
+
+.stage-icon-sm {
+  font-size: 13px;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
-.prog-nav-item[data-prog="J1_PROGRAM"].active { color: var(--purple); background: #4c1d9522; }
-.prog-nav-item[data-prog="SEA_BASED"].active  { color: #38bdf8;       background: #0c4a6e22; }
-.prog-nav-item[data-prog="LAND_BASED"].active { color: var(--success); background: #14532d22; }
+/* ── Workspace popup items (inside #prog-sub-panel) ─────────────────────── */
+.prog-popup-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 3px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+}
+.prog-popup-item:hover { background: var(--navy-mid); color: var(--text); }
+.prog-popup-item[data-prog="J1_PROGRAM"].active { color: #a78bfa; background: #4c1d9530; }
+.prog-popup-item[data-prog="SEA_BASED"].active  { color: #38bdf8; background: #0c4a6e30; }
+.prog-popup-item[data-prog="LAND_BASED"].active { color: #4ade80; background: #14532d30; }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────────── */
 #sidebar {
