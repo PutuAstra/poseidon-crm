@@ -1501,6 +1501,98 @@ R.patch('/api/v1/users/:id', async (req, env, ctx, p) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// STAGE FIELD CONFIGS
+// ═════════════════════════════════════════════════════════════════════════════
+
+R.get('/api/v1/stage-fields', async (req, env) => {
+  const u = await auth(req, env); if (!u) return err('Unauthorized', 401);
+  const url = new URL(req.url);
+  const pipeline = url.searchParams.get('pipeline');
+  const stage    = url.searchParams.get('stage');
+  if (!pipeline) return err('pipeline required');
+  let q = 'SELECT * FROM stage_field_configs WHERE pipeline=?';
+  const binds = [pipeline];
+  if (stage) { q += ' AND stage=?'; binds.push(stage); }
+  q += ' ORDER BY stage, sort_order';
+  const rows = await env.DB.prepare(q).bind(...binds).all();
+  return json({ fields: rows.results || [] });
+});
+
+R.post('/api/v1/stage-fields', async (req, env) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const b = await req.json();
+  if (!b.pipeline || !b.stage || !b.fieldKey || !b.fieldLabel || !b.fieldType) return err('pipeline, stage, fieldKey, fieldLabel, fieldType required');
+  const id = cuid();
+  try {
+    await env.DB.prepare(
+      'INSERT INTO stage_field_configs(id,pipeline,stage,field_key,field_label,field_type,is_required,is_visible,options,placeholder,help_text,sort_order) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)'
+    ).bind(id, b.pipeline, b.stage, b.fieldKey, b.fieldLabel, b.fieldType,
+      b.isRequired ? 1 : 0, 1,
+      b.options ? JSON.stringify(b.options) : null,
+      b.placeholder || null, b.helpText || null, b.sortOrder ?? 0
+    ).run();
+  } catch(e) {
+    if (String(e.message).includes('UNIQUE')) return err('A field with that key already exists for this stage', 409);
+    throw e;
+  }
+  return json({ id }, 201);
+});
+
+R.patch('/api/v1/stage-fields/:id', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const b = await req.json();
+  const map = {
+    field_label:  b.fieldLabel,
+    field_type:   b.fieldType,
+    is_required:  b.isRequired !== undefined ? (b.isRequired ? 1 : 0) : undefined,
+    is_visible:   b.isVisible  !== undefined ? (b.isVisible  ? 1 : 0) : undefined,
+    options:      b.options !== undefined ? JSON.stringify(b.options) : undefined,
+    placeholder:  b.placeholder,
+    help_text:    b.helpText,
+    sort_order:   b.sortOrder,
+  };
+  const upd = Object.fromEntries(Object.entries(map).filter(([,v]) => v !== undefined));
+  if (!Object.keys(upd).length) return err('No fields to update');
+  upd.updated_at = new Date().toISOString();
+  await env.DB.prepare(`UPDATE stage_field_configs SET ${Object.keys(upd).map(k=>`${k}=?`).join(',')} WHERE id=?`)
+    .bind(...Object.values(upd), p.id).run();
+  return json({ success: true });
+});
+
+R.delete('/api/v1/stage-fields/:id', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  await env.DB.prepare('DELETE FROM stage_field_configs WHERE id=?').bind(p.id).run();
+  return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// PROGRAM LOCAL SETTINGS
+// ═════════════════════════════════════════════════════════════════════════════
+
+R.get('/api/v1/program-settings/:pipeline', async (req, env, ctx, p) => {
+  const u = await auth(req, env); if (!u) return err('Unauthorized', 401);
+  const VALID = ['J1_PROGRAM','SEA_BASED','LAND_BASED'];
+  if (!VALID.includes(p.pipeline)) return err('Invalid pipeline');
+  const rows = await env.DB.prepare('SELECT setting_key, setting_value FROM program_settings WHERE pipeline=?').bind(p.pipeline).all();
+  const settings = Object.fromEntries((rows.results || []).map(r => [r.setting_key, r.setting_value]));
+  return json({ settings });
+});
+
+R.patch('/api/v1/program-settings/:pipeline', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const VALID = ['J1_PROGRAM','SEA_BASED','LAND_BASED'];
+  if (!VALID.includes(p.pipeline)) return err('Invalid pipeline');
+  const b = await req.json();
+  const now = new Date().toISOString();
+  const stmts = Object.entries(b).map(([k, v]) =>
+    env.DB.prepare('INSERT INTO program_settings(pipeline,setting_key,setting_value,updated_by_id,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(pipeline,setting_key) DO UPDATE SET setting_value=excluded.setting_value, updated_by_id=excluded.updated_by_id, updated_at=excluded.updated_at')
+      .bind(p.pipeline, k, String(v), u.id, now)
+  );
+  if (stmts.length) await env.DB.batch(stmts);
+  return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // ONE-WAY INTERVIEW (public token)
 // ═════════════════════════════════════════════════════════════════════════════
 

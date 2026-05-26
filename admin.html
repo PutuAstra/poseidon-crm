@@ -78,61 +78,99 @@
         <div class="brand">POSEIDON<div style="font-size:.62em;font-weight:400;color:var(--text-muted);letter-spacing:.04em;">CTI Group CRM</div></div>
       </div>
 
-      <div class="sidebar-section">Intake</div>
-      <div class="nav-item" data-view="dashboard" onclick="showView('dashboard')">
+      <!-- Master Dashboard -->
+      <div class="nav-item" data-view="dashboard" onclick="showView('dashboard')" style="margin-top:8px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         Dashboard
       </div>
 
-      <div class="sidebar-section">Pipeline</div>
-      <div class="nav-item" data-view="new-submissions" onclick="showView('new-submissions')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        New Submissions
-        <span class="nav-badge" id="badge-new-submissions" style="display:none">0</span>
-      </div>
-      <div class="nav-item" data-view="candidates" onclick="showView('candidates')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Candidates
-      </div>
-      <div class="nav-item" data-view="final-interview" onclick="showView('final-interview')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-        Final Interview
-      </div>
-      <div class="nav-item" data-view="offer-letter" onclick="showView('offer-letter')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-        Offer Letter
-      </div>
-      <div class="nav-item" data-view="onboarding" onclick="showView('onboarding')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        Onboarding
-      </div>
-      <div class="sidebar-section">Archive</div>
-      <div class="nav-item" data-view="archive" onclick="showView('archive')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
-        Archive
+      <!-- ── J1 PROGRAM ───────────────────────────────────────────── -->
+      <div class="prog-section" id="prog-J1_PROGRAM" data-prog="J1_PROGRAM">
+        <div class="prog-header" id="prog-hdr-J1_PROGRAM" onclick="toggleProgram('J1_PROGRAM')">
+          <span class="prog-icon">🎓</span>
+          <span class="prog-label">J1 Program</span>
+          <svg class="prog-chevron" id="chevron-J1_PROGRAM" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="prog-body" id="body-J1_PROGRAM">
+          <div class="prog-group-label">Pipeline</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="NEW_SUBMISSION"    onclick="showStage('J1_PROGRAM','NEW_SUBMISSION')"><span class="stage-icon">📥</span> New Submission <span class="nav-badge" id="nb-J1_PROGRAM-NEW_SUBMISSION" style="display:none"></span></div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="CONSULTATION_CALL" onclick="showStage('J1_PROGRAM','CONSULTATION_CALL')"><span class="stage-icon">📞</span> Consultation</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_1"        onclick="showStage('J1_PROGRAM','J1_STAGE_1')"><span class="stage-icon">①</span> Stage 1</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_2"        onclick="showStage('J1_PROGRAM','J1_STAGE_2')"><span class="stage-icon">②</span> Stage 2</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_3"        onclick="showStage('J1_PROGRAM','J1_STAGE_3')"><span class="stage-icon">③</span> Stage 3</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_4"        onclick="showStage('J1_PROGRAM','J1_STAGE_4')"><span class="stage-icon">④</span> Stage 4</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_VISA"           onclick="showStage('J1_PROGRAM','J1_VISA')"><span class="stage-icon">🛂</span> J1-Visa</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="CLIENTS"           onclick="showStage('J1_PROGRAM','CLIENTS')"><span class="stage-icon">👔</span> Clients</div>
+          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="ARCHIVED"          onclick="showStage('J1_PROGRAM','ARCHIVED')"><span class="stage-icon">📦</span> Archived</div>
+          <div class="prog-group-label">Tools</div>
+          <div class="tool-nav-item" data-prog="J1_PROGRAM" data-tool="local"  onclick="showTool('J1_PROGRAM','local')"><span class="tool-icon">⚙</span> Local Settings</div>
+          <div class="tool-nav-item" data-prog="J1_PROGRAM" data-tool="fields" onclick="showTool('J1_PROGRAM','fields')"><span class="tool-icon">📋</span> Stage Fields</div>
+          <div class="tool-nav-item" data-prog="J1_PROGRAM" data-tool="docs"   onclick="showTool('J1_PROGRAM','docs')"><span class="tool-icon">📁</span> Documents</div>
+        </div>
       </div>
 
-      <div class="sidebar-section">Clients</div>
+      <!-- ── SEA-BASED ────────────────────────────────────────────── -->
+      <div class="prog-section" id="prog-SEA_BASED" data-prog="SEA_BASED">
+        <div class="prog-header" id="prog-hdr-SEA_BASED" onclick="toggleProgram('SEA_BASED')">
+          <span class="prog-icon">🚢</span>
+          <span class="prog-label">Sea-Based</span>
+          <svg class="prog-chevron" id="chevron-SEA_BASED" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="prog-body" id="body-SEA_BASED">
+          <div class="prog-group-label">Pipeline</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="NEW_SUBMISSION"  onclick="showStage('SEA_BASED','NEW_SUBMISSION')"><span class="stage-icon">📥</span> New Submission <span class="nav-badge" id="nb-SEA_BASED-NEW_SUBMISSION" style="display:none"></span></div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="CANDIDATES"      onclick="showStage('SEA_BASED','CANDIDATES')"><span class="stage-icon">👥</span> Candidates</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="FINAL_INTERVIEW" onclick="showStage('SEA_BASED','FINAL_INTERVIEW')"><span class="stage-icon">🎯</span> Final Interview</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="OFFER_LETTER"    onclick="showStage('SEA_BASED','OFFER_LETTER')"><span class="stage-icon">📄</span> Offer Letter</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="ONBOARDING"      onclick="showStage('SEA_BASED','ONBOARDING')"><span class="stage-icon">⚓</span> Onboarding</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="C1D_VISA"        onclick="showStage('SEA_BASED','C1D_VISA')"><span class="stage-icon">🛂</span> C1-D Visa</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="CLIENTS"         onclick="showStage('SEA_BASED','CLIENTS')"><span class="stage-icon">👔</span> Clients</div>
+          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="ARCHIVED"        onclick="showStage('SEA_BASED','ARCHIVED')"><span class="stage-icon">📦</span> Archived</div>
+          <div class="prog-group-label">Tools</div>
+          <div class="tool-nav-item" data-prog="SEA_BASED" data-tool="local"  onclick="showTool('SEA_BASED','local')"><span class="tool-icon">⚙</span> Local Settings</div>
+          <div class="tool-nav-item" data-prog="SEA_BASED" data-tool="fields" onclick="showTool('SEA_BASED','fields')"><span class="tool-icon">📋</span> Stage Fields</div>
+          <div class="tool-nav-item" data-prog="SEA_BASED" data-tool="docs"   onclick="showTool('SEA_BASED','docs')"><span class="tool-icon">📁</span> Documents</div>
+        </div>
+      </div>
+
+      <!-- ── LAND-BASED ────────────────────────────────────────────── -->
+      <div class="prog-section" id="prog-LAND_BASED" data-prog="LAND_BASED">
+        <div class="prog-header" id="prog-hdr-LAND_BASED" onclick="toggleProgram('LAND_BASED')">
+          <span class="prog-icon">🏨</span>
+          <span class="prog-label">Land-Based</span>
+          <svg class="prog-chevron" id="chevron-LAND_BASED" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="prog-body" id="body-LAND_BASED">
+          <div class="prog-group-label">Pipeline</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="NEW_SUBMISSION"  onclick="showStage('LAND_BASED','NEW_SUBMISSION')"><span class="stage-icon">📥</span> New Submission <span class="nav-badge" id="nb-LAND_BASED-NEW_SUBMISSION" style="display:none"></span></div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="CANDIDATES"      onclick="showStage('LAND_BASED','CANDIDATES')"><span class="stage-icon">👥</span> Candidates</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="FINAL_INTERVIEW" onclick="showStage('LAND_BASED','FINAL_INTERVIEW')"><span class="stage-icon">🎯</span> Final Interview</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="OFFER_LETTER"    onclick="showStage('LAND_BASED','OFFER_LETTER')"><span class="stage-icon">📄</span> Offer Letter</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="ONBOARDING"      onclick="showStage('LAND_BASED','ONBOARDING')"><span class="stage-icon">🏨</span> Onboarding</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="LB_VISA"         onclick="showStage('LAND_BASED','LB_VISA')"><span class="stage-icon">🛂</span> Visa</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="CLIENTS"         onclick="showStage('LAND_BASED','CLIENTS')"><span class="stage-icon">👔</span> Clients</div>
+          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="ARCHIVED"        onclick="showStage('LAND_BASED','ARCHIVED')"><span class="stage-icon">📦</span> Archived</div>
+          <div class="prog-group-label">Tools</div>
+          <div class="tool-nav-item" data-prog="LAND_BASED" data-tool="local"  onclick="showTool('LAND_BASED','local')"><span class="tool-icon">⚙</span> Local Settings</div>
+          <div class="tool-nav-item" data-prog="LAND_BASED" data-tool="fields" onclick="showTool('LAND_BASED','fields')"><span class="tool-icon">📋</span> Stage Fields</div>
+          <div class="tool-nav-item" data-prog="LAND_BASED" data-tool="docs"   onclick="showTool('LAND_BASED','docs')"><span class="tool-icon">📁</span> Documents</div>
+        </div>
+      </div>
+
+      <!-- ── GENERAL ────────────────────────────────────────────────── -->
+      <div class="sidebar-section" id="admin-only-section" style="margin-top:8px">General</div>
       <div class="nav-item" data-view="clients" onclick="showView('clients')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Clients
       </div>
-
-      <div class="sidebar-section">Tools</div>
       <div class="nav-item" data-view="interviews" onclick="showView('interviews')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
         Interview Setup
-      </div>
-      <div class="nav-item" data-view="compliance" onclick="showView('compliance')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        Document Filter
       </div>
       <div class="nav-item" data-view="forms" onclick="showView('forms')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         Form Builder
       </div>
-
-      <div class="sidebar-section" id="admin-only-section">Admin</div>
       <div class="nav-item" id="nav-users" data-view="users" onclick="showView('users')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         Users
@@ -355,6 +393,51 @@
             </table>
           </div>
           <div class="pagination" id="arc-pagination"></div>
+        </div>
+
+        <!-- ── Pipeline Stage Pane (shared — renders any program:stage) ──── -->
+        <div id="pane-stage" class="pane hidden">
+          <div class="pane-header-row">
+            <div>
+              <div class="pane-title" id="stage-pane-title"></div>
+              <div class="pane-sub" id="stage-pane-sub"></div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-ghost btn-sm" onclick="exportStageCandidatesCSV()">⬇ Export</button>
+              <button class="btn btn-primary" id="stage-pane-add-btn" onclick="openAddCandidateModal()">+ Add Candidate</button>
+            </div>
+          </div>
+          <div class="filters">
+            <div class="search-bar" style="flex:1;max-width:320px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="stage-pane-search" placeholder="Search candidates…" oninput="debounce(loadStagePane,400)()">
+            </div>
+            <select id="stage-pane-recruiter" onchange="loadStagePane()" style="max-width:160px">
+              <option value="">All Recruiters</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr id="stage-pane-thead"></tr></thead>
+              <tbody id="stage-pane-tbody"><tr><td colspan="5" class="table-empty">Select a pipeline stage to begin.</td></tr></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="stage-pane-pagination"></div>
+        </div>
+
+        <!-- ── Local Settings Pane ───────────────────────────────────── -->
+        <div id="pane-prog-local" class="pane hidden">
+          <div id="local-settings-content"></div>
+        </div>
+
+        <!-- ── Stage Fields Config Pane ─────────────────────────────── -->
+        <div id="pane-prog-fields" class="pane hidden">
+          <div id="stage-fields-content"></div>
+        </div>
+
+        <!-- ── Program Documents Pane ────────────────────────────────── -->
+        <div id="pane-prog-docs" class="pane hidden">
+          <div id="prog-docs-content"></div>
         </div>
 
         <!-- Interview Setup (ZeusHire injection) -->

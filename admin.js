@@ -293,36 +293,185 @@ function bootApp() {
   }
   loadClientsList();
   loadRecruitersList();
-  const savedView = localStorage.getItem('poseidon_view');
-  showView(savedView && VIEW_META[savedView] ? savedView : 'dashboard');
+  const savedView = localStorage.getItem('poseidon_view') || 'dashboard';
+  // Restore program:stage or program:tool views
+  if (savedView.includes(':')) {
+    const [prog, sub] = savedView.split(':');
+    if (PIPELINE_STAGES[prog]) {
+      const isStage = Object.values(PIPELINE_STAGES).some(arr => arr.some(s => s.id === sub));
+      const isTool  = ['local','fields','docs'].includes(sub);
+      // PIPELINE_STAGES not defined yet at this point, resolved after assignment
+      // safe to call after DOM ready
+      setTimeout(() => {
+        if (isTool)  showTool(prog, sub);
+        else         showStage(prog, sub);
+      }, 0);
+    } else { showView('dashboard'); }
+  } else {
+    showView(VIEW_META[savedView] ? savedView : 'dashboard');
+  }
   pollSubmissionBadge();
   pollNotifications();
 }
 
+// ── Pipeline Stage Definitions ────────────────────────────────────────────────
+
+const PIPELINE_STAGES = {
+  J1_PROGRAM: [
+    { id: 'NEW_SUBMISSION',    label: 'New Submission',  icon: '📥' },
+    { id: 'CONSULTATION_CALL', label: 'Consultation',    icon: '📞' },
+    { id: 'J1_STAGE_1',        label: 'Stage 1',         icon: '①'  },
+    { id: 'J1_STAGE_2',        label: 'Stage 2',         icon: '②'  },
+    { id: 'J1_STAGE_3',        label: 'Stage 3',         icon: '③'  },
+    { id: 'J1_STAGE_4',        label: 'Stage 4',         icon: '④'  },
+    { id: 'J1_VISA',           label: 'J1-Visa',         icon: '🛂' },
+    { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
+    { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
+  ],
+  SEA_BASED: [
+    { id: 'NEW_SUBMISSION',    label: 'New Submission',  icon: '📥' },
+    { id: 'CANDIDATES',        label: 'Candidates',      icon: '👥' },
+    { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
+    { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
+    { id: 'ONBOARDING',        label: 'Onboarding',      icon: '⚓' },
+    { id: 'C1D_VISA',          label: 'C1-D Visa',       icon: '🛂' },
+    { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
+    { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
+  ],
+  LAND_BASED: [
+    { id: 'NEW_SUBMISSION',    label: 'New Submission',  icon: '📥' },
+    { id: 'CANDIDATES',        label: 'Candidates',      icon: '👥' },
+    { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
+    { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
+    { id: 'ONBOARDING',        label: 'Onboarding',      icon: '🏨' },
+    { id: 'LB_VISA',           label: 'Visa',            icon: '🛂' },
+    { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
+    { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
+  ],
+};
+
+const PROGRAM_META = {
+  J1_PROGRAM: { label: 'J1 Program',  icon: '🎓', badgeClass: 'prog-badge-j1',   color: '#8b5cf6' },
+  SEA_BASED:  { label: 'Sea-Based',   icon: '🚢', badgeClass: 'prog-badge-sea',  color: '#38bdf8' },
+  LAND_BASED: { label: 'Land-Based',  icon: '🏨', badgeClass: 'prog-badge-land', color: '#22c55e' },
+};
+
+const LOCAL_SETTINGS_FIELDS = {
+  J1_PROGRAM: [
+    { key: 'default_sponsor',        label: 'Default Sponsor Name',              placeholder: 'e.g. CETUSA' },
+    { key: 'sevis_fee_amount',        label: 'SEVIS Fee Amount (USD)',             type: 'number', placeholder: '220' },
+    { key: 'default_program_months',  label: 'Default Program Duration (months)', type: 'number', placeholder: '12' },
+    { key: 'ds2019_reminder_days',    label: 'DS-2019 Expiry Reminder (days)',    type: 'number', placeholder: '30' },
+    { key: 'auto_assign_recruiter',   label: 'Auto-assign Recruiter',             type: 'checkbox', checkLabel: 'Automatically assign recruiter on new submission' },
+  ],
+  SEA_BASED: [
+    { key: 'default_vessel_type',     label: 'Default Vessel Type',               placeholder: 'Cruise' },
+    { key: 'c1d_appointment_cost',    label: 'C1/D Visa Appointment Cost (USD)',  type: 'number', placeholder: '160' },
+    { key: 'medical_validity_months', label: 'Medical Cert Validity (months)',    type: 'number', placeholder: '24' },
+    { key: 'stcw_reminder_days',      label: 'STCW Expiry Reminder (days)',       type: 'number', placeholder: '60' },
+    { key: 'require_seaman_book',     label: "Require Seaman's Book",             type: 'checkbox', checkLabel: "Mark Seaman's Book as required at Candidates stage" },
+  ],
+  LAND_BASED: [
+    { key: 'default_contract_type',   label: 'Default Contract Type',             placeholder: 'Fixed-Term' },
+    { key: 'visa_reminder_days',      label: 'Visa Expiry Reminder (days)',       type: 'number', placeholder: '45' },
+    { key: 'bg_check_provider',       label: 'Background Check Provider',         placeholder: 'Sterling' },
+    { key: 'require_bg_check',        label: 'Require Background Check',          type: 'checkbox', checkLabel: 'Required before Offer Letter stage' },
+  ],
+};
+
+// ── Nav State ─────────────────────────────────────────────────────────────────
+
+let _navProgram = null;   // 'J1_PROGRAM' | 'SEA_BASED' | 'LAND_BASED' | null
+let _navStage   = null;   // e.g. 'CANDIDATES' | 'J1_STAGE_1'
+let _navTool    = null;   // 'local' | 'fields' | 'docs'
+let _stagePanePage = 1;
+
 // ── View router ───────────────────────────────────────────────────────────────
 
 const VIEW_META = {
-  dashboard:       { title: 'Dashboard',          action: null },
-  submissions:     { title: 'Form Submissions',    action: { label: '+ Manual Entry', fn: openAddCandidateModal } },
-  'new-submissions': { title: 'New Submissions',   action: { label: '+ Add Candidate', fn: openAddCandidateModal } },
-  candidates:      { title: 'Candidates',          action: { label: '+ Add Candidate', fn: openAddCandidateModal } },
-  'final-interview': { title: 'Final Interview',   action: null },
-  'offer-letter':  { title: 'Offer Letter',        action: null },
-  onboarding:      { title: 'Onboarding',          action: null },
-  archive:         { title: 'Archive',             action: null },
-  interviews:      { title: 'Interview Setup',     action: { label: '+ New Interview', fn: openNewInterviewModal } },
-  clients:         { title: 'Clients',             action: { label: '+ Add Client', fn: openAddClientModal } },
-  compliance:      { title: 'Compliance Filter',   action: null },
-  forms:           { title: 'Form Builder',        action: null },
-  users:           { title: 'Users',               action: null },
-  settings:        { title: 'Settings',            action: null },
+  dashboard:  { title: 'Dashboard',      action: null },
+  interviews: { title: 'Interview Setup', action: { label: '+ New Interview', fn: () => openNewInterviewModal() } },
+  clients:    { title: 'Clients',         action: { label: '+ Add Client',    fn: () => openAddClientModal() } },
+  compliance: { title: 'Document Filter', action: null },
+  forms:      { title: 'Form Builder',    action: null },
+  users:      { title: 'Users',           action: null },
+  settings:   { title: 'Settings',        action: null },
 };
 
-function showView(name) {
+function _showPane(name) {
   document.querySelectorAll('.pane').forEach(p => p.classList.add('hidden'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById(`pane-${name}`)?.classList.remove('hidden');
+}
+
+function _renderSidebarActive() {
+  document.querySelectorAll('.nav-item, .stage-nav-item, .tool-nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.prog-section').forEach(el => el.classList.remove('active'));
+  if (!_navProgram) return;
+  const section = document.getElementById(`prog-${_navProgram}`);
+  if (section) section.classList.add('active');
+  if (_navStage) document.querySelector(`[data-prog="${_navProgram}"][data-stage="${_navStage}"]`)?.classList.add('active');
+  if (_navTool)  document.querySelector(`[data-prog="${_navProgram}"][data-tool="${_navTool}"]`)?.classList.add('active');
+}
+
+function toggleProgram(prog) {
+  const body    = document.getElementById(`body-${prog}`);
+  const chevron = document.getElementById(`chevron-${prog}`);
+  const hdr     = document.getElementById(`prog-hdr-${prog}`);
+  if (!body) return;
+  const isOpen = body.classList.toggle('open');
+  chevron.style.transform = isOpen ? 'rotate(180deg)' : '';
+  hdr.classList.toggle('open', isOpen);
+}
+
+function _ensureProgOpen(prog) {
+  const body = document.getElementById(`body-${prog}`);
+  if (body && !body.classList.contains('open')) toggleProgram(prog);
+}
+
+function showStage(program, stage) {
+  _navProgram = program;
+  _navStage   = stage;
+  _navTool    = null;
+  _stagePanePage = 1;
+  _ensureProgOpen(program);
+  _renderSidebarActive();
+  _showPane('stage');
+  const pm = PROGRAM_META[program];
+  const sm = PIPELINE_STAGES[program]?.find(s => s.id === stage);
+  document.getElementById('page-title').textContent = `${pm.icon} ${pm.label} — ${sm?.label || stage}`;
+  document.getElementById('topbar-action').style.display = 'none';
+  STATE.currentView = `${program}:${stage}`;
+  localStorage.setItem('poseidon_view', `${program}:${stage}`);
+  loadStagePane();
+}
+
+function showTool(program, tool) {
+  _navProgram = program;
+  _navStage   = null;
+  _navTool    = tool;
+  _ensureProgOpen(program);
+  _renderSidebarActive();
+  const paneMap = { local: 'prog-local', fields: 'prog-fields', docs: 'prog-docs' };
+  _showPane(paneMap[tool]);
+  const pm = PROGRAM_META[program];
+  const toolLabel = { local: 'Local Settings', fields: 'Stage Fields', docs: 'Documents' }[tool];
+  document.getElementById('page-title').textContent = `${pm.icon} ${pm.label} — ${toolLabel}`;
+  document.getElementById('topbar-action').style.display = 'none';
+  STATE.currentView = `${program}:${tool}`;
+  localStorage.setItem('poseidon_view', `${program}:${tool}`);
+  if (tool === 'local')  loadLocalSettings();
+  if (tool === 'fields') loadStageFields();
+  if (tool === 'docs')   loadProgDocs();
+}
+
+function showView(name) {
+  _navProgram = null;
+  _navStage   = null;
+  _navTool    = null;
+  _renderSidebarActive();
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
+  _showPane(name);
   const meta = VIEW_META[name];
   document.getElementById('page-title').textContent = meta?.title || name;
   const btn = document.getElementById('topbar-action');
@@ -330,19 +479,410 @@ function showView(name) {
   else { btn.style.display = 'none'; }
   STATE.currentView = name;
   localStorage.setItem('poseidon_view', name);
-  if (name === 'dashboard')      loadDashboard();
-  if (name === 'submissions')    loadSubmissions();
-  if (name === 'candidates')     loadCandidates();
-  if (name === 'new-submissions') loadNewSubmissions();
-  if (name === 'final-interview') loadFinalInterview();
-  if (name === 'offer-letter')   loadOfferLetter();
-  if (name === 'onboarding')     loadOnboarding();
-  if (name === 'archive')        loadArchive();
-  if (name === 'interviews')     loadInterviews();
-  if (name === 'clients')        loadClients();
-  if (name === 'forms')          loadForms();
-  if (name === 'users')          loadUsers();
-  if (name === 'settings')       loadSettings();
+  if (name === 'dashboard')  loadDashboard();
+  if (name === 'interviews') loadInterviews();
+  if (name === 'clients')    loadClients();
+  if (name === 'compliance') { /* loadCompliance called by comp filter button */ }
+  if (name === 'forms')      loadForms();
+  if (name === 'users')      loadUsers();
+  if (name === 'settings')   loadSettings();
+}
+
+// ── Stage Pane (generic per-program stage view) ───────────────────────────────
+
+async function loadStagePane() {
+  const prog = _navProgram, stage = _navStage;
+  if (!prog || !stage) return;
+  const pm = PROGRAM_META[prog];
+  const sm = PIPELINE_STAGES[prog]?.find(s => s.id === stage);
+
+  document.getElementById('stage-pane-title').textContent = sm?.label || stage;
+  document.getElementById('stage-pane-sub').innerHTML =
+    `<span class="prog-badge ${pm.badgeClass}">${pm.icon} ${pm.label}</span>`;
+
+  const addBtn = document.getElementById('stage-pane-add-btn');
+  addBtn.style.display = stage === 'ARCHIVED' ? 'none' : '';
+
+  const search    = document.getElementById('stage-pane-search')?.value || '';
+  const recruiter = document.getElementById('stage-pane-recruiter')?.value || '';
+  const tbody = document.getElementById('stage-pane-tbody');
+  const thead = document.getElementById('stage-pane-thead');
+  tbody.innerHTML = `<tr><td colspan="5" class="table-empty"><span class="spinner"></span></td></tr>`;
+
+  // Build column headers contextually
+  thead.innerHTML = getStagePaneHeaders(prog, stage);
+
+  try {
+    const params = new URLSearchParams({ pipeline: prog, status: stage, page: _stagePanePage, limit: 25 });
+    if (search) params.set('search', search);
+    if (recruiter) params.set('recruiterId', recruiter);
+    const d = await api('GET', `/candidates?${params}`);
+    const rows = d.candidates || [];
+    tbody.innerHTML = rows.map(c => getStagePaneRow(c, prog, stage)).join('')
+      || `<tr><td colspan="5" class="table-empty">No candidates in ${sm?.label || stage}</td></tr>`;
+    renderPagination('stage-pane-pagination', d.page, d.totalPages,
+      p => { _stagePanePage = p; loadStagePane(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function getStagePaneHeaders(prog, stage) {
+  if (stage === 'ARCHIVED')
+    return '<th>Candidate</th><th>Recruiter</th><th>Archived At</th><th>Reason</th><th></th>';
+  if (stage === 'FINAL_INTERVIEW')
+    return '<th>Candidate</th><th>Endorsed To</th><th>Recruiter</th><th>Updated</th><th></th>';
+  if (stage === 'CLIENTS')
+    return '<th>Candidate</th><th>Client / Ship</th><th>Recruiter</th><th>Updated</th><th></th>';
+  return '<th>Candidate</th><th>Recruiter</th><th>Status</th><th>Updated</th><th></th>';
+}
+
+function getStagePaneRow(c, prog, stage) {
+  const name = `${esc(c.first_name)} ${esc(c.last_name)}`;
+  const recruiter = esc(c.recruiter_name || '—');
+  const updated = relTime(c.updated_at);
+  const viewBtn = `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail('${c.id}')">View</button>`;
+
+  if (stage === 'ARCHIVED') return `
+    <tr onclick="openDetail('${c.id}')">
+      <td><div style="font-weight:600">${name}</div><div style="font-size:11px;color:var(--text-muted)">${esc(c.email)}</div></td>
+      <td class="text-muted">${recruiter}</td>
+      <td class="text-muted">${c.archived_at ? relTime(c.archived_at) : updated}</td>
+      <td class="text-muted">${esc(c.archive_reason || '—')}</td>
+      <td>${viewBtn}</td>
+    </tr>`;
+
+  if (stage === 'FINAL_INTERVIEW') return `
+    <tr onclick="openDetail('${c.id}')">
+      <td><div style="font-weight:600">${name}</div><div style="font-size:11px;color:var(--text-muted)">${esc(c.email)}</div></td>
+      <td class="text-muted">${esc(c.endorsed_client_name || '—')}</td>
+      <td class="text-muted">${recruiter}</td>
+      <td class="text-muted">${updated}</td>
+      <td>${viewBtn}</td>
+    </tr>`;
+
+  if (stage === 'CLIENTS') return `
+    <tr onclick="openDetail('${c.id}')">
+      <td><div style="font-weight:600">${name}</div><div style="font-size:11px;color:var(--text-muted)">${esc(c.email)}</div></td>
+      <td class="text-muted">${esc(c.endorsed_client_name || '—')}</td>
+      <td class="text-muted">${recruiter}</td>
+      <td class="text-muted">${updated}</td>
+      <td>${viewBtn}</td>
+    </tr>`;
+
+  return `
+    <tr onclick="openDetail('${c.id}')">
+      <td><div style="font-weight:600">${name}</div><div style="font-size:11px;color:var(--text-muted)">${esc(c.email)}</div></td>
+      <td class="text-muted">${recruiter}</td>
+      <td><span class="badge badge-active" style="font-size:10px">${esc(c.status.replace(/_/g,' '))}</span></td>
+      <td class="text-muted">${updated}</td>
+      <td>${viewBtn}</td>
+    </tr>`;
+}
+
+async function exportStageCandidatesCSV() {
+  if (!_navProgram || !_navStage) return;
+  const params = new URLSearchParams({ pipeline: _navProgram, status: _navStage, limit: 1000 });
+  const search = document.getElementById('stage-pane-search')?.value;
+  if (search) params.set('search', search);
+  try {
+    const d = await api('GET', `/candidates?${params}`);
+    const rows = d.candidates || [];
+    const headers = ['ID','First Name','Last Name','Email','Phone','Pipeline','Status','Recruiter','Updated'];
+    const csv = [headers, ...rows.map(c => [
+      c.id, c.first_name, c.last_name, c.email, c.phone || '',
+      c.pipeline, c.status, c.recruiter_name || '', c.updated_at
+    ])].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = `${_navProgram}_${_navStage}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Local Settings ────────────────────────────────────────────────────────────
+
+async function loadLocalSettings() {
+  const prog = _navProgram;
+  if (!prog) return;
+  const pm = PROGRAM_META[prog];
+  const content = document.getElementById('local-settings-content');
+  content.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
+  const d = await api('GET', `/program-settings/${prog}`).catch(() => ({ settings: {} }));
+  const s = d.settings || {};
+  const fields = LOCAL_SETTINGS_FIELDS[prog] || [];
+  content.innerHTML = `
+    <div class="pane-header-row">
+      <div>
+        <div class="pane-title">Local Settings</div>
+        <div class="pane-sub"><span class="prog-badge ${pm.badgeClass}">${pm.icon} ${pm.label}</span></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveLocalSettings('${prog}')">Save Settings</button>
+    </div>
+    <div class="local-settings-card">
+      <div class="section-title">Configuration</div>
+      ${fields.map(f => `
+        <div class="form-group">
+          <label>${esc(f.label)}${f.help ? `<span style="font-weight:400;color:var(--text-muted);font-size:11px;margin-left:6px">${f.help}</span>` : ''}</label>
+          ${f.type === 'checkbox'
+            ? `<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="ls-${f.key}" ${s[f.key]==='1'?'checked':''}> ${esc(f.checkLabel||'Enabled')}</label>`
+            : `<input type="${f.type||'text'}" id="ls-${f.key}" value="${esc(s[f.key]||f.default||'')}" placeholder="${esc(f.placeholder||'')}">`
+          }
+        </div>`).join('')}
+    </div>`;
+}
+
+async function saveLocalSettings(prog) {
+  const fields = LOCAL_SETTINGS_FIELDS[prog] || [];
+  const payload = {};
+  fields.forEach(f => {
+    const el = document.getElementById(`ls-${f.key}`);
+    if (!el) return;
+    payload[f.key] = f.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value.trim();
+  });
+  try {
+    await api('PATCH', `/program-settings/${prog}`, payload);
+    toast('Settings saved', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Stage Fields Config ───────────────────────────────────────────────────────
+
+async function loadStageFields() {
+  const prog = _navProgram;
+  if (!prog) return;
+  const pm = PROGRAM_META[prog];
+  const stages = PIPELINE_STAGES[prog].filter(s => !['CLIENTS','ARCHIVED'].includes(s.id));
+  const content = document.getElementById('stage-fields-content');
+  content.innerHTML = `
+    <div class="pane-header-row">
+      <div>
+        <div class="pane-title">Stage Fields Config</div>
+        <div class="pane-sub"><span class="prog-badge ${pm.badgeClass}">${pm.icon} ${pm.label}</span> — customize fields required at each stage</div>
+      </div>
+    </div>
+    <div class="iw-subnav" id="sf-stage-tabs">
+      ${stages.map((s,i) => `<button class="filter-chip ${i===0?'active':''}" id="sf-tab-${s.id}" onclick="loadStageFieldsForStage('${prog}','${s.id}')">${s.icon} ${s.label}</button>`).join('')}
+    </div>
+    <div id="sf-fields-area"><div class="iw-empty-state"><div class="spinner"></div></div></div>`;
+  await loadStageFieldsForStage(prog, stages[0].id);
+}
+
+async function loadStageFieldsForStage(prog, stage) {
+  document.querySelectorAll('#sf-stage-tabs .filter-chip').forEach(b => b.classList.remove('active'));
+  document.getElementById(`sf-tab-${stage}`)?.classList.add('active');
+  const area = document.getElementById('sf-fields-area');
+  area.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
+  const d = await api('GET', `/stage-fields?pipeline=${prog}&stage=${stage}`).catch(() => ({ fields: [] }));
+  const rows = (d.fields || []).sort((a,b) => a.sort_order - b.sort_order);
+  area.innerHTML = `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn btn-primary btn-sm" onclick="openAddStageFieldModal('${prog}','${stage}')">+ Add Field</button>
+    </div>
+    ${rows.length ? `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Order</th><th>Actions</th></tr></thead>
+      <tbody>
+        ${rows.map(f => `<tr>
+          <td style="font-weight:500">${esc(f.field_label)}</td>
+          <td><code style="font-size:11px;background:var(--navy-mid);padding:2px 6px;border-radius:4px">${esc(f.field_key)}</code></td>
+          <td><span class="field-type-badge">${esc(f.field_type)}</span></td>
+          <td>${f.is_required ? '<span class="badge badge-approved" style="font-size:10px">Yes</span>' : '<span class="badge" style="font-size:10px;background:var(--navy-mid);color:var(--text-muted)">No</span>'}</td>
+          <td class="text-muted">${f.sort_order}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-ghost btn-sm" onclick="openEditStageFieldModal('${f.id}','${prog}','${stage}','${esc(f.field_label)}','${f.field_type}',${f.is_required},${f.sort_order})">✏</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteStageField('${f.id}','${prog}','${stage}','${esc(f.field_label)}')">🗑</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`
+    : `<div class="iw-empty-state">No fields configured for this stage.<br><button class="btn btn-primary" style="margin-top:12px" onclick="openAddStageFieldModal('${prog}','${stage}')">+ Add First Field</button></div>`}`;
+}
+
+function openAddStageFieldModal(prog, stage) {
+  openModal('Add Stage Field', `
+    <div class="form-row">
+      <div class="form-group"><label>Field Label *</label><input type="text" id="sf-label" placeholder="e.g. Interview Score"></div>
+      <div class="form-group"><label>Field Key *</label><input type="text" id="sf-key" placeholder="e.g. interview_score"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Type</label>
+        <select id="sf-type">
+          <option value="text">Text</option><option value="number">Number</option>
+          <option value="date">Date</option><option value="select">Select</option>
+          <option value="textarea">Textarea</option><option value="checkbox">Checkbox</option>
+          <option value="file">File Upload</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Sort Order</label><input type="number" id="sf-order" value="0" min="0"></div>
+    </div>
+    <div class="form-group"><label>Placeholder</label><input type="text" id="sf-placeholder" placeholder="Optional hint text"></div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer">
+      <input type="checkbox" id="sf-required"> Mark as Required
+    </label>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddStageField('${prog}','${stage}')">Add Field</button>
+    </div>`);
+  document.getElementById('sf-label').oninput = function() {
+    const key = document.getElementById('sf-key');
+    if (!key._touched) key.value = this.value.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  };
+  document.getElementById('sf-key').oninput = function() { this._touched = true; };
+}
+
+async function submitAddStageField(prog, stage) {
+  const label = document.getElementById('sf-label').value.trim();
+  const key   = document.getElementById('sf-key').value.trim();
+  if (!label || !key) { toast('Label and Key are required', 'error'); return; }
+  try {
+    await api('POST', '/stage-fields', {
+      pipeline: prog, stage,
+      fieldLabel: label, fieldKey: key,
+      fieldType:  document.getElementById('sf-type').value,
+      isRequired: document.getElementById('sf-required').checked,
+      sortOrder:  parseInt(document.getElementById('sf-order').value) || 0,
+      placeholder: document.getElementById('sf-placeholder').value.trim() || null,
+    });
+    closeModal(); toast('Field added', 'success'); loadStageFieldsForStage(prog, stage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function openEditStageFieldModal(id, prog, stage, label, type, required, order) {
+  openModal('Edit Stage Field', `
+    <div class="form-group"><label>Field Label *</label><input type="text" id="sfe-label" value="${esc(label)}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Type</label>
+        <select id="sfe-type">
+          <option value="text" ${type==='text'?'selected':''}>Text</option>
+          <option value="number" ${type==='number'?'selected':''}>Number</option>
+          <option value="date" ${type==='date'?'selected':''}>Date</option>
+          <option value="select" ${type==='select'?'selected':''}>Select</option>
+          <option value="textarea" ${type==='textarea'?'selected':''}>Textarea</option>
+          <option value="checkbox" ${type==='checkbox'?'selected':''}>Checkbox</option>
+          <option value="file" ${type==='file'?'selected':''}>File Upload</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Sort Order</label><input type="number" id="sfe-order" value="${order}" min="0"></div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer">
+      <input type="checkbox" id="sfe-required" ${required?'checked':''}> Mark as Required
+    </label>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditStageField('${id}','${prog}','${stage}')">Save Changes</button>
+    </div>`);
+}
+
+async function submitEditStageField(id, prog, stage) {
+  const label = document.getElementById('sfe-label').value.trim();
+  if (!label) { toast('Label is required', 'error'); return; }
+  try {
+    await api('PATCH', `/stage-fields/${id}`, {
+      fieldLabel: label,
+      fieldType:  document.getElementById('sfe-type').value,
+      isRequired: document.getElementById('sfe-required').checked,
+      sortOrder:  parseInt(document.getElementById('sfe-order').value) || 0,
+    });
+    closeModal(); toast('Field updated', 'success'); loadStageFieldsForStage(prog, stage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function deleteStageField(id, prog, stage, label) {
+  const ok = await showConfirm(`Delete field "${label}"? This cannot be undone.`);
+  if (!ok) return;
+  try {
+    await api('DELETE', `/stage-fields/${id}`);
+    toast('Field deleted', 'info'); loadStageFieldsForStage(prog, stage);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Program Documents ─────────────────────────────────────────────────────────
+
+function loadProgDocs() {
+  const prog = _navProgram;
+  if (!prog) return;
+  const pm = PROGRAM_META[prog];
+  const content = document.getElementById('prog-docs-content');
+
+  // Pre-select doc types based on program
+  const docPresets = {
+    J1_PROGRAM: ['PASSPORT','DS_2019'],
+    SEA_BASED:  ['PASSPORT','SEAMANS_BOOK','MEDICAL_CERTIFICATE','STCW_CERTIFICATE'],
+    LAND_BASED: ['PASSPORT','NBI_CLEARANCE'],
+  };
+  const preset = docPresets[prog] || [];
+
+  content.innerHTML = `
+    <div class="pane-header-row" style="margin-bottom:20px">
+      <div>
+        <div class="pane-title">Documents Filter</div>
+        <div class="pane-sub"><span class="prog-badge ${pm.badgeClass}">${pm.icon} ${pm.label}</span></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title" style="margin-bottom:16px">Filter Criteria</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Document Types</label>
+          <select id="pd-doc-types" multiple style="height:120px">
+            <option value="PASSPORT"            ${preset.includes('PASSPORT')?'selected':''}>Passport</option>
+            <option value="DS_2019"             ${preset.includes('DS_2019')?'selected':''}>DS-2019</option>
+            <option value="SEAMANS_BOOK"        ${preset.includes('SEAMANS_BOOK')?'selected':''}>Seaman's Book</option>
+            <option value="MEDICAL_CERTIFICATE" ${preset.includes('MEDICAL_CERTIFICATE')?'selected':''}>Medical Certificate</option>
+            <option value="STCW_CERTIFICATE"    ${preset.includes('STCW_CERTIFICATE')?'selected':''}>STCW Certificate</option>
+            <option value="C1D_VISA"            ${preset.includes('C1D_VISA')?'selected':''}>C1/D Visa</option>
+            <option value="NBI_CLEARANCE"       ${preset.includes('NBI_CLEARANCE')?'selected':''}>NBI Clearance</option>
+            <option value="WORK_PERMIT"         ${preset.includes('WORK_PERMIT')?'selected':''}>Work Permit</option>
+          </select>
+        </div>
+        <div>
+          <div class="form-group">
+            <label>Expires Before</label>
+            <input type="date" id="pd-expires-before">
+          </div>
+          <div class="form-group">
+            <label>Candidate Status</label>
+            <select id="pd-status">
+              <option value="">All Statuses</option>
+              ${(PIPELINE_STAGES[prog]||[]).map(s=>`<option value="${s.id}">${s.icon} ${s.label}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="runProgDocsFilter('${prog}')">Run Filter</button>
+    </div>
+    <div id="pd-results"></div>`;
+}
+
+async function runProgDocsFilter(prog) {
+  const types = [...document.getElementById('pd-doc-types').selectedOptions].map(o => o.value);
+  const before = document.getElementById('pd-expires-before').value;
+  const status = document.getElementById('pd-status').value;
+  const results = document.getElementById('pd-results');
+  results.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
+  try {
+    const params = new URLSearchParams({ pipeline: prog });
+    if (types.length) params.set('certTypes', types.join(','));
+    if (before) params.set('expiresBefore', before);
+    if (status) params.set('status', status);
+    const d = await api('GET', `/compliance?${params}`);
+    const rows = d.results || [];
+    if (!rows.length) { results.innerHTML = '<div class="iw-empty-state">No matching documents found.</div>'; return; }
+    results.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Candidate</th><th>Document</th><th>Number</th><th>Expires</th><th>Days Left</th></tr></thead>
+        <tbody>${rows.map(r => {
+          const days = r.expiry_date ? Math.round((new Date(r.expiry_date) - Date.now()) / 86400000) : null;
+          const cls  = days === null ? '' : days < 0 ? 'expiry-dead' : days < 30 ? 'expiry-warn' : 'expiry-ok';
+          return `<tr onclick="openDetail('${r.candidate_id}')">
+            <td><div style="font-weight:500">${esc(r.first_name)} ${esc(r.last_name)}</div><div style="font-size:11px;color:var(--text-muted)">${esc(r.email)}</div></td>
+            <td class="text-muted">${esc(r.cert_type.replace(/_/g,' '))}</td>
+            <td class="text-muted">${esc(r.cert_number||'—')}</td>
+            <td class="text-muted">${r.expiry_date ? r.expiry_date.slice(0,10) : '—'}</td>
+            <td class="${cls} compliance-days">${days !== null ? (days < 0 ? `${Math.abs(days)}d EXPIRED` : `${days}d`) : '—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`;
+  } catch (e) { toast(e.message, 'error'); results.innerHTML = ''; }
 }
 
 // ── Debounce ──────────────────────────────────────────────────────────────────

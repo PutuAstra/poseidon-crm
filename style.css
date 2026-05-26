@@ -1023,3 +1023,162 @@ tbody tr:hover td { background: var(--navy-mid); }
   display: inline-block;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Program Section (collapsible sidebar) ──────────────────────────────────── */
+.prog-section {
+  margin: 2px 0;
+}
+
+.prog-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: var(--radius);
+  margin: 1px 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.prog-header:hover { background: var(--navy-mid); color: var(--text); }
+.prog-header.open  { color: var(--text); }
+
+.prog-header .prog-icon { font-size: 14px; flex-shrink: 0; }
+.prog-header .prog-label { flex: 1; }
+
+.prog-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+}
+
+.prog-body {
+  display: none;
+  padding-bottom: 4px;
+}
+
+.prog-body.open { display: block; }
+
+.prog-group-label {
+  padding: 10px 20px 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.stage-nav-item,
+.tool-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 28px;
+  border-radius: var(--radius);
+  margin: 1px 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  user-select: none;
+  font-size: 12.5px;
+  position: relative;
+}
+
+.stage-nav-item:hover,
+.tool-nav-item:hover  { background: var(--navy-mid); color: var(--text); }
+
+.stage-nav-item.active { background: var(--blue); color: #fff; }
+.tool-nav-item.active  { background: var(--navy-mid); color: var(--text); }
+
+.stage-nav-item .stage-icon { font-size: 13px; flex-shrink: 0; }
+.tool-nav-item  .tool-icon  { font-size: 13px; flex-shrink: 0; }
+
+/* Active program section accent bar */
+.prog-section.active > .prog-header {
+  color: var(--text);
+}
+
+/* Program accent colors */
+.prog-section[data-prog="J1_PROGRAM"].active > .prog-header { color: var(--purple); }
+.prog-section[data-prog="SEA_BASED"].active  > .prog-header { color: #38bdf8; }
+.prog-section[data-prog="LAND_BASED"].active > .prog-header { color: var(--success); }
+
+.prog-section[data-prog="J1_PROGRAM"]  .stage-nav-item.active { background: #4c1d9588; border-left: 3px solid var(--purple); }
+.prog-section[data-prog="SEA_BASED"]   .stage-nav-item.active { background: #0c4a6e88; border-left: 3px solid #38bdf8; }
+.prog-section[data-prog="LAND_BASED"]  .stage-nav-item.active { background: #14532d88; border-left: 3px solid var(--success); }
+
+/* Stage pane header badges */
+.prog-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.prog-badge-j1   { background: #4c1d9533; color: var(--purple); }
+.prog-badge-sea  { background: #0c4a6e33; color: #38bdf8; }
+.prog-badge-land { background: #14532d33; color: var(--success); }
+
+/* Pane header layout */
+.pane-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pane-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.pane-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Stage fields config table */
+.field-type-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--navy-mid);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+
+/* Local settings card */
+.local-settings-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 16px;
+}
+
+.local-settings-card .section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
