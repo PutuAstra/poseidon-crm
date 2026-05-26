@@ -433,7 +433,8 @@ tbody tr:hover td { background: var(--navy-mid); }
 }
 
 .modal.modal-lg { max-width: 800px; }
-.modal.modal-xl { max-width: 960px; }
+.modal.modal-xl { max-width: min(1200px, 92vw); }
+.modal.modal-xxl { max-width: min(1400px, 96vw); }
 
 .modal-header {
   display: flex;

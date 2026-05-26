@@ -1926,7 +1926,7 @@ async function openSfFieldSettings() {
 function _renderSfSettingsModal() {
   const curSec = STATE._sfEditConfig.sections.find(s => s.id === _sfCurrentSection);
   openModal('Configure Seafarer Fields', `
-    <div style="display:flex;gap:0;min-height:460px;max-height:62vh">
+    <div style="display:flex;gap:0;min-height:520px;max-height:72vh">
       <!-- Left sidebar -->
       <div style="width:210px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;display:flex;flex-direction:column">
         <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding:0 4px">Sections</div>
