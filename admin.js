@@ -264,7 +264,7 @@ function bootApp() {
   document.getElementById('view-app').classList.remove('hidden');
   const u = STATE.user;
   document.getElementById('user-name').textContent = `${u.firstName} ${u.lastName}`;
-  document.getElementById('user-role').textContent = u.role.replace('_', ' ');
+  document.getElementById('user-role').textContent = u.role.replace(/_/g, ' ');
   document.getElementById('user-avatar').textContent = (u.firstName[0] + u.lastName[0]).toUpperCase();
   if (!['SUPER_ADMIN', 'ADMIN'].includes(u.role)) {
     document.getElementById('admin-only-section').style.display = 'none';
@@ -1428,7 +1428,7 @@ function openAddUserModal() {
     </div>
     <div class="form-group"><label>Email</label><input type="email" id="au-email"></div>
     <div class="form-group"><label>Role</label>
-      <select id="au-role"><option value="RECRUITER">Recruiter</option><option value="ADMIN">Admin</option><option value="CLIENT_CONTACT">Client Contact</option></select>
+      <select id="au-role"><option value="RECRUITER">Recruiter</option><option value="ONBOARDING_TEAM">Onboarding Team</option><option value="ADMIN">Admin</option><option value="CLIENT_CONTACT">Client Contact</option></select>
     </div>
     <div class="form-group"><label>Temporary Password</label><input type="text" id="au-pw" placeholder="Leave blank to auto-generate"></div>
     <div class="modal-footer">

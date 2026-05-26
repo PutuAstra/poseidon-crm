@@ -359,7 +359,7 @@ R.post('/api/v1/candidates', async (req, env) => {
 });
 
 R.get('/api/v1/candidates', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const pipeline = url.searchParams.get('pipeline');
   const status = url.searchParams.get('status');
   const search = url.searchParams.get('search');
@@ -399,7 +399,7 @@ R.get('/api/v1/candidates/compliance-filter', async (req, env, ctx, p, url) => {
 });
 
 R.get('/api/v1/candidates/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const c = await env.DB.prepare('SELECT*FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   if (u.role === 'RECRUITER' && c.assigned_recruiter_id !== u.id) return err('Forbidden', 403);
@@ -779,7 +779,7 @@ R.delete('/api/v1/interviews/:id/slots/:slotId', async (req, env, ctx, p) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/clients', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const type = url.searchParams.get('type');
   const where = []; const binds = [];
   if (type) { where.push('type=?'); binds.push(type); }
@@ -799,7 +799,7 @@ R.post('/api/v1/clients', async (req, env) => {
 });
 
 R.get('/api/v1/clients/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const c = await env.DB.prepare('SELECT*FROM clients WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   const { results: contacts } = await env.DB.prepare('SELECT cc.*,u.first_name,u.last_name,u.email FROM client_contacts cc JOIN users u ON cc.user_id=u.id WHERE cc.client_id=?').bind(p.id).all();
@@ -911,7 +911,7 @@ R.get('/api/v1/candidates/:id/documents', async (req, env, ctx, p) => {
   if (u.role === 'CANDIDATE') {
     const c = await env.DB.prepare('SELECT id FROM candidates WHERE user_id=?').bind(u.id).first();
     if (!c || c.id !== p.id) return err('Forbidden', 403);
-  } else { const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re; }
+  } else { const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re; }
   const { results } = await env.DB.prepare('SELECT*FROM documents WHERE candidate_id=? ORDER BY created_at DESC').bind(p.id).all();
   return json({ documents: results });
 });
@@ -1026,7 +1026,7 @@ R.patch('/api/v1/portal/me', async (req, env) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/candidates/:id/j1-plan', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const plan = await env.DB.prepare('SELECT*FROM j1_training_plans WHERE candidate_id=?').bind(p.id).first();
   return json(plan || {});
 });
@@ -1052,13 +1052,13 @@ R.put('/api/v1/candidates/:id/j1-plan', async (req, env, ctx, p) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const profile = await env.DB.prepare('SELECT*FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first();
   return json(profile || {});
 });
 
 R.put('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const b = await req.json();
   const cols = {
     // Onboarding
@@ -1166,13 +1166,13 @@ R.put('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const profile = await env.DB.prepare('SELECT*FROM j1_profiles WHERE candidate_id=?').bind(p.id).first();
   return json(profile || {});
 });
 
 R.put('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const b = await req.json();
   const cols = {
     j1_application_status:          b.j1ApplicationStatus,
@@ -1222,7 +1222,7 @@ R.put('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/settings/seafarer-fields', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const config = await env.KV.get('seafarer_field_config', { type: 'json' });
   return json(config || {});
 });
@@ -1239,13 +1239,13 @@ R.put('/api/v1/settings/seafarer-fields', async (req, env) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/candidates/:id/certificates', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const { results } = await env.DB.prepare('SELECT*FROM seafarer_certificates WHERE candidate_id=? ORDER BY cert_type').bind(p.id).all();
   return json(results || []);
 });
 
 R.post('/api/v1/candidates/:id/certificates', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const b = await req.json();
   if (!b.certType) return err('certType required');
   const id = cuid();
@@ -1256,7 +1256,7 @@ R.post('/api/v1/candidates/:id/certificates', async (req, env, ctx, p) => {
 });
 
 R.patch('/api/v1/candidates/:id/certificates/:certId', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const b = await req.json();
   const cols2 = { cert_name:b.certName, cert_number:b.certNumber, cert_status:b.certStatus, issued_date:b.issuedDate, expiry_date:b.expiryDate, appointment_date:b.appointmentDate, issued_nation:b.issuedNation, issued_place:b.issuedPlace, extra_number:b.extraNumber, cost:b.cost!==undefined?(b.cost!==null?Number(b.cost):null):undefined, notes:b.notes };
   const upd2 = Object.fromEntries(Object.entries(cols2).filter(([,v])=>v!==undefined));
@@ -1267,7 +1267,7 @@ R.patch('/api/v1/candidates/:id/certificates/:certId', async (req, env, ctx, p) 
 });
 
 R.delete('/api/v1/candidates/:id/certificates/:certId', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   await env.DB.prepare('DELETE FROM seafarer_certificates WHERE id=? AND candidate_id=?').bind(p.certId,p.id).run();
   return json({ success: true });
 });
@@ -1286,7 +1286,7 @@ R.post('/api/v1/users', async (req, env) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
   const { email, firstName, lastName, role: newRole, password } = await req.json();
   if (!email || !firstName || !lastName || !newRole) return err('All fields required');
-  const VALID_ROLES = ['ADMIN', 'RECRUITER', 'CLIENT_CONTACT'];
+  const VALID_ROLES = ['ADMIN', 'RECRUITER', 'CLIENT_CONTACT', 'ONBOARDING_TEAM'];
   if (!VALID_ROLES.includes(newRole)) return err('Invalid role');
   const id = cuid();
   let pwh = null; let tempPw = null;
@@ -1371,7 +1371,7 @@ R.get('/api/v1/portal/client', async (req, env, ctx, p, url) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/stats', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const recruiterFilter = u.role === 'RECRUITER' ? 'AND assigned_recruiter_id=?' : '';
   const rb = u.role === 'RECRUITER' ? [u.id] : [];
   const [total, byPipeline, byStatus, recent, deployed] = await Promise.all([
@@ -1402,7 +1402,7 @@ R.get('/api/v1/candidates/:id/history', async (req, env, ctx, p) => {
   if (u.role === 'CANDIDATE') {
     const c = await env.DB.prepare('SELECT id FROM candidates WHERE user_id=?').bind(u.id).first();
     if (!c || c.id !== p.id) return err('Forbidden', 403);
-  } else { const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re; }
+  } else { const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re; }
   const { results } = await env.DB.prepare(
     'SELECT h.*,u2.first_name fn,u2.last_name ln FROM pipeline_stage_history h LEFT JOIN users u2 ON h.triggered_by_id=u2.id WHERE h.candidate_id=? ORDER BY h.created_at DESC LIMIT 50'
   ).bind(p.id).all();
@@ -1442,7 +1442,7 @@ R.post('/api/v1/notifications/mark-all-read', async (req, env) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/reports/candidates.csv', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
   const pipeline = url.searchParams.get('pipeline');
   const status   = url.searchParams.get('status');
   let q = 'SELECT c.*,u2.first_name rn,u2.last_name rl FROM candidates c LEFT JOIN users u2 ON c.assigned_recruiter_id=u2.id WHERE 1=1';
