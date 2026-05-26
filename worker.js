@@ -430,48 +430,235 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
   const { toStatus, reason, metadata } = await req.json();
   if (!toStatus) return err('toStatus required');
+  const VALID_STATES = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER_SIGNED','ONBOARDING','ARCHIVED'];
+  if (!VALID_STATES.includes(toStatus)) return err(`Invalid state: ${toStatus}`, 422);
+  const c = await env.DB.prepare('SELECT id,status,pipeline FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  const now = new Date().toISOString();
+  const updates = { status: toStatus, updated_at: now };
+  if (toStatus === 'ARCHIVED') { updates.archive_reason = reason || null; updates.archived_at = now; updates.archived_by_id = u.id; }
+  const setClauses = Object.keys(updates).map(k => `${k}=?`).join(',');
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE candidates SET ${setClauses} WHERE id=?`).bind(...Object.values(updates), p.id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)')
+      .bind(cuid(), p.id, c.status, toStatus, u.id, reason||null, metadata?JSON.stringify(metadata):null)
+  ]);
+  return json({ success: true, fromStatus: c.status, toStatus });
+});
+
+// ── Transitions ───────────────────────────────────────────────────────────────
+
+R.post('/api/v1/candidates/:id/transitions/move-forward', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const c = await env.DB.prepare('SELECT id,status,assigned_recruiter_id FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  if (c.status !== 'NEW_SUBMISSION') return err(`Guard failed: expected NEW_SUBMISSION, got ${c.status}`, 422);
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE candidates SET status='CANDIDATES',updated_at=? WHERE id=?").bind(now, p.id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'NEW_SUBMISSION', 'CANDIDATES', u.id, 'Moved forward from intake')
+  ]);
+  return json({ success: true, toStatus: 'CANDIDATES' });
+});
+
+R.post('/api/v1/candidates/:id/transitions/not-moving-forward', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const { reason } = await req.json().catch(() => ({}));
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
-  const PIPELINE_STAGES = {
-    SEA_BASED: {
-      NEW_SUBMISSION: ['IN_REVIEW', 'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      IN_REVIEW:      ['AVAILABLE', 'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      AVAILABLE:      ['ENGAGED',   'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      ENGAGED:        ['OFFERED',   'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      OFFERED:        ['HIRED',     'REJECTED', 'WITHDRAWN'],
-      HIRED:          ['WITHDRAWN'],
-      REJECTED:       ['IN_REVIEW', 'ARCHIVED'],
-      ARCHIVED: [], WITHDRAWN: []
-    },
-    J1_PROGRAM: {
-      NEW_SUBMISSION:  ['CONSULTATION',    'ARCHIVED', 'WITHDRAWN'],
-      CONSULTATION:    ['INTERVIEW',       'ARCHIVED', 'WITHDRAWN'],
-      INTERVIEW:       ['VISA_PROCESSING', 'ARCHIVED', 'WITHDRAWN'],
-      VISA_PROCESSING: ['USA_ONBOARD',     'ARCHIVED', 'WITHDRAWN'],
-      USA_ONBOARD:     ['COMPLETED',       'ARCHIVED', 'WITHDRAWN'],
-      COMPLETED:       ['ARCHIVED'],
-      ARCHIVED: [], WITHDRAWN: []
-    },
-    LAND_BASED: {
-      NEW_SUBMISSION: ['IN_REVIEW',    'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      IN_REVIEW:      ['SHORTLISTED',  'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      SHORTLISTED:    ['INTERVIEW',    'REJECTED', 'ARCHIVED', 'WITHDRAWN'],
-      INTERVIEW:      ['OFFERED',      'REJECTED', 'WITHDRAWN'],
-      OFFERED:        ['HIRED',        'REJECTED', 'WITHDRAWN'],
-      HIRED:          ['WITHDRAWN'],
-      REJECTED:       ['IN_REVIEW', 'ARCHIVED'],
-      ARCHIVED: [], WITHDRAWN: []
-    }
-  };
-  const stageMap = PIPELINE_STAGES[c.pipeline] || PIPELINE_STAGES.SEA_BASED;
-  if (!stageMap[c.status]?.includes(toStatus)) return err(`Invalid transition: ${c.status} → ${toStatus}`, 422);
+  if (c.status !== 'NEW_SUBMISSION') return err(`Guard failed: expected NEW_SUBMISSION, got ${c.status}`, 422);
+  const now = new Date().toISOString();
   await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status=?,updated_at=datetime('now')WHERE id=?").bind(toStatus, p.id),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)')
-      .bind(cuid(), p.id, c.status, toStatus, u.id, reason || null, metadata ? JSON.stringify(metadata) : null)
+    env.DB.prepare("UPDATE candidates SET status='ARCHIVED',archive_reason=?,archived_at=?,archived_by_id=?,updated_at=? WHERE id=?").bind(reason||'Not moving forward', now, u.id, now, p.id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'NEW_SUBMISSION', 'ARCHIVED', u.id, reason||'Not moving forward')
   ]);
-  if (toStatus === 'HIRED') await provisionPortal(env, p.id);
-  return json({ success: true, fromStatus: c.status, toStatus });
+  return json({ success: true, toStatus: 'ARCHIVED' });
+});
+
+R.post('/api/v1/candidates/:id/transitions/endorse', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const { clientId } = await req.json();
+  if (!clientId) return err('clientId required');
+  const [c, client] = await Promise.all([
+    env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first(),
+    env.DB.prepare("SELECT id,name FROM clients WHERE id=? AND is_active=1").bind(clientId).first()
+  ]);
+  if (!c) return err('Candidate not found', 404);
+  if (!client) return err('Client not found or inactive', 404);
+  if (c.status !== 'CANDIDATES') return err(`Guard failed: expected CANDIDATES, got ${c.status}`, 422);
+  const now = new Date().toISOString();
+  const ex = await env.DB.prepare('SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=?').bind(p.id, clientId).first();
+  await env.DB.batch([
+    ex
+      ? env.DB.prepare("UPDATE client_endorsements SET status='PENDING',endorsed_at=?,updated_at=? WHERE id=?").bind(now, now, ex.id)
+      : env.DB.prepare('INSERT INTO client_endorsements(id,candidate_id,client_id,status,endorsed_at,updated_at)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, clientId, 'PENDING', now, now),
+    env.DB.prepare("UPDATE candidates SET status='FINAL_INTERVIEW',endorsed_client_id=?,endorsed_client_name=?,updated_at=? WHERE id=?").bind(clientId, client.name, now, p.id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)').bind(cuid(), p.id, 'CANDIDATES', 'FINAL_INTERVIEW', u.id, `Endorsed to ${client.name}`, JSON.stringify({ clientId, clientName: client.name }))
+  ]);
+  return json({ success: true, toStatus: 'FINAL_INTERVIEW', clientName: client.name });
+});
+
+R.post('/api/v1/candidates/:id/transitions/client-approved', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
+  const { notes } = await req.json().catch(() => ({}));
+  const c = await env.DB.prepare('SELECT id,status,endorsed_client_id FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  if (c.status !== 'FINAL_INTERVIEW') return err(`Guard failed: expected FINAL_INTERVIEW, got ${c.status}`, 422);
+  if (u.role === 'CLIENT_CONTACT') {
+    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
+    if (!cc || cc.client_id !== c.endorsed_client_id) return err('Forbidden', 403);
+  }
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER_SIGNED',updated_at=? WHERE id=?").bind(now, p.id),
+    env.DB.prepare("UPDATE client_endorsements SET status='APPROVED',decided_at=?,decision_notes=?,updated_at=? WHERE candidate_id=? AND client_id=?").bind(now, notes||null, now, p.id, c.endorsed_client_id||''),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'FINAL_INTERVIEW', 'OFFER_LETTER_SIGNED', u.id, notes||'Client approved')
+  ]);
+  return json({ success: true, toStatus: 'OFFER_LETTER_SIGNED' });
+});
+
+R.post('/api/v1/candidates/:id/transitions/client-rejected', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
+  const { reason } = await req.json().catch(() => ({}));
+  const c = await env.DB.prepare('SELECT id,status,endorsed_client_id FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  if (c.status !== 'FINAL_INTERVIEW') return err(`Guard failed: expected FINAL_INTERVIEW, got ${c.status}`, 422);
+  if (u.role === 'CLIENT_CONTACT') {
+    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
+    if (!cc || cc.client_id !== c.endorsed_client_id) return err('Forbidden', 403);
+  }
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE candidates SET status='ARCHIVED',archive_reason=?,archived_at=?,archived_by_id=?,updated_at=? WHERE id=?").bind(reason||'Client rejected', now, u.id, now, p.id),
+    env.DB.prepare("UPDATE client_endorsements SET status='REJECTED',decided_at=?,decision_notes=?,updated_at=? WHERE candidate_id=? AND client_id=?").bind(now, reason||null, now, p.id, c.endorsed_client_id||''),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'FINAL_INTERVIEW', 'ARCHIVED', u.id, reason||'Client rejected')
+  ]);
+  return json({ success: true, toStatus: 'ARCHIVED' });
+});
+
+R.post('/api/v1/candidates/:id/transitions/archive', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const { reason } = await req.json().catch(() => ({}));
+  if (!reason) return err('reason is required to archive', 422);
+  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  if (c.status === 'ARCHIVED') return err('Already archived', 409);
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE candidates SET status='ARCHIVED',archive_reason=?,archived_at=?,archived_by_id=?,updated_at=? WHERE id=?").bind(reason, now, u.id, now, p.id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, c.status, 'ARCHIVED', u.id, reason)
+  ]);
+  return json({ success: true, fromStatus: c.status, toStatus: 'ARCHIVED' });
+});
+
+R.post('/api/v1/candidates/:id/transitions/restore', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN'); if (re) return re;
+  const { restoreToStatus } = await req.json().catch(() => ({}));
+  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER_SIGNED','ONBOARDING'];
+  if (!restoreToStatus || !VALID.includes(restoreToStatus)) return err('Valid restoreToStatus required', 422);
+  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  if (c.status !== 'ARCHIVED') return err('Candidate is not archived', 409);
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE candidates SET status=?,archive_reason=NULL,archived_at=NULL,archived_by_id=NULL,updated_at=? WHERE id=?").bind(restoreToStatus, now, p.id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'ARCHIVED', restoreToStatus, u.id, 'Restored from archive')
+  ]);
+  return json({ success: true, toStatus: restoreToStatus });
+});
+
+// ── Offer Letters ─────────────────────────────────────────────────────────────
+
+R.get('/api/v1/candidates/:id/offer-letters', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
+  const { results } = await env.DB.prepare('SELECT ol.*,u.first_name gen_fn,u.last_name gen_ln FROM offer_letters ol JOIN users u ON ol.generated_by_id=u.id WHERE ol.candidate_id=? ORDER BY ol.created_at DESC').bind(p.id).all();
+  return json({ offerLetters: results });
+});
+
+R.post('/api/v1/candidates/:id/offer-letters', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const { documentUrl, notes, signingPlatform } = await req.json().catch(() => ({}));
+  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
+  if (!c) return err('Not found', 404);
+  if (!['FINAL_INTERVIEW','OFFER_LETTER_SIGNED'].includes(c.status)) return err(`Guard failed: candidate must be in FINAL_INTERVIEW or OFFER_LETTER_SIGNED state`, 422);
+  const now = new Date().toISOString();
+  const id = cuid();
+  await env.DB.prepare('INSERT INTO offer_letters(id,candidate_id,generated_by_id,document_url,notes,signing_platform,generated_at,created_at,updated_at)VALUES(?,?,?,?,?,?,?,?,?)')
+    .bind(id, p.id, u.id, documentUrl||null, notes||null, signingPlatform||'MANUAL', now, now, now).run();
+  return json({ id, success: true }, 201);
+});
+
+R.patch('/api/v1/offer-letters/:id', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const b = await req.json().catch(() => ({}));
+  const map = {
+    document_url: b.documentUrl,
+    notes: b.notes,
+    signing_session_id: b.signingSessionId,
+    signing_url: b.signingUrl,
+    signing_expires_at: b.signingExpiresAt,
+    sent_for_signing_at: b.sentForSigningAt,
+  };
+  const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
+  if (!Object.keys(upd).length) return err('No valid fields');
+  upd.updated_at = new Date().toISOString();
+  await env.DB.prepare(`UPDATE offer_letters SET ${Object.keys(upd).map(k=>`${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
+  return json({ success: true });
+});
+
+R.post('/api/v1/offer-letters/:id/send', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE id=?').bind(p.id).first();
+  if (!ol) return err('Offer letter not found', 404);
+  if (!ol.document_url) return err('Guard failed: document_url must be set before sending', 422);
+  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(ol.candidate_id).first();
+  const now = new Date().toISOString();
+  const batchOps = [
+    env.DB.prepare("UPDATE offer_letters SET sent_for_signing_at=?,updated_at=? WHERE id=?").bind(now, now, p.id)
+  ];
+  if (c.status === 'FINAL_INTERVIEW') {
+    batchOps.push(
+      env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER_SIGNED',updated_at=? WHERE id=?").bind(now, c.id),
+      env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), c.id, 'FINAL_INTERVIEW', 'OFFER_LETTER_SIGNED', u.id, 'Offer letter sent for signing')
+    );
+  }
+  await env.DB.batch(batchOps);
+  return json({ success: true });
+});
+
+// ── Signature Webhook ─────────────────────────────────────────────────────────
+
+R.post('/api/v1/webhooks/signature-confirmed', async (req, env) => {
+  const sigHeader = req.headers.get('X-Poseidon-Sig');
+  const bodyText = await req.text();
+  let body;
+  try { body = JSON.parse(bodyText); } catch { return err('Invalid JSON', 400); }
+  if (env.SIGNING_WEBHOOK_SECRET && sigHeader) {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', enc.encode(env.SIGNING_WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const expectedBuf = await crypto.subtle.sign('HMAC', key, enc.encode(bodyText));
+    const expected = Array.from(new Uint8Array(expectedBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    if (sigHeader !== expected) return err('Invalid webhook signature', 401);
+  }
+  const { signingSessionId, candidateId, signedBlob } = body;
+  if (!signingSessionId && !candidateId) return err('signingSessionId or candidateId required', 400);
+  let ol;
+  if (signingSessionId) {
+    ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE signing_session_id=?').bind(signingSessionId).first();
+  } else {
+    ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE candidate_id=? ORDER BY created_at DESC LIMIT 1').bind(candidateId).first();
+  }
+  if (!ol) return err('Offer letter not found', 404);
+  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(ol.candidate_id).first();
+  if (!c) return err('Candidate not found', 404);
+  if (!['OFFER_LETTER_SIGNED','FINAL_INTERVIEW'].includes(c.status)) return json({ ignored: true, reason: 'Candidate not in signable state' });
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE offer_letters SET signed_at=?,signed_blob=?,webhook_verified=1,webhook_received_at=?,updated_at=? WHERE id=?").bind(now, signedBlob||'confirmed', now, now, ol.id),
+    env.DB.prepare("UPDATE candidates SET status='ONBOARDING',updated_at=? WHERE id=?").bind(now, ol.candidate_id),
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)').bind(cuid(), ol.candidate_id, c.status, 'ONBOARDING', null, 'Offer letter signed — auto-advanced to Onboarding', JSON.stringify({ offerId: ol.id, signingSessionId: signingSessionId||null }))
+  ]);
+  return json({ success: true, candidateId: ol.candidate_id, toStatus: 'ONBOARDING' });
 });
 
 R.post('/api/v1/candidates/:id/assign-recruiter', async (req, env, ctx, p) => {
@@ -845,14 +1032,14 @@ R.post('/api/v1/candidates/:id/endorse', async (req, env, ctx, p) => {
   if (!Array.isArray(clientIds) || !clientIds.length) return err('clientIds array required');
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
-  if (c.status !== 'PRE_QUAL_APPROVED') return err('Candidate must be PRE_QUAL_APPROVED', 422);
+  if (c.status !== 'CANDIDATES') return err('Candidate must be in CANDIDATES state', 422);
   for (const cid of clientIds) {
     const ex = await env.DB.prepare('SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=?').bind(p.id, cid).first();
     if (!ex) await env.DB.prepare('INSERT INTO client_endorsements(id,candidate_id,client_id)VALUES(?,?,?)').bind(cuid(), p.id, cid).run();
   }
   await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='ENDORSED',updated_at=datetime('now')WHERE id=?").bind(p.id),
-    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,'PRE_QUAL_APPROVED','ENDORSED',?,?)").bind(cuid(), p.id, u.id, `Endorsed to ${clientIds.length} client(s)`)
+    env.DB.prepare("UPDATE candidates SET status='FINAL_INTERVIEW',updated_at=datetime('now')WHERE id=?").bind(p.id),
+    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,'CANDIDATES','FINAL_INTERVIEW',?,?)").bind(cuid(), p.id, u.id, `Endorsed to ${clientIds.length} client(s)`)
   ]);
   return json({ success: true, endorsedTo: clientIds.length });
 });
@@ -1379,7 +1566,7 @@ R.get('/api/v1/stats', async (req, env) => {
     env.DB.prepare(`SELECT pipeline,COUNT(*)cnt FROM candidates WHERE 1=1 ${recruiterFilter} GROUP BY pipeline`).bind(...rb).all(),
     env.DB.prepare(`SELECT status,COUNT(*)cnt FROM candidates WHERE 1=1 ${recruiterFilter} GROUP BY status ORDER BY cnt DESC LIMIT 10`).bind(...rb).all(),
     env.DB.prepare(`SELECT COUNT(*)cnt FROM candidates WHERE created_at>=datetime('now','-30 days') ${recruiterFilter}`).bind(...rb).first(),
-    env.DB.prepare(`SELECT COUNT(*)cnt FROM candidates WHERE status='DEPLOYED' ${recruiterFilter}`).bind(...rb).first()
+    env.DB.prepare(`SELECT COUNT(*)cnt FROM candidates WHERE status='ONBOARDING' ${recruiterFilter}`).bind(...rb).first()
   ]);
   const pending = await env.DB.prepare("SELECT COUNT(*)cnt FROM submissions WHERE reviewed_at IS NULL").first();
   return json({
