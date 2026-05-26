@@ -1990,12 +1990,10 @@ function _buildSfSidebar() {
   const n = config.sections.length;
   return config.sections.map((s, i) => {
     const active = s.id === _sfCurrentSection;
-    const btnBase = 'event.stopPropagation();';
-    const arrowStyle = 'padding:2px 6px;font-size:12px;line-height:1;min-width:0;flex-shrink:0;';
-    return `<div id="sf-sec-row-${esc(s.id)}" style="display:flex;align-items:center;gap:2px;margin-bottom:2px;border-radius:6px;padding:3px 4px;cursor:pointer;${active?'background:var(--navy-mid);':''}"
+    const stop = 'event.stopPropagation();';
+    const arrowBtn = 'padding:2px 5px;font-size:11px;line-height:1;min-width:22px;flex-shrink:0;';
+    return `<div id="sf-sec-row-${esc(s.id)}" style="display:flex;align-items:center;gap:2px;margin-bottom:2px;border-radius:6px;padding:3px 6px;cursor:pointer;${active?'background:var(--navy-mid);':''}"
       onclick="selectSfSection('${esc(s.id)}')">
-      <button class="btn btn-ghost btn-sm" onclick="${btnBase}sfSecMoveUp('${esc(s.id)}')"
-        style="${arrowStyle}${i===0?'opacity:.2;pointer-events:none;':''}" title="Move up">▲</button>
       <input type="text" value="${esc(s.label)}"
         onclick="event.stopPropagation()"
         onfocus="selectSfSection('${esc(s.id)}');this.style.borderBottomColor='var(--blue)';this.style.cursor='text'"
@@ -2003,11 +2001,13 @@ function _buildSfSidebar() {
         onchange="sfSecRename('${esc(s.id)}',this.value)"
         style="flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid transparent;
           color:${active?'var(--text)':'var(--text-muted)'};font-size:13px;${active?'font-weight:600;':''}
-          outline:none;cursor:pointer;text-align:center;">
-      <button class="btn btn-ghost btn-sm" onclick="${btnBase}sfSecMoveDown('${esc(s.id)}')"
-        style="${arrowStyle}${i===n-1?'opacity:.2;pointer-events:none;':''}" title="Move down">▼</button>
-      <button class="btn btn-ghost btn-sm" onclick="${btnBase}sfSecDelete('${esc(s.id)}')"
-        style="${arrowStyle}color:var(--danger);opacity:.5;" title="Delete section">×</button>
+          outline:none;cursor:pointer;">
+      <button class="btn btn-ghost btn-sm" onclick="${stop}sfSecMoveUp('${esc(s.id)}')"
+        title="Move up" style="${arrowBtn}${i===0?'opacity:.2;pointer-events:none;':''}">↑</button>
+      <button class="btn btn-ghost btn-sm" onclick="${stop}sfSecMoveDown('${esc(s.id)}')"
+        title="Move down" style="${arrowBtn}${i===n-1?'opacity:.2;pointer-events:none;':''}">↓</button>
+      <button class="btn btn-ghost btn-sm" onclick="${stop}sfSecDelete('${esc(s.id)}')"
+        title="Delete section" style="${arrowBtn}color:var(--danger);opacity:.5;">×</button>
     </div>`;
   }).join('');
 }
