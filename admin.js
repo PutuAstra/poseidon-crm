@@ -3,6 +3,46 @@
 
 const API = 'https://poseidon-api.putuastrawijaya.workers.dev/api/v1';
 
+const CERT_TYPES = [
+  // Identity
+  { type:'PASSPORT',       label:'Passport',                         hasIssuedNation:true, hasIssuedPlace:true },
+  { type:'SEAMAN_BOOK',    label:'Seaman Book' },
+  { type:'MEDICAL',        label:'Medical Certificate' },
+  // STCW
+  { type:'BST',            label:'Basic Safety Training (BST)' },
+  { type:'PSCRB',          label:'Proficiency in Survival Craft (PSCRB)' },
+  { type:'ATV',            label:'Advanced Training (ATV)',            hasAppointment:true },
+  { type:'BID',            label:'BID',                               noNumber:true },
+  { type:'CRISIS_MGT',     label:'Crisis Management' },
+  { type:'CROWD_MGT',      label:'Crowd Management' },
+  { type:'ETR',            label:'Elementary Training (ETR)' },
+  { type:'SAT',            label:'SAT Certificate' },
+  { type:'SDB',            label:'SDB',                               noNumber:true },
+  { type:'COC_COE',        label:'COC/COE' },
+  { type:'IGF_BASIC_COP',  label:'IGF Basic CoP (V/3-1)' },
+  { type:'RATING_II4',     label:'Rating Forming II/4' },
+  { type:'RATING_II5',     label:'Rating Forming II/5' },
+  { type:'RATING_III4',    label:'Rating Forming III/4' },
+  { type:'PROF_CERT_1',    label:'Proficiency Certificate 1' },
+  { type:'PROF_CERT_2',    label:'Proficiency Certificate 2' },
+  { type:'MCV',            label:'MCV Certificate',                   hasExtraNumber:true },
+  { type:'WELDER_CERT',    label:'Welder Certificate' },
+  { type:'WHITE_STAR',     label:'White Star Training',               noNumber:true },
+  // Visas
+  { type:'C1_VISA',        label:'C1 Visa' },
+  { type:'C1D_VISA',       label:'C1/D Visa',                        hasAppointment:true, hasCost:true },
+  { type:'D_VISA',         label:'D Visa' },
+  { type:'SCHENGEN',       label:'Schengen Visa',                     hasCost:true },
+  { type:'SPAIN_SCHENGEN', label:'Spain Schengen Visa',               hasCost:true },
+  { type:'CANADIAN_VISA',  label:'Canadian Visa',                     hasCost:true },
+  { type:'NZETA_VISA',     label:'NZeTA Visa' },
+  { type:'OTHER_VISA',     label:'Other Visa',                        hasCustomName:true, hasAppointment:true, hasCost:true },
+];
+
+const CERT_ID_TYPES    = ['PASSPORT','SEAMAN_BOOK','MEDICAL'];
+const CERT_STCW_TYPES  = ['BST','PSCRB','ATV','BID','CRISIS_MGT','CROWD_MGT','ETR','SAT','SDB','COC_COE','IGF_BASIC_COP','RATING_II4','RATING_II5','RATING_III4','PROF_CERT_1','PROF_CERT_2','MCV','WELDER_CERT','WHITE_STAR'];
+const CERT_VISA_TYPES  = ['C1_VISA','C1D_VISA','D_VISA','SCHENGEN','SPAIN_SCHENGEN','CANADIAN_VISA','NZETA_VISA','OTHER_VISA'];
+
 let STATE = {
   accessToken: null,
   refreshToken: null,
@@ -578,10 +618,16 @@ function switchDetailTab(name, el) {
   if (name === 'j1plan' && STATE.currentCandidate) loadJ1Plan(STATE.currentCandidate.id);
   if (name === 'profile' && STATE.currentCandidate) {
     const c = STATE.currentCandidate;
-    if (c.pipeline === 'SEA_BASED' && !c.seafarerProfile) {
-      api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; renderDetailProfile(STATE.currentCandidate); }).catch(() => {});
+    if (c.pipeline === 'SEA_BASED') {
+      const fetches = [];
+      if (!c.seafarerProfile) fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
+      if (!c.certificates)    fetches.push(api('GET', `/candidates/${c.id}/certificates`).then(certs => { STATE.currentCandidate.certificates = certs; }));
+      if (fetches.length) Promise.all(fetches).then(() => renderDetailProfile(STATE.currentCandidate)).catch(() => {});
+      else renderDetailProfile(STATE.currentCandidate);
     } else if (c.pipeline === 'J1_PROGRAM' && !c.j1Profile) {
       api('GET', `/candidates/${c.id}/j1-profile`).then(jp => { STATE.currentCandidate.j1Profile = jp; renderDetailProfile(STATE.currentCandidate); }).catch(() => {});
+    } else {
+      renderDetailProfile(STATE.currentCandidate);
     }
   }
 }
@@ -1396,13 +1442,32 @@ function renderDetailProfile(c) {
 
   if (c.pipeline === 'SEA_BASED') {
     const sp = c.seafarerProfile || {};
+    const certs = c.certificates || [];
+    const idCerts   = certs.filter(x => CERT_ID_TYPES.includes(x.cert_type));
+    const stcwCerts = certs.filter(x => CERT_STCW_TYPES.includes(x.cert_type));
+    const visaCerts = certs.filter(x => CERT_VISA_TYPES.includes(x.cert_type));
+    const otherCerts= certs.filter(x => ![...CERT_ID_TYPES,...CERT_STCW_TYPES,...CERT_VISA_TYPES].includes(x.cert_type));
+    const SL = `font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;`;
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h4 style="margin:0;font-size:.9rem;">Seafarer Profile</h4>
         <button class="btn btn-primary btn-sm" onclick="openEditSeafarerProfileModal('${esc(c.id)}')">Edit Profile</button>
       </div>
       <div style="margin-bottom:20px">
-        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Onboarding Information</div>
+        <div style="${SL}">Personal Information</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Salutation</label><span>${esc(sp.salutation||'—')}</span></div>
+          <div class="info-item"><label>Date of Birth</label><span>${fmtDate(sp.date_of_birth)}</span></div>
+          <div class="info-item"><label>Place of Birth</label><span>${esc(sp.place_of_birth||'—')}</span></div>
+          <div class="info-item"><label>Nationality</label><span>${esc(c.nationality||'—')}</span></div>
+          <div class="info-item"><label>Height (cm)</label><span>${sp.height!=null?sp.height:'—'}</span></div>
+          <div class="info-item"><label>Weight (kg)</label><span>${sp.weight!=null?sp.weight:'—'}</span></div>
+          <div class="info-item"><label>Eye Color</label><span>${esc(sp.eye_color||'—')}</span></div>
+          <div class="info-item"><label>Hair Color</label><span>${esc(sp.hair_color||'—')}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Onboarding Information</div>
         <div class="info-grid">
           <div class="info-item"><label>Position Hired</label><span>${esc(sp.position_hired||'—')}</span></div>
           <div class="info-item"><label>Department</label><span>${esc(sp.department||'—')}</span></div>
@@ -1414,26 +1479,84 @@ function renderDetailProfile(c) {
           <div class="info-item"><label>Gateway Airport</label><span>${esc(sp.gateway_airport||'—')}</span></div>
           <div class="info-item"><label>Seafarer Status</label><span>${esc(c.seafarers_status||'—')}</span></div>
           <div class="info-item"><label>Onboarding Status</label><span>${esc(c.onboarding_status||'—')}</span></div>
+          ${sp.rescheduled_sign_on_date?`<div class="info-item"><label>Rescheduled Sign-On</label><span>${fmtDate(sp.rescheduled_sign_on_date)}</span></div><div class="info-item"><label>Rescheduled Reason</label><span>${esc(sp.rescheduled_reasons||'—')}</span></div>`:''}
         </div>
       </div>
+      ${sp.change_joining_ship_1||sp.change_sign_on_date_1?`
       <div style="margin-bottom:20px">
-        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Marlins Test</div>
+        <div style="${SL}">Contract Changes</div>
         <div class="info-grid">
-          <div class="info-item"><label>Marlins Code</label><span>${esc(sp.marlins_code||'—')}</span></div>
-          <div class="info-item"><label>Marlins Score</label><span>${sp.marlins_score!=null?esc(sp.marlins_score):'—'}</span></div>
+          <div class="info-item"><label>New Ship 1</label><span>${esc(sp.change_joining_ship_1||'—')}</span></div>
+          <div class="info-item"><label>New Port 1</label><span>${esc(sp.change_joining_port_1||'—')}</span></div>
+          <div class="info-item"><label>New Sign-On 1</label><span>${fmtDate(sp.change_sign_on_date_1)}</span></div>
+          <div class="info-item"><label>New Sign-Off 1</label><span>${fmtDate(sp.change_sign_off_date_1)}</span></div>
+          ${sp.change_joining_ship_2?`<div class="info-item"><label>New Ship 2</label><span>${esc(sp.change_joining_ship_2||'—')}</span></div><div class="info-item"><label>New Port 2</label><span>${esc(sp.change_joining_port_2||'—')}</span></div><div class="info-item"><label>New Sign-On 2</label><span>${fmtDate(sp.change_sign_on_date_2)}</span></div><div class="info-item"><label>New Sign-Off 2</label><span>${fmtDate(sp.change_sign_off_date_2)}</span></div>`:''}
+        </div>
+      </div>`:''}
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Employment</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Current Job Title</label><span>${esc(sp.current_job_title||'—')}</span></div>
+          <div class="info-item"><label>Placement Sector</label><span>${esc(sp.placement_sector||'—')}</span></div>
+          <div class="info-item"><label>Project</label><span>${esc(sp.project||'—')}</span></div>
+          <div class="info-item"><label>Contract No.</label><span>${esc(sp.contract_number||'—')}</span></div>
+          <div class="info-item"><label>Hired Date</label><span>${fmtDate(sp.hired_date)}</span></div>
+          <div class="info-item"><label>Rotation Ready</label><span>${fmtDate(sp.rotation_ready_date)}</span></div>
+          <div class="info-item"><label>Sign-Off Reason</label><span>${esc(sp.sign_off_reason||'—')}</span></div>
+          <div class="info-item"><label>Sign-Off Report</label><span>${fmtDate(sp.sign_off_report_date)}</span></div>
+          ${sp.resignation_date?`<div class="info-item"><label>Resignation Date</label><span>${fmtDate(sp.resignation_date)}</span></div><div class="info-item"><label>Resignation Reason</label><span>${esc(sp.resignation_reasons||'—')}</span></div>`:''}
+          ${sp.skill_set?`<div class="info-item" style="grid-column:1/-1"><label>Skill Set</label><span style="white-space:pre-wrap">${esc(sp.skill_set)}</span></div>`:''}
         </div>
       </div>
       <div style="margin-bottom:20px">
-        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Emergency Contact</div>
+        <div style="${SL}">Marlins Test</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Code</label><span>${esc(sp.marlins_code||'—')}</span></div>
+          <div class="info-item"><label>Score</label><span>${sp.marlins_score!=null?sp.marlins_score:'—'}</span></div>
+          <div class="info-item"><label>Result</label><span>${esc(sp.marlins_test_result||'—')}</span></div>
+          <div class="info-item"><label>Duration</label><span>${esc(sp.marlins_test_duration||'—')}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Compliance</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Mistral Status</label><span>${esc(sp.mistral_status||'—')}</span></div>
+          <div class="info-item"><label>OKTB Status</label><span>${esc(sp.oktb_status||'—')}</span></div>
+          <div class="info-item"><label>Vaccination</label><span>${esc(sp.completed_vaccination||'—')}</span></div>
+          <div class="info-item"><label>MMR1 Completed</label><span>${fmtDate(sp.date_mmr1_completed)}</span></div>
+          <div class="info-item"><label>Compliance Audit Call</label><span>${fmtDate(sp.crew_compliance_audit_call)}</span></div>
+          ${sp.compliance_notes?`<div class="info-item" style="grid-column:1/-1"><label>Compliance Notes</label><span style="white-space:pre-wrap">${esc(sp.compliance_notes)}</span></div>`:''}
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Banking</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Bank Name</label><span>${esc(sp.bank_name||'—')}</span></div>
+          <div class="info-item"><label>Account Number</label><span>${esc(sp.bank_account_number||'—')}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Costs</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Medical</label><span>${sp.medical_cost!=null?'$'+Number(sp.medical_cost).toLocaleString():'—'}</span></div>
+          <div class="info-item"><label>Meal Allowance</label><span>${sp.meal_allowance_cost!=null?'$'+Number(sp.meal_allowance_cost).toLocaleString():'—'}</span></div>
+          <div class="info-item"><label>RT-PCR</label><span>${sp.rt_pcr_cost!=null?'$'+Number(sp.rt_pcr_cost).toLocaleString():'—'}</span></div>
+          <div class="info-item"><label>Vaccination</label><span>${sp.vaccination_cost!=null?'$'+Number(sp.vaccination_cost).toLocaleString():'—'}</span></div>
+          <div class="info-item"><label>Reimbursement Date</label><span>${fmtDate(sp.reimbursement_date)}</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Emergency Contact</div>
         <div class="info-grid">
           <div class="info-item"><label>Name</label><span>${esc(sp.emergency_contact_name||'—')}</span></div>
           <div class="info-item"><label>Number</label><span>${esc(sp.emergency_contact_number||'—')}</span></div>
           <div class="info-item"><label>Relationship</label><span>${esc(sp.emergency_relationship||'—')}</span></div>
           <div class="info-item"><label>City</label><span>${esc(sp.emergency_contact_city||'—')}</span></div>
+          ${sp.emergency_contact_address?`<div class="info-item" style="grid-column:1/-1"><label>Street Address</label><span>${esc(sp.emergency_contact_address)}</span></div>`:''}
         </div>
       </div>
-      <div>
-        <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Address</div>
+      <div style="margin-bottom:24px">
+        <div style="${SL}">Address</div>
         <div class="info-grid">
           <div class="info-item"><label>Street</label><span>${esc(sp.address_street||'—')}</span></div>
           <div class="info-item"><label>City</label><span>${esc(sp.address_city||'—')}</span></div>
@@ -1441,6 +1564,18 @@ function renderDetailProfile(c) {
           <div class="info-item"><label>Country</label><span>${esc(sp.address_country||'—')}</span></div>
           <div class="info-item"><label>Postal Code</label><span>${esc(sp.address_postal_code||'—')}</span></div>
         </div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:20px;margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="${SL}margin-bottom:0">Identity Documents</div>
+          <button class="btn btn-ghost btn-sm" onclick="openAddCertModal('${esc(c.id)}')">+ Add Certificate</button>
+        </div>
+        ${renderCertGroup(idCerts, c.id)}
+        <div style="${SL}margin-top:16px">STCW Certificates</div>
+        ${renderCertGroup(stcwCerts, c.id)}
+        <div style="${SL}margin-top:16px">Visas</div>
+        ${renderCertGroup(visaCerts, c.id)}
+        ${otherCerts.length?`<div style="${SL}margin-top:16px">Other</div>${renderCertGroup(otherCerts, c.id)}`:''}
       </div>`;
     return;
   }
@@ -1528,81 +1663,412 @@ function renderDetailProfile(c) {
     <p class="text-sm" style="color:var(--text-muted)">Land-Based profile fields coming soon.</p>`;
 }
 
-function openEditSeafarerProfileModal(candidateId) {
-  const sp = STATE.currentCandidate?.seafarerProfile || {};
-  openModal('Edit Seafarer Profile', `
-    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;">Onboarding Information</div>
-    <div class="form-row">
-      <div class="form-group"><label>Department</label><input type="text" id="sf-department" value="${esc(sp.department||'')}"></div>
-      <div class="form-group"><label>Position Hired</label><input type="text" id="sf-position-hired" value="${esc(sp.position_hired||'')}"></div>
+function certExpiryBadge(expiry) {
+  if (!expiry) return '<span style="color:var(--text-muted)">—</span>';
+  const days = Math.floor((new Date(expiry) - new Date()) / 86400000);
+  if (days < 0)  return `<span style="color:#f87171;font-weight:600">${fmtDate(expiry)} <small style="opacity:.8">(Expired)</small></span>`;
+  if (days < 90) return `<span style="color:#fbbf24;font-weight:600">${fmtDate(expiry)} <small style="opacity:.8">(${days}d left)</small></span>`;
+  return `<span style="color:#4ade80">${fmtDate(expiry)}</span>`;
+}
+
+function renderCertGroup(certs, candidateId) {
+  if (!certs.length) return `<p style="color:var(--text-muted);font-size:12px;padding:8px 0">None added.</p>`;
+  return `<table style="width:100%;border-collapse:collapse;margin-bottom:4px">
+    <thead><tr>
+      <th style="font-size:11px;color:var(--text-muted);text-align:left;padding:5px 6px;border-bottom:1px solid var(--border)">Certificate</th>
+      <th style="font-size:11px;color:var(--text-muted);text-align:left;padding:5px 6px;border-bottom:1px solid var(--border)">Number</th>
+      <th style="font-size:11px;color:var(--text-muted);text-align:left;padding:5px 6px;border-bottom:1px solid var(--border)">Status</th>
+      <th style="font-size:11px;color:var(--text-muted);text-align:left;padding:5px 6px;border-bottom:1px solid var(--border)">Expiry</th>
+      <th style="border-bottom:1px solid var(--border)"></th>
+    </tr></thead>
+    <tbody>
+      ${certs.map(cert => {
+        const meta = CERT_TYPES.find(t => t.type === cert.cert_type) || { label: cert.cert_type };
+        const sc = cert.cert_status==='Active'?'#4ade80':cert.cert_status==='Expired'?'#f87171':'var(--text-muted)';
+        return `<tr style="border-bottom:1px solid var(--border)22">
+          <td style="padding:6px;font-size:12px;font-weight:500">${esc(cert.cert_name||meta.label)}</td>
+          <td style="padding:6px;font-size:12px">${esc(cert.cert_number||'—')}</td>
+          <td style="padding:6px;font-size:12px"><span style="color:${sc}">${esc(cert.cert_status||'—')}</span></td>
+          <td style="padding:6px;font-size:12px">${certExpiryBadge(cert.expiry_date)}</td>
+          <td style="padding:6px;text-align:right;white-space:nowrap">
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="openEditCertModal('${esc(cert.id)}','${esc(candidateId)}')">Edit</button>
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#f87171" onclick="deleteCert('${esc(cert.id)}','${esc(candidateId)}')">✕</button>
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function buildCertFields(meta, cert) {
+  const statuses = ['Active','Pending','Expired','Rejected','Not Applicable'];
+  let html = '';
+  if (meta.hasCustomName) html += `<div class="form-group"><label>Certificate Name</label><input type="text" id="cert-name" value="${esc(cert.cert_name||'')}"></div>`;
+  if (!meta.noNumber) {
+    html += `<div class="form-row"><div class="form-group"><label>Number</label><input type="text" id="cert-number" value="${esc(cert.cert_number||'')}"></div>
+    <div class="form-group"><label>Status</label><select id="cert-status"><option value="">— Select —</option>${statuses.map(s=>`<option value="${s}" ${cert.cert_status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>`;
+  } else {
+    html += `<div class="form-group"><label>Status</label><select id="cert-status"><option value="">— Select —</option>${statuses.map(s=>`<option value="${s}" ${cert.cert_status===s?'selected':''}>${s}</option>`).join('')}</select></div>`;
+  }
+  html += `<div class="form-row">
+    <div class="form-group"><label>Issued Date</label><input type="date" id="cert-issued-date" value="${esc(cert.issued_date||'')}"></div>
+    <div class="form-group"><label>Expiry Date</label><input type="date" id="cert-expiry-date" value="${esc(cert.expiry_date||'')}"></div>
+    ${meta.hasAppointment?`<div class="form-group"><label>Appointment Date</label><input type="date" id="cert-appt-date" value="${esc(cert.appointment_date||'')}"></div>`:'<input type="hidden" id="cert-appt-date" value="">'}
+  </div>`;
+  if (meta.hasIssuedNation||meta.hasIssuedPlace) {
+    html += `<div class="form-row">`;
+    if (meta.hasIssuedNation) html += `<div class="form-group"><label>Issued Nation</label><input type="text" id="cert-issued-nation" value="${esc(cert.issued_nation||'')}"></div>`;
+    if (meta.hasIssuedPlace)  html += `<div class="form-group"><label>Issued Place</label><input type="text" id="cert-issued-place" value="${esc(cert.issued_place||'')}"></div>`;
+    html += `</div>`;
+  } else {
+    html += `<input type="hidden" id="cert-issued-nation" value=""><input type="hidden" id="cert-issued-place" value="">`;
+  }
+  if (meta.hasExtraNumber) html += `<div class="form-group"><label>MCV Passport Number</label><input type="text" id="cert-extra-number" value="${esc(cert.extra_number||'')}"></div>`;
+  else html += `<input type="hidden" id="cert-extra-number" value="">`;
+  if (meta.hasCost) html += `<div class="form-group"><label>Cost ($)</label><input type="number" step="0.01" id="cert-cost" value="${cert.cost!=null?cert.cost:''}"></div>`;
+  else html += `<input type="hidden" id="cert-cost" value="">`;
+  html += `<div class="form-group"><label>Notes</label><textarea id="cert-notes" rows="2" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(cert.notes||'')}</textarea></div>`;
+  return html;
+}
+
+function onCertTypeChange() {
+  const type = document.getElementById('cert-type').value;
+  const meta = CERT_TYPES.find(t => t.type === type) || {};
+  document.getElementById('cert-dynamic-fields').innerHTML = type ? buildCertFields(meta, {}) : '';
+}
+
+function openAddCertModal(candidateId) {
+  openModal('Add Certificate', `
+    <div class="form-group"><label>Certificate Type</label>
+      <select id="cert-type" onchange="onCertTypeChange()">
+        <option value="">— Select Type —</option>
+        ${CERT_TYPES.map(t=>`<option value="${t.type}">${t.label}</option>`).join('')}
+      </select>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Cruise Line</label><input type="text" id="sf-cruise-line" value="${esc(sp.cruise_line||'')}"></div>
-      <div class="form-group"><label>Joining Ship</label><input type="text" id="sf-joining-ship" value="${esc(sp.joining_ship||'')}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Sign-On Date</label><input type="date" id="sf-sign-on-date" value="${esc(sp.sign_on_date||'')}"></div>
-      <div class="form-group"><label>Sign-Off Date</label><input type="date" id="sf-sign-off-date" value="${esc(sp.sign_off_date||'')}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Sign-On Port</label><input type="text" id="sf-sign-on-port" value="${esc(sp.sign_on_port||'')}"></div>
-      <div class="form-group"><label>Gateway Airport</label><input type="text" id="sf-gateway-airport" value="${esc(sp.gateway_airport||'')}"></div>
-    </div>
-    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Marlins Test</div>
-    <div class="form-row">
-      <div class="form-group"><label>Marlins Code</label><input type="text" id="sf-marlins-code" value="${esc(sp.marlins_code||'')}"></div>
-      <div class="form-group"><label>Marlins Score</label><input type="number" id="sf-marlins-score" value="${sp.marlins_score!=null?sp.marlins_score:''}"></div>
-    </div>
-    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Emergency Contact</div>
-    <div class="form-row">
-      <div class="form-group"><label>Name</label><input type="text" id="sf-ec-name" value="${esc(sp.emergency_contact_name||'')}"></div>
-      <div class="form-group"><label>Number</label><input type="text" id="sf-ec-number" value="${esc(sp.emergency_contact_number||'')}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Relationship</label><input type="text" id="sf-ec-relationship" value="${esc(sp.emergency_relationship||'')}"></div>
-      <div class="form-group"><label>City</label><input type="text" id="sf-ec-city" value="${esc(sp.emergency_contact_city||'')}"></div>
-    </div>
-    <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin:16px 0 10px;">Address</div>
-    <div class="form-group"><label>Street</label><input type="text" id="sf-addr-street" value="${esc(sp.address_street||'')}"></div>
-    <div class="form-row">
-      <div class="form-group"><label>City</label><input type="text" id="sf-addr-city" value="${esc(sp.address_city||'')}"></div>
-      <div class="form-group"><label>Province</label><input type="text" id="sf-addr-province" value="${esc(sp.address_province||'')}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Country</label><input type="text" id="sf-addr-country" value="${esc(sp.address_country||'')}"></div>
-      <div class="form-group"><label>Postal Code</label><input type="text" id="sf-addr-postal" value="${esc(sp.address_postal_code||'')}"></div>
-    </div>
+    <div id="cert-dynamic-fields"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveSeafarerProfile('${esc(candidateId)}')">Save</button>
+      <button class="btn btn-primary" onclick="saveCert('${esc(candidateId)}',null)">Add</button>
     </div>`, 'modal-lg');
 }
 
-async function saveSeafarerProfile(candidateId) {
+function openEditCertModal(certId, candidateId) {
+  const cert = (STATE.currentCandidate?.certificates||[]).find(x=>x.id===certId);
+  if (!cert) return;
+  const meta = CERT_TYPES.find(t=>t.type===cert.cert_type)||{label:cert.cert_type};
+  openModal(`Edit — ${meta.label||cert.cert_type}`, `
+    <div id="cert-dynamic-fields">${buildCertFields(meta, cert)}</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCert('${esc(candidateId)}','${esc(certId)}')">Save</button>
+    </div>`, 'modal-lg');
+}
+
+async function saveCert(candidateId, certId) {
+  const type = certId ? null : document.getElementById('cert-type')?.value;
+  if (!certId && !type) { toast('Select a certificate type', 'error'); return; }
+  const g = id => { const el=document.getElementById(id); return el?el.value.trim()||undefined:undefined; };
+  const d = id => { const el=document.getElementById(id); return el?el.value||undefined:undefined; };
+  const n = id => { const el=document.getElementById(id); return el&&el.value!==''?Number(el.value):undefined; };
   const body = {
-    department:             document.getElementById('sf-department').value.trim()      || undefined,
-    positionHired:          document.getElementById('sf-position-hired').value.trim()  || undefined,
-    cruiseLine:             document.getElementById('sf-cruise-line').value.trim()      || undefined,
-    joiningShip:            document.getElementById('sf-joining-ship').value.trim()     || undefined,
-    signOnDate:             document.getElementById('sf-sign-on-date').value            || undefined,
-    signOffDate:            document.getElementById('sf-sign-off-date').value           || undefined,
-    signOnPort:             document.getElementById('sf-sign-on-port').value.trim()     || undefined,
-    gatewayAirport:         document.getElementById('sf-gateway-airport').value.trim()  || undefined,
-    marlinsCode:            document.getElementById('sf-marlins-code').value.trim()     || undefined,
-    marlinsScore:           document.getElementById('sf-marlins-score').value !== '' ? Number(document.getElementById('sf-marlins-score').value) : undefined,
-    emergencyContactName:   document.getElementById('sf-ec-name').value.trim()          || undefined,
-    emergencyContactNumber: document.getElementById('sf-ec-number').value.trim()        || undefined,
-    emergencyRelationship:  document.getElementById('sf-ec-relationship').value.trim()  || undefined,
-    emergencyContactCity:   document.getElementById('sf-ec-city').value.trim()          || undefined,
-    addressStreet:          document.getElementById('sf-addr-street').value.trim()      || undefined,
-    addressCity:            document.getElementById('sf-addr-city').value.trim()        || undefined,
-    addressProvince:        document.getElementById('sf-addr-province').value.trim()    || undefined,
-    addressCountry:         document.getElementById('sf-addr-country').value.trim()     || undefined,
-    addressPostalCode:      document.getElementById('sf-addr-postal').value.trim()      || undefined,
+    certType:        type||undefined,
+    certName:        g('cert-name'),
+    certNumber:      g('cert-number'),
+    certStatus:      g('cert-status'),
+    issuedDate:      d('cert-issued-date'),
+    expiryDate:      d('cert-expiry-date'),
+    appointmentDate: d('cert-appt-date'),
+    issuedNation:    g('cert-issued-nation'),
+    issuedPlace:     g('cert-issued-place'),
+    extraNumber:     g('cert-extra-number'),
+    cost:            n('cert-cost'),
+    notes:           g('cert-notes'),
+  };
+  try {
+    if (certId) await api('PATCH', `/candidates/${candidateId}/certificates/${certId}`, body);
+    else        await api('POST',  `/candidates/${candidateId}/certificates`, body);
+    closeModal();
+    toast(`Certificate ${certId?'updated':'added'}`, 'success');
+    const certs = await api('GET', `/candidates/${candidateId}/certificates`);
+    STATE.currentCandidate.certificates = certs;
+    renderDetailProfile(STATE.currentCandidate);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deleteCert(certId, candidateId) {
+  if (!confirm('Delete this certificate?')) return;
+  try {
+    await api('DELETE', `/candidates/${candidateId}/certificates/${certId}`);
+    toast('Certificate deleted', 'success');
+    STATE.currentCandidate.certificates = (STATE.currentCandidate.certificates||[]).filter(x=>x.id!==certId);
+    renderDetailProfile(STATE.currentCandidate);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function switchSfTab(name, el) {
+  document.querySelectorAll('#sf-mtabs .sf-mtab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  ['personal','onboarding','employment','compliance','banking'].forEach(t => {
+    const panel = document.getElementById(`sf-mt-${t}`);
+    if (panel) panel.style.display = (t === name) ? '' : 'none';
+  });
+}
+
+function openEditSeafarerProfileModal(candidateId) {
+  const sp = STATE.currentCandidate?.seafarerProfile || {};
+  const c  = STATE.currentCandidate || {};
+  openModal('Edit Seafarer Profile', `
+    <div id="sf-mtabs" style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;flex-wrap:wrap">
+      <div class="sf-mtab tab active" onclick="switchSfTab('personal',this)">Personal</div>
+      <div class="sf-mtab tab" onclick="switchSfTab('onboarding',this)">Onboarding</div>
+      <div class="sf-mtab tab" onclick="switchSfTab('employment',this)">Employment</div>
+      <div class="sf-mtab tab" onclick="switchSfTab('compliance',this)">Compliance</div>
+      <div class="sf-mtab tab" onclick="switchSfTab('banking',this)">Banking & Costs</div>
+    </div>
+
+    <!-- PERSONAL -->
+    <div id="sf-mt-personal">
+      <div class="form-row">
+        <div class="form-group"><label>Salutation</label>
+          <select id="sf-salutation">${['','Mr.','Ms.','Mrs.','Dr.'].map(s=>`<option value="${s}" ${sp.salutation===s?'selected':''}>${s||'— Select —'}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Date of Birth</label><input type="date" id="sf-dob" value="${esc(sp.date_of_birth||'')}"></div>
+        <div class="form-group"><label>Place of Birth</label><input type="text" id="sf-pob" value="${esc(sp.place_of_birth||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Height (cm)</label><input type="number" id="sf-height" value="${sp.height!=null?sp.height:''}"></div>
+        <div class="form-group"><label>Weight (kg)</label><input type="number" id="sf-weight" value="${sp.weight!=null?sp.weight:''}"></div>
+        <div class="form-group"><label>Eye Color</label>
+          <select id="sf-eye">${['','Brown','Black','Blue','Green','Hazel','Gray'].map(s=>`<option value="${s}" ${sp.eye_color===s?'selected':''}>${s||'— Select —'}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Hair Color</label>
+          <select id="sf-hair">${['','Black','Brown','Blonde','Gray','White','Red'].map(s=>`<option value="${s}" ${sp.hair_color===s?'selected':''}>${s||'— Select —'}</option>`).join('')}</select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ONBOARDING -->
+    <div id="sf-mt-onboarding" style="display:none">
+      <div class="form-row">
+        <div class="form-group"><label>Department</label><input type="text" id="sf-department" value="${esc(sp.department||'')}"></div>
+        <div class="form-group"><label>Position Hired</label><input type="text" id="sf-position-hired" value="${esc(sp.position_hired||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Cruise Line</label><input type="text" id="sf-cruise-line" value="${esc(sp.cruise_line||'')}"></div>
+        <div class="form-group"><label>Joining Ship</label><input type="text" id="sf-joining-ship" value="${esc(sp.joining_ship||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Sign-On Date</label><input type="date" id="sf-sign-on-date" value="${esc(sp.sign_on_date||'')}"></div>
+        <div class="form-group"><label>Sign-Off Date</label><input type="date" id="sf-sign-off-date" value="${esc(sp.sign_off_date||'')}"></div>
+        <div class="form-group"><label>Sign-On Port</label><input type="text" id="sf-sign-on-port" value="${esc(sp.sign_on_port||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Gateway Airport</label><input type="text" id="sf-gateway-airport" value="${esc(sp.gateway_airport||'')}"></div>
+        <div class="form-group"><label>Rescheduled Sign-On</label><input type="date" id="sf-resched-sod" value="${esc(sp.rescheduled_sign_on_date||'')}"></div>
+        <div class="form-group"><label>Rescheduled Reason</label><input type="text" id="sf-resched-reason" value="${esc(sp.rescheduled_reasons||'')}"></div>
+      </div>
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin:12px 0 8px">Contract Change 1</div>
+      <div class="form-row">
+        <div class="form-group"><label>New Ship</label><input type="text" id="sf-chg-ship1" value="${esc(sp.change_joining_ship_1||'')}"></div>
+        <div class="form-group"><label>New Port</label><input type="text" id="sf-chg-port1" value="${esc(sp.change_joining_port_1||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>New Sign-On</label><input type="date" id="sf-chg-son1" value="${esc(sp.change_sign_on_date_1||'')}"></div>
+        <div class="form-group"><label>New Sign-Off</label><input type="date" id="sf-chg-sof1" value="${esc(sp.change_sign_off_date_1||'')}"></div>
+      </div>
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin:12px 0 8px">Contract Change 2</div>
+      <div class="form-row">
+        <div class="form-group"><label>New Ship</label><input type="text" id="sf-chg-ship2" value="${esc(sp.change_joining_ship_2||'')}"></div>
+        <div class="form-group"><label>New Port</label><input type="text" id="sf-chg-port2" value="${esc(sp.change_joining_port_2||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>New Sign-On</label><input type="date" id="sf-chg-son2" value="${esc(sp.change_sign_on_date_2||'')}"></div>
+        <div class="form-group"><label>New Sign-Off</label><input type="date" id="sf-chg-sof2" value="${esc(sp.change_sign_off_date_2||'')}"></div>
+      </div>
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin:12px 0 8px">Marlins Test</div>
+      <div class="form-row">
+        <div class="form-group"><label>Code</label><input type="text" id="sf-marlins-code" value="${esc(sp.marlins_code||'')}"></div>
+        <div class="form-group"><label>Score</label><input type="number" id="sf-marlins-score" value="${sp.marlins_score!=null?sp.marlins_score:''}"></div>
+        <div class="form-group"><label>Result</label><input type="text" id="sf-marlins-result" value="${esc(sp.marlins_test_result||'')}"></div>
+        <div class="form-group"><label>Duration</label><input type="text" id="sf-marlins-duration" value="${esc(sp.marlins_test_duration||'')}"></div>
+      </div>
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin:12px 0 8px">Emergency Contact</div>
+      <div class="form-row">
+        <div class="form-group"><label>Name</label><input type="text" id="sf-ec-name" value="${esc(sp.emergency_contact_name||'')}"></div>
+        <div class="form-group"><label>Number</label><input type="text" id="sf-ec-number" value="${esc(sp.emergency_contact_number||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Relationship</label><input type="text" id="sf-ec-relationship" value="${esc(sp.emergency_relationship||'')}"></div>
+        <div class="form-group"><label>City</label><input type="text" id="sf-ec-city" value="${esc(sp.emergency_contact_city||'')}"></div>
+      </div>
+      <div class="form-group"><label>Street Address</label><input type="text" id="sf-ec-address" value="${esc(sp.emergency_contact_address||'')}"></div>
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin:12px 0 8px">Home Address</div>
+      <div class="form-group"><label>Street</label><input type="text" id="sf-addr-street" value="${esc(sp.address_street||'')}"></div>
+      <div class="form-row">
+        <div class="form-group"><label>City</label><input type="text" id="sf-addr-city" value="${esc(sp.address_city||'')}"></div>
+        <div class="form-group"><label>Province</label><input type="text" id="sf-addr-province" value="${esc(sp.address_province||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Country</label><input type="text" id="sf-addr-country" value="${esc(sp.address_country||'')}"></div>
+        <div class="form-group"><label>Postal Code</label><input type="text" id="sf-addr-postal" value="${esc(sp.address_postal_code||'')}"></div>
+      </div>
+    </div>
+
+    <!-- EMPLOYMENT -->
+    <div id="sf-mt-employment" style="display:none">
+      <div class="form-row">
+        <div class="form-group"><label>Current Job Title</label><input type="text" id="sf-job-title" value="${esc(sp.current_job_title||'')}"></div>
+        <div class="form-group"><label>Placement Sector</label><input type="text" id="sf-sector" value="${esc(sp.placement_sector||'')}"></div>
+        <div class="form-group"><label>Project</label><input type="text" id="sf-project" value="${esc(sp.project||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Contract No.</label><input type="text" id="sf-contract-no" value="${esc(sp.contract_number||'')}"></div>
+        <div class="form-group"><label>Hired Date</label><input type="date" id="sf-hired-date" value="${esc(sp.hired_date||'')}"></div>
+        <div class="form-group"><label>Rotation Ready</label><input type="date" id="sf-rotation-ready" value="${esc(sp.rotation_ready_date||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Sign-Off Reason</label><input type="text" id="sf-signoff-reason" value="${esc(sp.sign_off_reason||'')}"></div>
+        <div class="form-group"><label>Sign-Off Report Date</label><input type="date" id="sf-signoff-report" value="${esc(sp.sign_off_report_date||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Resignation Date</label><input type="date" id="sf-resign-date" value="${esc(sp.resignation_date||'')}"></div>
+        <div class="form-group"><label>Resignation Reason</label><input type="text" id="sf-resign-reason" value="${esc(sp.resignation_reasons||'')}"></div>
+      </div>
+      <div class="form-group"><label>Skill Set</label><textarea id="sf-skill-set" rows="3" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(sp.skill_set||'')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Go Video Link</label><input type="url" id="sf-govideo" value="${esc(sp.go_video_link||'')}"></div>
+        <div class="form-group"><label>Temporary ID</label><input type="text" id="sf-temp-id" value="${esc(sp.temporary_id||'')}"></div>
+        <div class="form-group"><label>Crew ID 2</label><input type="text" id="sf-crew-id2" value="${esc(sp.crew_id_2||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Previous Office</label><input type="text" id="sf-prev-office" value="${esc(sp.previous_office||'')}"></div>
+      </div>
+      <div class="form-group"><label>Additional Info</label><textarea id="sf-addl-info" rows="2" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(sp.additional_info||'')}</textarea></div>
+      <div class="form-group"><label>Comment Result</label><textarea id="sf-comment" rows="2" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(sp.comment_result||'')}</textarea></div>
+    </div>
+
+    <!-- COMPLIANCE -->
+    <div id="sf-mt-compliance" style="display:none">
+      <div class="form-row">
+        <div class="form-group"><label>Mistral Status</label>
+          <select id="sf-mistral">${['','Active','Pending','Expired','Not Required'].map(s=>`<option value="${s}" ${sp.mistral_status===s?'selected':''}>${s||'— Select —'}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>OKTB Status</label>
+          <select id="sf-oktb">${['','OK to Board','Pending','Rejected','Not Required'].map(s=>`<option value="${s}" ${sp.oktb_status===s?'selected':''}>${s||'— Select —'}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Completed Vaccination</label><input type="text" id="sf-vaccination" placeholder="e.g. COVID-19, Hepatitis B" value="${esc(sp.completed_vaccination||'')}"></div>
+        <div class="form-group"><label>MMR1 Completed Date</label><input type="date" id="sf-mmr1" value="${esc(sp.date_mmr1_completed||'')}"></div>
+        <div class="form-group"><label>Compliance Audit Call</label><input type="date" id="sf-audit-call" value="${esc(sp.crew_compliance_audit_call||'')}"></div>
+      </div>
+      <div class="form-group"><label>Compliance Notes</label><textarea id="sf-compliance-notes" rows="3" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(sp.compliance_notes||'')}</textarea></div>
+    </div>
+
+    <!-- BANKING & COSTS -->
+    <div id="sf-mt-banking" style="display:none">
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Banking</div>
+      <div class="form-row">
+        <div class="form-group"><label>Bank Name</label><input type="text" id="sf-bank-name" value="${esc(sp.bank_name||'')}"></div>
+        <div class="form-group"><label>Account Number</label><input type="text" id="sf-bank-acct" value="${esc(sp.bank_account_number||'')}"></div>
+      </div>
+      <div style="font-size:.72rem;text-transform:uppercase;color:var(--text-muted);margin:16px 0 8px">Costs</div>
+      <div class="form-row">
+        <div class="form-group"><label>Medical Cost ($)</label><input type="number" step="0.01" id="sf-cost-medical" value="${sp.medical_cost!=null?sp.medical_cost:''}"></div>
+        <div class="form-group"><label>Meal Allowance ($)</label><input type="number" step="0.01" id="sf-cost-meal" value="${sp.meal_allowance_cost!=null?sp.meal_allowance_cost:''}"></div>
+        <div class="form-group"><label>RT-PCR Cost ($)</label><input type="number" step="0.01" id="sf-cost-rtpcr" value="${sp.rt_pcr_cost!=null?sp.rt_pcr_cost:''}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Vaccination Cost ($)</label><input type="number" step="0.01" id="sf-cost-vacc" value="${sp.vaccination_cost!=null?sp.vaccination_cost:''}"></div>
+        <div class="form-group"><label>Reimbursement Date</label><input type="date" id="sf-reimburse-date" value="${esc(sp.reimbursement_date||'')}"></div>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSeafarerProfile('${esc(candidateId)}')">Save</button>
+    </div>`, 'modal-xl');
+}
+
+async function saveSeafarerProfile(candidateId) {
+  const g = id => { const el=document.getElementById(id); return el?el.value.trim()||undefined:undefined; };
+  const d = id => { const el=document.getElementById(id); return el?el.value||undefined:undefined; };
+  const n = id => { const el=document.getElementById(id); return el&&el.value!==''?Number(el.value):undefined; };
+  const body = {
+    salutation:            g('sf-salutation'),
+    dateOfBirth:           d('sf-dob'),
+    placeOfBirth:          g('sf-pob'),
+    height:                n('sf-height'),
+    weight:                n('sf-weight'),
+    eyeColor:              g('sf-eye'),
+    hairColor:             g('sf-hair'),
+    department:            g('sf-department'),
+    positionHired:         g('sf-position-hired'),
+    cruiseLine:            g('sf-cruise-line'),
+    joiningShip:           g('sf-joining-ship'),
+    signOnDate:            d('sf-sign-on-date'),
+    signOffDate:           d('sf-sign-off-date'),
+    signOnPort:            g('sf-sign-on-port'),
+    gatewayAirport:        g('sf-gateway-airport'),
+    rescheduledSignOnDate: d('sf-resched-sod'),
+    rescheduledReasons:    g('sf-resched-reason'),
+    changeJoiningShip1:    g('sf-chg-ship1'),
+    changeJoiningPort1:    g('sf-chg-port1'),
+    changeSignOnDate1:     d('sf-chg-son1'),
+    changeSignOffDate1:    d('sf-chg-sof1'),
+    changeJoiningShip2:    g('sf-chg-ship2'),
+    changeJoiningPort2:    g('sf-chg-port2'),
+    changeSignOnDate2:     d('sf-chg-son2'),
+    changeSignOffDate2:    d('sf-chg-sof2'),
+    marlinsCode:           g('sf-marlins-code'),
+    marlinsScore:          n('sf-marlins-score'),
+    marlinsTestResult:     g('sf-marlins-result'),
+    marlinsTestDuration:   g('sf-marlins-duration'),
+    emergencyContactName:  g('sf-ec-name'),
+    emergencyContactNumber:g('sf-ec-number'),
+    emergencyRelationship: g('sf-ec-relationship'),
+    emergencyContactCity:  g('sf-ec-city'),
+    emergencyContactAddress:g('sf-ec-address'),
+    addressStreet:         g('sf-addr-street'),
+    addressCity:           g('sf-addr-city'),
+    addressProvince:       g('sf-addr-province'),
+    addressCountry:        g('sf-addr-country'),
+    addressPostalCode:     g('sf-addr-postal'),
+    currentJobTitle:       g('sf-job-title'),
+    placementSector:       g('sf-sector'),
+    project:               g('sf-project'),
+    contractNumber:        g('sf-contract-no'),
+    hiredDate:             d('sf-hired-date'),
+    rotationReadyDate:     d('sf-rotation-ready'),
+    signOffReason:         g('sf-signoff-reason'),
+    signOffReportDate:     d('sf-signoff-report'),
+    resignationDate:       d('sf-resign-date'),
+    resignationReasons:    g('sf-resign-reason'),
+    skillSet:              g('sf-skill-set'),
+    goVideoLink:           g('sf-govideo'),
+    temporaryId:           g('sf-temp-id'),
+    crewId2:               g('sf-crew-id2'),
+    previousOffice:        g('sf-prev-office'),
+    additionalInfo:        g('sf-addl-info'),
+    commentResult:         g('sf-comment'),
+    mistralStatus:         g('sf-mistral'),
+    oktbStatus:            g('sf-oktb'),
+    completedVaccination:  g('sf-vaccination'),
+    dateMmr1Completed:     d('sf-mmr1'),
+    crewComplianceAuditCall:d('sf-audit-call'),
+    complianceNotes:       g('sf-compliance-notes'),
+    bankName:              g('sf-bank-name'),
+    bankAccountNumber:     g('sf-bank-acct'),
+    medicalCost:           n('sf-cost-medical'),
+    mealAllowanceCost:     n('sf-cost-meal'),
+    rtPcrCost:             n('sf-cost-rtpcr'),
+    vaccinationCost:       n('sf-cost-vacc'),
+    reimbursementDate:     d('sf-reimburse-date'),
   };
   try {
     await api('PUT', `/candidates/${candidateId}/seafarer-profile`, body);
     closeModal(); toast('Seafarer profile updated', 'success');
+    STATE.currentCandidate.seafarerProfile = null;
     openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }

@@ -1061,6 +1061,7 @@ R.put('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
   const b = await req.json();
   const cols = {
+    // Onboarding
     department:                b.department,
     position_hired:            b.positionHired,
     cruise_line:               b.cruiseLine,
@@ -1069,18 +1070,84 @@ R.put('/api/v1/candidates/:id/seafarer-profile', async (req, env, ctx, p) => {
     sign_off_date:             b.signOffDate,
     sign_on_port:              b.signOnPort,
     gateway_airport:           b.gatewayAirport,
+    rescheduled_sign_on_date:  b.rescheduledSignOnDate,
+    rescheduled_reasons:       b.rescheduledReasons,
+    // Contract changes
+    change_joining_port_1:     b.changeJoiningPort1,
+    change_joining_ship_1:     b.changeJoiningShip1,
+    change_sign_on_date_1:     b.changeSignOnDate1,
+    change_sign_off_date_1:    b.changeSignOffDate1,
+    change_joining_port_2:     b.changeJoiningPort2,
+    change_joining_ship_2:     b.changeJoiningShip2,
+    change_sign_on_date_2:     b.changeSignOnDate2,
+    change_sign_off_date_2:    b.changeSignOffDate2,
+    cruise_line_2:             b.cruiseLine2,
+    department_2:              b.department2,
+    position_hired_2:          b.positionHired2,
+    // Marlins
     marlins_code:              b.marlinsCode,
     marlins_score:             b.marlinsScore !== undefined ? Number(b.marlinsScore) : undefined,
+    marlins_test_duration:     b.marlinsTestDuration,
+    marlins_test_result:       b.marlinsTestResult,
+    // Emergency contact
     emergency_contact_name:    b.emergencyContactName,
     emergency_contact_number:  b.emergencyContactNumber,
     emergency_relationship:    b.emergencyRelationship,
     emergency_contact_city:    b.emergencyContactCity,
     emergency_contact_address: b.emergencyContactAddress,
+    // Address
     address_street:            b.addressStreet,
     address_postal_code:       b.addressPostalCode,
     address_city:              b.addressCity,
     address_province:          b.addressProvince,
-    address_country:           b.addressCountry
+    address_country:           b.addressCountry,
+    // Personal
+    salutation:                b.salutation,
+    date_of_birth:             b.dateOfBirth,
+    place_of_birth:            b.placeOfBirth,
+    height:                    b.height !== undefined ? Number(b.height) : undefined,
+    weight:                    b.weight !== undefined ? Number(b.weight) : undefined,
+    eye_color:                 b.eyeColor,
+    hair_color:                b.hairColor,
+    // Employment
+    current_job_title:         b.currentJobTitle,
+    skill_set:                 b.skillSet,
+    hired_date:                b.hiredDate,
+    hired_date_2:              b.hiredDate2,
+    sign_off_reason:           b.signOffReason,
+    sign_off_report_date:      b.signOffReportDate,
+    rotation_ready_date:       b.rotationReadyDate,
+    resignation_date:          b.resignationDate,
+    resignation_reasons:       b.resignationReasons,
+    placement_sector:          b.placementSector,
+    project:                   b.project,
+    contract_number:           b.contractNumber,
+    // Banking
+    bank_name:                 b.bankName,
+    bank_account_number:       b.bankAccountNumber,
+    // Compliance
+    compliance_notes:           b.complianceNotes,
+    completed_vaccination:      b.completedVaccination,
+    date_mmr1_completed:        b.dateMmr1Completed,
+    crew_compliance_audit_call: b.crewComplianceAuditCall,
+    mistral_status:             b.mistralStatus,
+    oktb_status:                b.oktbStatus,
+    // Admin
+    go_video_link:              b.goVideoLink,
+    temporary_id:               b.temporaryId,
+    crew_id_2:                  b.crewId2,
+    additional_info:            b.additionalInfo,
+    comment_result:             b.commentResult,
+    previous_office:            b.previousOffice,
+    code_generated_date:        b.codeGeneratedDate,
+    code_given_date:            b.codeGivenDate,
+    multiple_active_applications: b.multipleActiveApplications,
+    // Financials
+    medical_cost:               b.medicalCost !== undefined ? Number(b.medicalCost) : undefined,
+    meal_allowance_cost:        b.mealAllowanceCost !== undefined ? Number(b.mealAllowanceCost) : undefined,
+    rt_pcr_cost:                b.rtPcrCost !== undefined ? Number(b.rtPcrCost) : undefined,
+    vaccination_cost:           b.vaccinationCost !== undefined ? Number(b.vaccinationCost) : undefined,
+    reimbursement_date:         b.reimbursementDate,
   };
   const upd = Object.fromEntries(Object.entries(cols).filter(([, v]) => v !== undefined));
   const ex = await env.DB.prepare('SELECT id FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first();
@@ -1147,6 +1214,44 @@ R.put('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
     const id = cuid(); const keys = ['id', 'candidate_id', ...Object.keys(upd)];
     await env.DB.prepare(`INSERT INTO j1_profiles(${keys.join()})VALUES(${keys.map(() => '?').join()})`).bind(id, p.id, ...Object.values(upd)).run();
   }
+  return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SEAFARER CERTIFICATES
+// ═════════════════════════════════════════════════════════════════════════════
+
+R.get('/api/v1/candidates/:id/certificates', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const { results } = await env.DB.prepare('SELECT*FROM seafarer_certificates WHERE candidate_id=? ORDER BY cert_type').bind(p.id).all();
+  return json(results || []);
+});
+
+R.post('/api/v1/candidates/:id/certificates', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json();
+  if (!b.certType) return err('certType required');
+  const id = cuid();
+  await env.DB.prepare(
+    'INSERT INTO seafarer_certificates(id,candidate_id,cert_type,cert_name,cert_number,cert_status,issued_date,expiry_date,appointment_date,issued_nation,issued_place,extra_number,cost,notes)VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+  ).bind(id,p.id,b.certType,b.certName||null,b.certNumber||null,b.certStatus||null,b.issuedDate||null,b.expiryDate||null,b.appointmentDate||null,b.issuedNation||null,b.issuedPlace||null,b.extraNumber||null,b.cost!=null?Number(b.cost):null,b.notes||null).run();
+  return json({ success: true, id });
+});
+
+R.patch('/api/v1/candidates/:id/certificates/:certId', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json();
+  const cols2 = { cert_name:b.certName, cert_number:b.certNumber, cert_status:b.certStatus, issued_date:b.issuedDate, expiry_date:b.expiryDate, appointment_date:b.appointmentDate, issued_nation:b.issuedNation, issued_place:b.issuedPlace, extra_number:b.extraNumber, cost:b.cost!==undefined?(b.cost!==null?Number(b.cost):null):undefined, notes:b.notes };
+  const upd2 = Object.fromEntries(Object.entries(cols2).filter(([,v])=>v!==undefined));
+  if (!Object.keys(upd2).length) return err('No fields');
+  upd2.updated_at = new Date().toISOString();
+  await env.DB.prepare(`UPDATE seafarer_certificates SET ${Object.keys(upd2).map(k=>`${k}=?`).join()} WHERE id=? AND candidate_id=?`).bind(...Object.values(upd2),p.certId,p.id).run();
+  return json({ success: true });
+});
+
+R.delete('/api/v1/candidates/:id/certificates/:certId', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  await env.DB.prepare('DELETE FROM seafarer_certificates WHERE id=? AND candidate_id=?').bind(p.certId,p.id).run();
   return json({ success: true });
 });
 
