@@ -310,7 +310,7 @@ const VIEW_META = {
   'offer-letter':  { title: 'Offer Letter',        action: null },
   onboarding:      { title: 'Onboarding',          action: null },
   archive:         { title: 'Archive',             action: null },
-  interviews:      { title: 'Interview Templates', action: { label: '+ New Interview', fn: openNewInterviewModal } },
+  interviews:      { title: 'Interview Setup',     action: { label: '+ New Interview', fn: openNewInterviewModal } },
   clients:         { title: 'Clients',             action: { label: '+ Add Client', fn: openAddClientModal } },
   compliance:      { title: 'Compliance Filter',   action: null },
   forms:           { title: 'Form Builder',        action: null },
