@@ -1,7 +1,7 @@
 {
-  "name": "POSEIDON CRM",
+  "name": "POSEIDON",
   "short_name": "POSEIDON",
-  "description": "CTI Group POSEIDON Recruitment CRM",
+  "description": "CTI Group CRM",
   "start_url": "/poseidon-crm/admin.html",
   "display": "standalone",
   "background_color": "#0f1623",

@@ -129,16 +129,25 @@ function role(user, ...roles) {
 async function graphToken(env) {
   const cached = await env.KV.get('_graph_token');
   if (cached) {
-    const { t, exp } = JSON.parse(cached);
-    if (Date.now() < exp - 60000) return t;
+    try {
+      const { t, exp } = JSON.parse(cached);
+      if (Date.now() < exp - 60000) return t;
+    } catch (e) {
+      // corrupted cache entry — fall through to fetch a fresh token
+      await env.KV.delete('_graph_token');
+    }
   }
   const r = await fetch(`https://login.microsoftonline.com/${env.TENANT_ID}/oauth2/v2.0/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: env.CLIENT_ID, client_secret: env.CLIENT_SECRET, scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' })
   });
-  const d = await r.json();
-  if (!d.access_token) throw new Error('Graph auth failed');
+  const text = await r.text();
+  let d;
+  try { d = JSON.parse(text); } catch (e) {
+    throw new Error(`Graph token response not JSON (HTTP ${r.status}): ${text.slice(0, 300)}`);
+  }
+  if (!d.access_token) throw new Error(`Graph auth failed: ${d.error} — ${d.error_description}`);
   await env.KV.put('_graph_token', JSON.stringify({ t: d.access_token, exp: Date.now() + d.expires_in * 1000 }), { expirationTtl: d.expires_in - 120 });
   return d.access_token;
 }
@@ -467,8 +476,8 @@ R.post('/api/v1/candidates/:id/portal-invite', async (req, env, ctx, p) => {
   const c = await env.DB.prepare('SELECT id,email,first_name,user_id FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Candidate not found', 404);
   if (c.user_id) return err('Candidate has already activated their portal', 409);
-  await provisionPortal(env, p.id);
-  return json({ sent: true });
+  const result = await provisionPortal(env, p.id);
+  return json({ sent: true, emailSent: result?.emailSent ?? false, activationLink: result?.link ?? null });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -490,9 +499,15 @@ R.post('/api/v1/public/submissions', async (req, env) => {
   const form = await env.DB.prepare('SELECT id FROM submission_forms WHERE id=? AND is_active=1').bind(formId).first();
   if (!form) return err('Form not found', 404);
   const id = cuid();
+  // Generate human-readable reference: CTI-YYYYMM-NNNNN
+  const now = new Date();
+  const ym = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, '0');
+  const countRow = await env.DB.prepare('SELECT COUNT(*) as n FROM submissions').first();
+  const seq = String((countRow?.n ?? 0) + 1).padStart(5, '0');
+  const referenceId = `CTI-${ym}-${seq}`;
   await env.DB.prepare('INSERT INTO submissions(id,form_id,pipeline,data,ip_address,user_agent)VALUES(?,?,?,?,?,?)')
-    .bind(id, formId, pipeline, JSON.stringify(data), req.headers.get('CF-Connecting-IP'), req.headers.get('User-Agent')).run();
-  return json({ submissionId: id, message: 'Application received successfully' }, 201);
+    .bind(id, formId, pipeline, JSON.stringify({ ...data, referenceId }), req.headers.get('CF-Connecting-IP'), req.headers.get('User-Agent')).run();
+  return json({ submissionId: id, referenceId, message: 'Application received successfully' }, 201);
 });
 
 R.get('/api/v1/submissions', async (req, env, ctx, p, url) => {
@@ -1213,15 +1228,22 @@ R.get('/api/v1/reports/candidates.csv', async (req, env, ctx, p, url) => {
 
 async function provisionPortal(env, candidateId) {
   const c = await env.DB.prepare('SELECT id,email,first_name,user_id FROM candidates WHERE id=?').bind(candidateId).first();
-  if (!c || c.user_id) return;
+  if (!c || c.user_id) return { link: null, emailSent: false };
   const raw = genToken();
   const h = await hashTok(raw);
   const exp = new Date(Date.now() + 72 * 3600000).toISOString();
   await env.KV.put(`activation:${h}`, JSON.stringify({ candidateId, expiresAt: exp }), { expirationTtl: 72 * 3600 });
   const link = `https://putuastra.github.io/poseidon-crm/portal.html?activate=${raw}`;
-  await sendMail(env, c.email, 'POSEIDON — Activate Your Candidate Portal',
-    `<div style="font-family:sans-serif;max-width:580px;margin:auto;padding:32px"><img src="https://putuastra.github.io/poseidon-crm/logo.png" height="40" alt="CTI POSEIDON"><h2 style="color:#1a56db;margin-top:24px">Congratulations, ${c.first_name}!</h2><p>You have been approved. Your personal candidate portal is now ready.</p><p style="margin:28px 0;text-align:center"><a href="${link}" style="background:#1a56db;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600;display:inline-block">Activate My Portal</a></p><p style="color:#6b7280;font-size:13px">This link expires in 72 hours. Do not share it.<br>CTI Group Worldwide Services, Inc. — POSEIDON</p></div>`
-  );
+  let emailSent = false;
+  try {
+    await sendMail(env, c.email, 'POSEIDON — Activate Your Candidate Portal',
+      `<div style="font-family:sans-serif;max-width:580px;margin:auto;padding:32px"><img src="https://putuastra.github.io/poseidon-crm/logo-poseidon.png" height="40" alt="CTI POSEIDON"><h2 style="color:#1a56db;margin-top:24px">Congratulations, ${c.first_name}!</h2><p>You have been approved. Your personal candidate portal is now ready.</p><p style="margin:28px 0;text-align:center"><a href="${link}" style="background:#1a56db;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:600;display:inline-block">Activate My Portal</a></p><p style="color:#6b7280;font-size:13px">This link expires in 72 hours. Do not share it.<br>CTI Group Worldwide Services, Inc. — POSEIDON</p></div>`
+    );
+    emailSent = true;
+  } catch (e) {
+    console.error('Portal email failed:', e?.message);
+  }
+  return { link, emailSent };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
