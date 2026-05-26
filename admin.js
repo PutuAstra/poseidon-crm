@@ -1924,16 +1924,60 @@ async function openSfFieldSettings() {
 }
 
 function _renderSfSettingsModal() {
+  const curSec = STATE._sfEditConfig.sections.find(s => s.id === _sfCurrentSection);
   openModal('Configure Seafarer Fields', `
-    <div style="display:flex;gap:16px;min-height:460px">
-      <div style="width:220px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;display:flex;flex-direction:column">
+    <div style="display:flex;gap:0;min-height:460px;max-height:62vh">
+      <!-- Left sidebar -->
+      <div style="width:210px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;display:flex;flex-direction:column">
         <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding:0 4px">Sections</div>
-        <div id="sf-sections-sidebar" style="flex:1;overflow-y:auto">${_buildSfSidebar()}</div>
+        <div id="sf-sections-sidebar" style="flex:1;overflow-y:auto;min-height:0">${_buildSfSidebar()}</div>
         <div style="padding-top:8px;border-top:1px solid var(--border);margin-top:6px">
           <button class="btn btn-ghost btn-sm" onclick="sfSecAdd()" style="width:100%;font-size:12px">+ Add Section</button>
         </div>
       </div>
-      <div style="flex:1;overflow-y:auto" id="sf-fields-content">${_buildSfSectionRows(_sfCurrentSection)}</div>
+      <!-- Right panel -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;padding-left:16px">
+        <!-- Sticky toolbar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:8px;border-bottom:1px solid var(--border);margin-bottom:8px;flex-shrink:0">
+          <span id="sf-panel-title" style="font-weight:700;color:var(--blue);font-size:14px">${esc(curSec?.label||'')}</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="sfSecDelete(_sfCurrentSection)" style="color:var(--danger);font-size:12px">Delete Section</button>
+            <button class="btn btn-primary btn-sm" onclick="sfShowAddFieldRow()" style="font-size:12px">+ Add Field</button>
+          </div>
+        </div>
+        <!-- Scrollable fields table -->
+        <div style="flex:1;overflow-y:auto;min-height:0" id="sf-fields-content">${_buildSfSectionRows(_sfCurrentSection)}</div>
+        <!-- Add field form (hidden, fixed below table) -->
+        <div id="sf-add-field-form" style="display:none;margin-top:10px;background:var(--navy-mid);border:1px solid var(--blue);border-radius:8px;padding:12px;flex-shrink:0">
+          <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:10px">New Field</div>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+            <div style="flex:1;min-width:130px">
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Label</div>
+              <input type="text" id="sf-new-label" placeholder="e.g. Passport Country"
+                style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;outline:none;box-sizing:border-box">
+            </div>
+            <div style="min-width:120px">
+              <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Type</div>
+              <select id="sf-new-type"
+                style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;outline:none">
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="select">Dropdown</option>
+                <option value="checkbox">Checkbox</option>
+                <option value="textarea">Textarea</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="currency">Currency</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-primary btn-sm" onclick="sfAddFieldCommit()">Add</button>
+              <button class="btn btn-ghost btn-sm" onclick="sfShowAddFieldRow()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
@@ -2026,61 +2070,32 @@ function _buildSfSectionRows(sectionId) {
     </tr>`;
   }).join('');
 
-  const tableHtml = fields.length
-    ? `<table style="width:100%;border-collapse:collapse">
-        <thead><tr style="border-bottom:1px solid var(--border)">
-          <th style="font-size:10px;color:var(--text-muted);padding:6px 4px"></th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px 8px;text-align:left">Label</th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Type</th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Section</th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visible</th>
-          <th style="font-size:10px;color:var(--text-muted);padding:6px"></th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`
-    : `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No fields in this section.</p>`;
+  if (!fields.length) return `<p style="color:var(--text-muted);font-size:13px;padding:12px 0">No fields yet — click <strong>+ Add Field</strong> above to add one.</p>`;
 
-  return `${tableHtml}
-    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px">
-      <button class="btn btn-ghost btn-sm" onclick="sfShowAddFieldRow()" style="font-size:12px">+ Add Field</button>
-    </div>
-    <div id="sf-add-field-form" style="display:none;margin-top:10px;background:var(--navy-mid);border:1px solid var(--blue);border-radius:8px;padding:12px">
-      <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:10px">New Field</div>
-      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-        <div style="flex:1;min-width:130px">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Label</div>
-          <input type="text" id="sf-new-label" placeholder="e.g. Passport Country"
-            style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;outline:none;box-sizing:border-box">
-        </div>
-        <div style="min-width:120px">
-          <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Type</div>
-          <select id="sf-new-type"
-            style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:13px;outline:none">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="date">Date</option>
-            <option value="select">Dropdown</option>
-            <option value="checkbox">Checkbox</option>
-            <option value="textarea">Textarea</option>
-            <option value="email">Email</option>
-            <option value="phone">Phone</option>
-            <option value="currency">Currency</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-primary btn-sm" onclick="sfAddFieldCommit()">Add</button>
-          <button class="btn btn-ghost btn-sm" onclick="sfShowAddFieldRow()">Cancel</button>
-        </div>
-      </div>
-    </div>`;
+  return `<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="border-bottom:1px solid var(--border)">
+      <th style="font-size:10px;color:var(--text-muted);padding:6px 4px"></th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px 8px;text-align:left">Label</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Type</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Move to Section</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visible</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px"></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 function selectSfSection(sectionId) {
   if (_sfCurrentSection === sectionId) return;
   _sfCurrentSection = sectionId;
   _refreshSfSidebarStyles();
+  const s = STATE._sfEditConfig.sections.find(x => x.id === sectionId);
+  const title = document.getElementById('sf-panel-title');
+  if (title && s) title.textContent = s.label;
+  const form = document.getElementById('sf-add-field-form');
+  if (form) form.style.display = 'none';
   const content = document.getElementById('sf-fields-content');
   if (content) content.innerHTML = _buildSfSectionRows(sectionId);
 }
@@ -2089,7 +2104,11 @@ function sfSecRename(id, label) {
   const s = STATE._sfEditConfig.sections.find(x => x.id === id);
   if (!s) return;
   s.label = label;
-  // keep the section-move dropdowns in the right panel in sync
+  // keep the panel title and section-move dropdowns in sync
+  if (id === _sfCurrentSection) {
+    const title = document.getElementById('sf-panel-title');
+    if (title) title.textContent = label;
+  }
   document.querySelectorAll(`#sf-fields-content select option[value="${id}"]`).forEach(o => { o.textContent = label; });
 }
 
@@ -2117,9 +2136,12 @@ function sfSecAdd() {
   _sfCurrentSection = id;
   const sidebar = document.getElementById('sf-sections-sidebar');
   if (sidebar) sidebar.innerHTML = _buildSfSidebar();
+  const title = document.getElementById('sf-panel-title');
+  if (title) title.textContent = 'New Section';
+  const form = document.getElementById('sf-add-field-form');
+  if (form) form.style.display = 'none';
   const content = document.getElementById('sf-fields-content');
   if (content) content.innerHTML = _buildSfSectionRows(id);
-  // auto-focus the new section name for immediate rename
   setTimeout(() => {
     const row = document.getElementById(`sf-sec-row-${id}`);
     const inp = row?.querySelector('input[type="text"]');
@@ -2131,12 +2153,16 @@ function sfSecDelete(id) {
   const secs = STATE._sfEditConfig.sections;
   if (secs.length <= 1) { toast('Cannot delete the last section', 'error'); return; }
   const firstOther = secs.find(s => s.id !== id);
-  // move all fields from deleted section to the nearest other section
   STATE._sfEditConfig.fields.forEach(f => { if (f.section === id) f.section = firstOther.id; });
   STATE._sfEditConfig.sections = secs.filter(s => s.id !== id);
   if (_sfCurrentSection === id) _sfCurrentSection = STATE._sfEditConfig.sections[0].id;
   const sidebar = document.getElementById('sf-sections-sidebar');
   if (sidebar) sidebar.innerHTML = _buildSfSidebar();
+  const title = document.getElementById('sf-panel-title');
+  const cur = STATE._sfEditConfig.sections.find(s => s.id === _sfCurrentSection);
+  if (title && cur) title.textContent = cur.label;
+  const form = document.getElementById('sf-add-field-form');
+  if (form) form.style.display = 'none';
   const content = document.getElementById('sf-fields-content');
   if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
   toast(`Section deleted — fields moved to "${firstOther.label}"`, 'info');
@@ -2165,9 +2191,11 @@ function sfShowAddFieldRow() {
 }
 
 function sfAddFieldCommit() {
-  const label = document.getElementById('sf-new-label')?.value.trim();
-  const type  = document.getElementById('sf-new-type')?.value || 'text';
-  if (!label) { toast('Enter a field label', 'error'); return; }
+  const labelEl = document.getElementById('sf-new-label');
+  const typeEl  = document.getElementById('sf-new-type');
+  const label = labelEl?.value.trim();
+  const type  = typeEl?.value || 'text';
+  if (!label) { toast('Enter a field label', 'error'); labelEl?.focus(); return; }
   const key = 'custom_' + Date.now();
   const maxOrd = Math.max(-1, ...STATE._sfEditConfig.fields.filter(f => f.section === _sfCurrentSection).map(f => f.order));
   STATE._sfEditConfig.fields.push({
@@ -2176,6 +2204,10 @@ function sfAddFieldCommit() {
     options: type === 'select' ? [] : undefined,
     custom: true
   });
+  if (labelEl) labelEl.value = '';
+  if (typeEl) typeEl.value = 'text';
+  const form = document.getElementById('sf-add-field-form');
+  if (form) form.style.display = 'none';
   const content = document.getElementById('sf-fields-content');
   if (content) content.innerHTML = _buildSfSectionRows(_sfCurrentSection);
 }
