@@ -1447,7 +1447,7 @@ function renderDetailProfile(c) {
     const stcwCerts = certs.filter(x => CERT_STCW_TYPES.includes(x.cert_type));
     const visaCerts = certs.filter(x => CERT_VISA_TYPES.includes(x.cert_type));
     const otherCerts= certs.filter(x => ![...CERT_ID_TYPES,...CERT_STCW_TYPES,...CERT_VISA_TYPES].includes(x.cert_type));
-    const SL = `font-size:.72rem;text-transform:uppercase;color:var(--text-muted);letter-spacing:.06em;margin-bottom:10px;`;
+    const SL = `font-size:.72rem;text-transform:uppercase;color:var(--blue);font-weight:700;letter-spacing:.06em;margin-bottom:10px;`;
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
         <h4 style="margin:0;font-size:.9rem;">Seafarer Profile</h4>
