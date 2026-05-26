@@ -1267,39 +1267,88 @@ async function createUser() {
 // ── Add candidate ─────────────────────────────────────────────────────────────
 
 function openAddCandidateModal() {
-  openModal('Add Candidate Manually', `
+  openModal('Add Applicant Manually', `
     <div class="form-row">
       <div class="form-group"><label>First Name <span style="color:var(--danger)">*</span></label><input type="text" id="nc-fn" placeholder="First name"></div>
       <div class="form-group"><label>Last Name <span style="color:var(--danger)">*</span></label><input type="text" id="nc-ln" placeholder="Last name"></div>
     </div>
     <div class="form-group"><label>Email Address <span style="color:var(--danger)">*</span></label><input type="email" id="nc-email" placeholder="candidate@email.com"></div>
     <div class="form-row">
-      <div class="form-group"><label>Phone</label><input type="tel" id="nc-phone" placeholder="+1 555 000 0000"></div>
+      <div class="form-group"><label>Phone</label><input type="tel" id="nc-phone" placeholder="+63 9XX XXX XXXX"></div>
       <div class="form-group"><label>Nationality</label><input type="text" id="nc-nationality" placeholder="e.g. Filipino"></div>
     </div>
     <div class="form-group"><label>Position Applied</label><input type="text" id="nc-position" placeholder="e.g. Waiter / Hotel Staff / J1 Intern"></div>
     <div class="form-group"><label>Pipeline <span style="color:var(--danger)">*</span></label>
       <select id="nc-pipeline"><option value="SEA_BASED">Sea-Based</option><option value="LAND_BASED">Land-Based</option><option value="J1_PROGRAM">J1 Program</option></select>
     </div>
+    <div style="border-top:1px solid var(--border);margin:16px 0 12px;padding-top:14px;">
+      <p style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 12px;">Documents <span style="font-weight:400;text-transform:none;letter-spacing:0;">(optional — can be added later)</span></p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Resume / CV</label>
+          <input type="file" id="nc-resume" accept=".pdf,.doc,.docx" style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem;width:100%;cursor:pointer;">
+        </div>
+        <div class="form-group">
+          <label>Reference Letter</label>
+          <input type="file" id="nc-refletter" accept=".pdf,.doc,.docx" style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem;width:100%;cursor:pointer;">
+        </div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="createCandidateManual()">Create</button>
+      <button class="btn btn-primary" id="nc-submit-btn" onclick="createCandidateManual()">Create Applicant</button>
     </div>`);
 }
 
 async function createCandidateManual() {
-  const firstName      = document.getElementById('nc-fn').value.trim();
-  const lastName       = document.getElementById('nc-ln').value.trim();
-  const email          = document.getElementById('nc-email').value.trim();
-  const phone          = document.getElementById('nc-phone').value.trim();
-  const nationality    = document.getElementById('nc-nationality').value.trim();
+  const firstName       = document.getElementById('nc-fn').value.trim();
+  const lastName        = document.getElementById('nc-ln').value.trim();
+  const email           = document.getElementById('nc-email').value.trim();
+  const phone           = document.getElementById('nc-phone').value.trim();
+  const nationality     = document.getElementById('nc-nationality').value.trim();
   const positionApplied = document.getElementById('nc-position').value.trim();
-  const pipeline       = document.getElementById('nc-pipeline').value;
+  const pipeline        = document.getElementById('nc-pipeline').value;
+  const resumeFile      = document.getElementById('nc-resume')?.files[0];
+  const refLetterFile   = document.getElementById('nc-refletter')?.files[0];
+
   if (!firstName || !lastName || !email) { toast('First name, last name, and email are required', 'error'); return; }
+
+  const btn = document.getElementById('nc-submit-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+
   try {
     const d = await api('POST', '/candidates', { firstName, lastName, email, phone: phone || undefined, nationality: nationality || undefined, positionApplied: positionApplied || undefined, pipeline });
-    closeModal(); toast('Candidate created', 'success'); loadCandidates(); openCandidateDetail(d.candidateId);
-  } catch (e) { toast(e.message, 'error'); }
+    const candidateId = d.candidateId;
+
+    // Upload documents if provided
+    const uploads = [];
+    if (resumeFile)    uploads.push({ file: resumeFile,    type: 'RESUME',            label: 'Resume / CV' });
+    if (refLetterFile) uploads.push({ file: refLetterFile, type: 'REFERENCE_LETTER',  label: 'Reference Letter' });
+
+    let uploadFailed = false;
+    for (const u of uploads) {
+      try {
+        btn.textContent = `Uploading ${u.label}…`;
+        const session = await api('POST', `/candidates/${candidateId}/documents/upload-session`, {
+          type: u.type, label: u.label, fileName: u.file.name, fileSizeBytes: u.file.size, mimeType: u.file.type
+        });
+        if (session.uploadUrl) {
+          const upRes = await fetch(session.uploadUrl, { method: 'PUT', body: u.file, headers: { 'Content-Type': u.file.type, 'Content-Length': u.file.size, 'Content-Range': `bytes 0-${u.file.size - 1}/${u.file.size}` } });
+          const upData = await upRes.json();
+          if (upData.id) await api('POST', `/candidates/${candidateId}/documents/${session.sessionId}/confirm-upload`, { oneDriveFileId: upData.id });
+        }
+      } catch (e) { uploadFailed = true; console.warn(`Upload failed for ${u.label}:`, e.message); }
+    }
+
+    closeModal();
+    if (uploadFailed) toast('Applicant created — some document uploads failed. Add them manually from the Documents tab.', 'info');
+    else toast('Applicant created' + (uploads.length ? ' with documents' : ''), 'success');
+    loadCandidates();
+    openCandidateDetail(candidateId);
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false; btn.textContent = 'Create Applicant';
+  }
 }
 
 // ── Modal helpers ─────────────────────────────────────────────────────────────
