@@ -434,14 +434,7 @@ function openProgSwitcher() {
   const u        = STATE.user;
   const isAdmin  = ['SUPER_ADMIN', 'ADMIN'].includes(u?.role);
 
-  // Brand header
-  document.getElementById('prog-sub-header').innerHTML = `
-    <img src="logo-cti.png" style="width:26px;height:26px;border-radius:4px;object-fit:contain;background:#fff;padding:2px;flex-shrink:0" alt="">
-    <div>
-      <div style="font-weight:700;font-size:13px;color:var(--text);letter-spacing:.04em;line-height:1.2">POSEIDON</div>
-      <div style="font-size:10px;color:var(--muted);margin-top:1px">CTI Group CRM</div>
-    </div>`;
-
+  // Brand header is static in HTML (permanent) — only the body is rendered here.
   // Two-section body
   document.getElementById('prog-sub-body').innerHTML = `
     <div class="popup-section-label">Workspace</div>

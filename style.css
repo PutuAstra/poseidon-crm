@@ -103,32 +103,8 @@ body.drawer-open #edge-trigger::before { opacity: 0; }
   box-shadow: 6px 0 32px rgba(0, 0, 0, 0.55);
 }
 
-#prog-sub-header {
-  padding: 14px 40px 14px 14px;  /* right padding clears the close button */
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  position: relative;
-}
-
-#prog-sub-close {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-#prog-sub-close:hover { background: var(--navy-mid); color: var(--text); }
+/* Drawer brand header — reuses .sidebar-logo so it's identical to the permanent panel */
+#prog-sub-header { flex-shrink: 0; }
 
 #prog-sub-body { padding-bottom: 24px; }
 
