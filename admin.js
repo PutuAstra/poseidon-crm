@@ -518,7 +518,6 @@ async function openCandidateDetail(id) {
     document.getElementById('dp-name').textContent = `${c.first_name} ${c.last_name}`;
     document.getElementById('dp-email').textContent = c.email;
     document.getElementById('dp-avatar').textContent = (c.first_name[0] + c.last_name[0]).toUpperCase();
-    // Show J1 Plan tab only for J1_PROGRAM pipeline
     const j1TabBtn = document.getElementById('tab-j1plan');
     if (j1TabBtn) j1TabBtn.style.display = c.pipeline === 'J1_PROGRAM' ? '' : 'none';
     renderDetailOverview(c);
@@ -531,6 +530,13 @@ async function openCandidateDetail(id) {
     document.querySelectorAll('.detail-body .tab').forEach((t, i) => { t.classList.toggle('active', i === 0); });
     document.querySelectorAll('[id^="dp-tab-"]').forEach((t, i) => { t.classList.toggle('hidden', i !== 0); });
     document.getElementById('detail-panel').classList.add('open');
+    // Eagerly fetch profile data so Overview can show dynamic fields
+    if (c.pipeline === 'SEA_BASED') {
+      const fetches = [];
+      if (!c.seafarerProfile) fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
+      if (STATE.sfFieldConfig === undefined) fetches.push(api('GET', '/settings/seafarer-fields').then(cfg => { STATE.sfFieldConfig = cfg || {}; }).catch(() => { STATE.sfFieldConfig = {}; }));
+      if (fetches.length) Promise.all(fetches).then(() => { renderDetailOverview(STATE.currentCandidate); }).catch(() => {});
+    }
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -538,14 +544,101 @@ function closeDetail() { document.getElementById('detail-panel').classList.remov
 
 function renderDetailOverview(c) {
   const el = document.getElementById('dp-tab-overview');
-  el.innerHTML = `
+  const SL = `font-size:.72rem;text-transform:uppercase;color:var(--blue);font-weight:700;letter-spacing:.06em;margin-bottom:10px;`;
+
+  const actionBar = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       ${pipelineBadge(c.pipeline)} ${statusBadge(c.status)}
       <div style="margin-left:auto;display:flex;gap:6px;">
         ${!c.portal_activated_at ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendPortalInvite('${esc(c.id)}')">Send Portal Invite</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit Info</button>
       </div>
-    </div>
+    </div>`;
+
+  const moveStage = `
+    <div style="margin-bottom:12px">
+      <label style="margin-bottom:8px">Move Stage</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${nextStages(c.status, c.pipeline).map(s => `<button class="btn btn-sm btn-ghost" onclick="advanceStage('${c.id}','${s}')">${statusLabel(s)}</button>`).join('')}
+      </div>
+    </div>`;
+
+  const assignRecruiter = `
+    <div style="margin-bottom:12px">
+      <label style="margin-bottom:6px">Assign Recruiter</label>
+      <div style="display:flex;gap:8px">
+        <select id="assign-recruiter-sel" style="flex:1">
+          <option value="">— Select Recruiter —</option>
+          ${STATE.recruiters.map(r => `<option value="${r.id}" ${r.id === c.assigned_recruiter_id ? 'selected' : ''}>${esc(r.first_name)} ${esc(r.last_name)}</option>`).join('')}
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="assignRecruiter('${c.id}')">Assign</button>
+      </div>
+    </div>`;
+
+  const notes = c.internal_notes
+    ? `<div style="margin-bottom:12px"><label>Internal Notes</label><p class="text-sm text-muted" style="margin-top:4px">${esc(c.internal_notes)}</p></div>`
+    : '';
+
+  // ── SEA_BASED: dynamic field config sections ─────────────────────────────
+  if (c.pipeline === 'SEA_BASED' && c.seafarerProfile !== undefined && STATE.sfFieldConfig !== undefined) {
+    const sp = c.seafarerProfile || {};
+    const config = getMergedSfConfig();
+
+    // Fixed meta row (always shown)
+    const metaHtml = `
+      <div style="margin-bottom:20px">
+        <div style="${SL}">Candidate Info</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Phone</label><span>${esc(c.phone || '—')}</span></div>
+          <div class="info-item"><label>Portal</label><span>${c.portal_activated_at ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--text-muted)">Not activated</span>'}</span></div>
+          <div class="info-item"><label>Recruiter</label><span>${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</span></div>
+          <div class="info-item"><label>Created</label><span>${relTime(c.created_at)}</span></div>
+        </div>
+      </div>`;
+
+    // Dynamic profile sections — only fields with values
+    const fieldsBySec = {};
+    config.fields.filter(f => f.visible !== false).forEach(f => {
+      const raw = (f.source === 'c' ? c : sp)[f.key];
+      if (raw == null || raw === '') return;
+      if (!fieldsBySec[f.section]) fieldsBySec[f.section] = [];
+      fieldsBySec[f.section].push({ f, raw });
+    });
+
+    let sectionsHtml = '';
+    config.sections.forEach(sec => {
+      const items = fieldsBySec[sec.id];
+      if (!items || !items.length) return;
+      sectionsHtml += `<div style="margin-bottom:20px"><div style="${SL}">${esc(sec.label)}</div><div class="info-grid">`;
+      items.forEach(({ f, raw }) => {
+        const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === f.key) || f;
+        let disp;
+        if      (reg.type === 'date')     { disp = fmtDate(raw); }
+        else if (reg.type === 'currency') { disp = '$' + Number(raw).toLocaleString(); }
+        else if (reg.type === 'checkbox') { disp = raw ? 'Yes' : 'No'; }
+        else if (reg.type === 'textarea') { disp = `<span style="white-space:pre-wrap">${esc(String(raw))}</span>`; }
+        else if (reg.type === 'url')      { disp = `<a href="${esc(String(raw))}" target="_blank" style="color:var(--blue)">${esc(String(raw))}</a>`; }
+        else { disp = esc(String(raw)); }
+        const full = (reg.type === 'textarea') ? ' style="grid-column:1/-1"' : '';
+        sectionsHtml += `<div class="info-item"${full}><label>${esc(f.label)}</label><span>${disp}</span></div>`;
+      });
+      sectionsHtml += `</div></div>`;
+    });
+
+    if (!sectionsHtml) {
+      sectionsHtml = `<p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">No profile data yet — go to the <strong>Profile</strong> tab to fill it in.</p>`;
+    }
+
+    el.innerHTML = `${actionBar}${metaHtml}${sectionsHtml}<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">${moveStage}${assignRecruiter}${notes}`;
+    return;
+  }
+
+  // ── Fallback: hardcoded grid (non-SEA or still loading) ───────────────────
+  const loading = c.pipeline === 'SEA_BASED'
+    ? `<p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Loading profile data…</p>`
+    : '';
+  el.innerHTML = `${actionBar}
+    ${loading}
     <div class="info-grid" style="margin-bottom:16px">
       <div class="info-item"><label>Phone</label><span>${esc(c.phone || '—')}</span></div>
       <div class="info-item"><label>Nationality</label><span>${esc(c.nationality || '—')}</span></div>
@@ -558,23 +651,7 @@ function renderDetailOverview(c) {
       <div class="info-item"><label>Recruiter</label><span>${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</span></div>
       <div class="info-item"><label>Created</label><span>${relTime(c.created_at)}</span></div>
     </div>
-    <div style="margin-bottom:12px">
-      <label style="margin-bottom:8px">Move Stage</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${nextStages(c.status, c.pipeline).map(s => `<button class="btn btn-sm btn-ghost" onclick="advanceStage('${c.id}','${s}')">${statusLabel(s)}</button>`).join('')}
-      </div>
-    </div>
-    <div>
-      <label style="margin-bottom:6px">Assign Recruiter</label>
-      <div style="display:flex;gap:8px">
-        <select id="assign-recruiter-sel" style="flex:1">
-          <option value="">— Select Recruiter —</option>
-          ${STATE.recruiters.map(r => `<option value="${r.id}" ${r.id === c.assigned_recruiter_id ? 'selected' : ''}>${esc(r.first_name)} ${esc(r.last_name)}</option>`).join('')}
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="assignRecruiter('${c.id}')">Assign</button>
-      </div>
-    </div>
-    ${c.internal_notes ? `<div class="mt-4"><label>Internal Notes</label><p class="text-sm text-muted" style="margin-top:4px">${esc(c.internal_notes)}</p></div>` : ''}`;
+    ${moveStage}${assignRecruiter}${notes}`;
 }
 
 async function advanceStage(candidateId, toStatus) {
@@ -763,7 +840,10 @@ function switchDetailTab(name, el) {
       if (!c.seafarerProfile)      fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
       if (!c.certificates)         fetches.push(api('GET', `/candidates/${c.id}/certificates`).then(certs => { STATE.currentCandidate.certificates = certs; }));
       if (STATE.sfFieldConfig === undefined) fetches.push(api('GET', '/settings/seafarer-fields').then(cfg => { STATE.sfFieldConfig = cfg || {}; }).catch(() => { STATE.sfFieldConfig = {}; }));
-      if (fetches.length) Promise.all(fetches).then(() => renderDetailProfile(STATE.currentCandidate)).catch(() => {});
+      if (fetches.length) Promise.all(fetches).then(() => {
+        renderDetailProfile(STATE.currentCandidate);
+        renderDetailOverview(STATE.currentCandidate); // keep overview in sync
+      }).catch(() => {});
       else renderDetailProfile(STATE.currentCandidate);
     } else if (c.pipeline === 'J1_PROGRAM' && !c.j1Profile) {
       api('GET', `/candidates/${c.id}/j1-profile`).then(jp => { STATE.currentCandidate.j1Profile = jp; renderDetailProfile(STATE.currentCandidate); }).catch(() => {});
