@@ -50,40 +50,39 @@ button { cursor: pointer; border: none; outline: none; }
 /* ── Layout ─────────────────────────────────────────────────────────────────── */
 #app { display: flex; height: 100vh; overflow: hidden; }
 
-/* ── Program Sub-Panel (floating overlay, slides over main content) ───────── */
-:root { --sub-panel-w: 210px; }
-
+/* ── Program Sub-Panel (slides in from left, overlays sidebar — J1 dashboard pattern) */
 #prog-sub-panel {
   position: fixed;
-  left: var(--sidebar-w);
   top: 0;
-  height: 100vh;
-  width: var(--sub-panel-w);
-  background: var(--navy);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-w);   /* same width as primary sidebar — replaces it visually */
+  background: var(--navy-light);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform: translateX(calc(-1 * var(--sub-panel-w) - 4px));
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.22s ease;
-  z-index: 200;
+  transform: translateX(-100%);
+  transition: transform 0.25s ease,
+              box-shadow 0.25s ease;
+  z-index: 300;              /* above sidebar (z-index:10) and backdrop (z-index:199) */
   box-shadow: none;
 }
 
 #prog-sub-panel.open {
   transform: translateX(0);
   overflow-y: auto;
-  box-shadow: 6px 0 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
 }
 
-/* Backdrop — click anywhere outside to close */
+/* Backdrop — dim + click-outside to close */
 #prog-sub-backdrop {
   position: fixed;
   inset: 0;
   z-index: 199;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.35);
   display: none;
+  cursor: pointer;
 }
 #prog-sub-backdrop.show { display: block; }
 
