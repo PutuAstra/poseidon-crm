@@ -1914,21 +1914,43 @@ async function openSfFieldSettings() {
 }
 
 function _renderSfSettingsModal() {
-  const config = STATE._sfEditConfig;
-  const sidebar = config.sections.map(s =>
-    `<div class="sf-sec-tab" id="sf-sectab-${esc(s.id)}" onclick="selectSfSection('${esc(s.id)}')"
-      style="padding:8px 12px;cursor:pointer;border-radius:6px;font-size:13px;margin-bottom:2px;${s.id===_sfCurrentSection?'background:var(--navy-mid);color:var(--text);font-weight:600;':'color:var(--text-muted);'}">${esc(s.label)}</div>`
-  ).join('');
-
   openModal('Configure Seafarer Fields', `
     <div style="display:flex;gap:16px;min-height:460px">
-      <div style="width:170px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;overflow-y:auto">${sidebar}</div>
+      <div style="width:210px;flex-shrink:0;border-right:1px solid var(--border);padding-right:12px;overflow-y:auto">
+        <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding:0 4px">Sections</div>
+        <div id="sf-sections-sidebar">${_buildSfSidebar()}</div>
+      </div>
       <div style="flex:1;overflow-y:auto" id="sf-fields-content">${_buildSfSectionRows(_sfCurrentSection)}</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveSfFieldConfig()">Save Changes</button>
     </div>`, 'modal-xl');
+}
+
+function _buildSfSidebar() {
+  const config = STATE._sfEditConfig;
+  const n = config.sections.length;
+  return config.sections.map((s, i) => {
+    const active = s.id === _sfCurrentSection;
+    return `<div style="display:flex;align-items:center;gap:3px;margin-bottom:2px;border-radius:6px;padding:4px 6px;cursor:pointer;${active?'background:var(--navy-mid);':''}"
+      onclick="selectSfSection('${esc(s.id)}')">
+      <input type="text" value="${esc(s.label)}"
+        onclick="event.stopPropagation();selectSfSection('${esc(s.id)}')"
+        onchange="sfSecRename('${esc(s.id)}',this.value)"
+        style="flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid transparent;
+          color:${active?'var(--text)':'var(--text-muted)'};font-size:13px;${active?'font-weight:600;':''}
+          outline:none;cursor:pointer;"
+        onfocus="this.style.borderBottomColor='var(--blue)';this.style.cursor='text'"
+        onblur="this.style.borderBottomColor='transparent';this.style.cursor='pointer'">
+      <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sfSecMoveUp('${esc(s.id)}')"
+          style="padding:1px 5px;font-size:10px;line-height:1.3;min-width:0;${i===0?'opacity:.2;pointer-events:none;':''}">▲</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();sfSecMoveDown('${esc(s.id)}')"
+          style="padding:1px 5px;font-size:10px;line-height:1.3;min-width:0;${i===n-1?'opacity:.2;pointer-events:none;':''}">▼</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function _buildSfSectionRows(sectionId) {
@@ -1985,14 +2007,36 @@ function _buildSfSectionRows(sectionId) {
 
 function selectSfSection(sectionId) {
   _sfCurrentSection = sectionId;
-  document.querySelectorAll('.sf-sec-tab').forEach(t => {
-    const active = t.id === `sf-sectab-${sectionId}`;
-    t.style.background = active ? 'var(--navy-mid)' : '';
-    t.style.color      = active ? 'var(--text)'     : 'var(--text-muted)';
-    t.style.fontWeight = active ? '600'              : '';
-  });
+  const sidebar = document.getElementById('sf-sections-sidebar');
+  if (sidebar) sidebar.innerHTML = _buildSfSidebar();
   const content = document.getElementById('sf-fields-content');
   if (content) content.innerHTML = _buildSfSectionRows(sectionId);
+}
+
+function sfSecRename(id, label) {
+  const s = STATE._sfEditConfig.sections.find(x => x.id === id);
+  if (!s) return;
+  s.label = label;
+  // keep the section-move dropdowns in the right panel in sync
+  document.querySelectorAll(`#sf-fields-content select option[value="${id}"]`).forEach(o => { o.textContent = label; });
+}
+
+function sfSecMoveUp(id) {
+  const secs = STATE._sfEditConfig.sections;
+  const idx = secs.findIndex(s => s.id === id);
+  if (idx <= 0) return;
+  [secs[idx], secs[idx-1]] = [secs[idx-1], secs[idx]];
+  const sidebar = document.getElementById('sf-sections-sidebar');
+  if (sidebar) sidebar.innerHTML = _buildSfSidebar();
+}
+
+function sfSecMoveDown(id) {
+  const secs = STATE._sfEditConfig.sections;
+  const idx = secs.findIndex(s => s.id === id);
+  if (idx < 0 || idx >= secs.length - 1) return;
+  [secs[idx], secs[idx+1]] = [secs[idx+1], secs[idx]];
+  const sidebar = document.getElementById('sf-sections-sidebar');
+  if (sidebar) sidebar.innerHTML = _buildSfSidebar();
 }
 
 function sfFieldSetLabel(key, value) {
