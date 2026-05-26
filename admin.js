@@ -105,7 +105,8 @@ function bootApp() {
   }
   loadClientsList();
   loadRecruitersList();
-  showView('dashboard');
+  const savedView = localStorage.getItem('poseidon_view');
+  showView(savedView && VIEW_META[savedView] ? savedView : 'dashboard');
   pollSubmissionBadge();
   pollNotifications();
 }
@@ -134,6 +135,7 @@ function showView(name) {
   if (meta?.action) { btn.style.display = ''; btn.textContent = meta.action.label; btn.onclick = meta.action.fn || null; }
   else { btn.style.display = 'none'; }
   STATE.currentView = name;
+  localStorage.setItem('poseidon_view', name);
   if (name === 'dashboard')   loadDashboard();
   if (name === 'submissions') loadSubmissions();
   if (name === 'candidates')  loadCandidates();
