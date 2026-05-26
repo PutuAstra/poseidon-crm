@@ -145,24 +145,25 @@ function getMergedSfConfig() {
   const saved = STATE.sfFieldConfig || {};
   const fields = SEAFARER_FIELD_REGISTRY.map((r, i) => ({
     key: r.key, label: r.label, type: r.type, section: r.section, source: r.source,
-    order: i, visible: true,
+    order: i, visible: true, showInOverview: true,
     options: r.options ? [...r.options] : undefined,
   }));
   if (saved.fields) {
     saved.fields.forEach(sf => {
       const f = fields.find(x => x.key === sf.key);
       if (f) {
-        if (sf.label   !== undefined) f.label   = sf.label;
-        if (sf.section !== undefined) f.section = sf.section;
-        if (sf.order   !== undefined) f.order   = sf.order;
-        if (sf.visible !== undefined) f.visible = sf.visible;
-        if (sf.options !== undefined) f.options = sf.options;
+        if (sf.label          !== undefined) f.label          = sf.label;
+        if (sf.section        !== undefined) f.section        = sf.section;
+        if (sf.order          !== undefined) f.order          = sf.order;
+        if (sf.visible        !== undefined) f.visible        = sf.visible;
+        if (sf.showInOverview !== undefined) f.showInOverview = sf.showInOverview;
+        if (sf.options        !== undefined) f.options        = sf.options;
       } else if (sf.custom) {
-        // custom field not in registry — include it from KV
         fields.push({
           key: sf.key, label: sf.label, type: sf.type || 'text',
           section: sf.section, source: 'custom', order: sf.order ?? 999,
           visible: sf.visible !== false,
+          showInOverview: sf.showInOverview !== false,
           options: sf.options ? [...sf.options] : undefined,
           custom: true
         });
@@ -598,7 +599,7 @@ function renderDetailOverview(c) {
 
     // Dynamic profile sections — only fields with values
     const fieldsBySec = {};
-    config.fields.filter(f => f.visible !== false).forEach(f => {
+    config.fields.filter(f => f.visible !== false && f.showInOverview !== false).forEach(f => {
       const raw = (f.source === 'c' ? c : sp)[f.key];
       if (raw == null || raw === '') return;
       if (!fieldsBySec[f.section]) fieldsBySec[f.section] = [];
@@ -2114,6 +2115,7 @@ function _buildSfSectionRows(sectionId) {
     const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === f.key) || {};
     const hasOpts = (f.type||reg.type) === 'select' || (f.options && f.options.length);
     const visColor = f.visible !== false ? '#4ade80' : 'var(--text-muted)';
+    const ovrColor = f.showInOverview !== false ? 'var(--blue)' : 'var(--text-muted)';
     const fieldType = f.type || reg.type || 'text';
     return `<tr data-key="${esc(f.key)}" style="border-bottom:1px solid #ffffff0a">
       <td style="padding:7px 4px;color:var(--text-muted);font-size:16px;cursor:default;user-select:none">≡</td>
@@ -2136,10 +2138,16 @@ function _buildSfSectionRows(sectionId) {
       <td style="padding:7px 6px;white-space:nowrap;width:84px">
         ${hasOpts?`<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="openSfFieldOpts('${esc(f.key)}')">Edit Options</button>`:''}
       </td>
-      <td style="padding:7px 4px;width:64px;text-align:center">
+      <td style="padding:7px 4px;width:56px;text-align:center">
         <label style="cursor:pointer;font-size:11px;color:${visColor};white-space:nowrap">
           <input type="checkbox" ${f.visible!==false?'checked':''} onchange="sfFieldToggleVisible('${esc(f.key)}',this.checked)" style="margin-right:3px">
           ${f.visible!==false?'On':'Off'}
+        </label>
+      </td>
+      <td style="padding:7px 4px;width:62px;text-align:center">
+        <label style="cursor:pointer;font-size:11px;color:${ovrColor};white-space:nowrap">
+          <input type="checkbox" ${f.showInOverview!==false?'checked':''} onchange="sfFieldToggleOverview('${esc(f.key)}',this.checked)" style="margin-right:3px">
+          ${f.showInOverview!==false?'On':'Off'}
         </label>
       </td>
       <td style="padding:7px 4px;width:28px;text-align:center">
@@ -2160,6 +2168,7 @@ function _buildSfSectionRows(sectionId) {
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visible</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Overview</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px"></th>
     </tr></thead>
     <tbody>${rows}</tbody>
@@ -2329,6 +2338,10 @@ function sfFieldMoveDown(key) {
 function sfFieldToggleVisible(key, visible) {
   const f = STATE._sfEditConfig.fields.find(x => x.key === key);
   if (f) { f.visible = visible; }
+}
+function sfFieldToggleOverview(key, checked) {
+  const f = STATE._sfEditConfig.fields.find(x => x.key === key);
+  if (f) f.showInOverview = checked;
 }
 
 function openSfFieldOpts(key) {
