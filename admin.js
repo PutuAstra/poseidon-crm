@@ -1157,24 +1157,20 @@ function switchDetailTab(name, el) {
   }
 }
 
-// ── Interviews ────────────────────────────────────────────────────────────────
+// ── Interviews (POSEIDON template API — used by candidate detail panel) ─────────
 
 async function loadInterviews() {
-  try {
-    const d = await api('GET', '/interviews');
-    const tbody = document.getElementById('interviews-tbody');
-    tbody.innerHTML = (d.interviews || []).map(i => `
-      <tr>
-        <td style="font-weight:500">${esc(i.title)}</td>
-        <td><span class="badge badge-active">${esc(i.type)}</span></td>
-        <td class="text-muted">${i.fn ? esc(i.fn) + ' ' + esc(i.ln) : '—'}</td>
-        <td class="text-muted text-sm">${relTime(i.created_at)}</td>
-        <td style="white-space:nowrap">
-          <button class="btn btn-ghost btn-sm" onclick="openEditInterviewModal('${i.id}')">Edit</button>
-          ${i.type === 'BOOKING' ? `<button class="btn btn-ghost btn-sm" onclick="viewInterviewSlots('${i.id}')">Manage Slots</button>` : ''}
-        </td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No interview templates</td></tr>';
-  } catch (e) { toast(e.message, 'error'); }
+  // Pane-interviews is now the ZeusHire shell — boot it up
+  const key = localStorage.getItem('poseidon_iw_key') || '';
+  if (!key) {
+    document.getElementById('iw-key-prompt').style.display = 'block';
+    document.getElementById('iw-shell').style.display = 'none';
+  } else {
+    _iwKey = key;
+    document.getElementById('iw-key-prompt').style.display = 'none';
+    document.getElementById('iw-shell').style.display = 'block';
+    iwGoto('ow-list');
+  }
 }
 
 function openNewInterviewModal() {
@@ -1352,6 +1348,1640 @@ async function submitSlots(interviewId) {
     await api('POST', `/interviews/${interviewId}/slots/bulk`, { slots });
     closeModal(); toast(`${slots.length} slot(s) added`, 'success'); viewInterviewSlots(interviewId);
   } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── ZeusHire Integration ─────────────────────────────────────────────────────
+// All functions prefixed `iw` to avoid conflicts with POSEIDON namespace.
+
+const INTERVIEW_API  = 'https://interview-api.putuastrawijaya.workers.dev';
+const IW_TAKE_BASE   = 'https://interview-api.putuastrawijaya.workers.dev';
+
+// ── ZeusHire state ────────────────────────────────────────────────────────────
+let _iwKey              = '';
+let _iwQuestions        = [];
+let _iwCurrentInterviewId = null;
+let _iwEditInterviewId  = null;
+let _iwEditQuestions    = [];
+let _iwAllInterviews    = [];
+let _iwAllSessions      = [];
+let _iwSessionFilter    = 'all';
+let _iwAllTWSessions    = [];
+let _iwTwFilter         = 'all';
+let _iwTwSourceFilter   = 'all';
+let _iwTwSort           = 'asc';
+let _iwBulkRows         = [];
+let _iwBulkHeaders      = [];
+let _iwBulkNameCol      = null;
+let _iwBulkEmailCol     = null;
+let _iwDecisionFilter   = 'all';
+let _iwStarFilter       = 0;
+let _iwReviewStars      = 0;
+let _iwReviewDecision   = null;
+let _iwSessionSortCol   = null;
+let _iwSessionSortDir   = 'desc';
+let _iwBookingLinks     = [];
+let _iwEditingBookingToken = null;
+let _iwCurrentScriptClientId = null;
+let _iwScriptClients    = [];
+
+// ── ZeusHire key management ────────────────────────────────────────────────────
+function iwSaveKey() {
+  const val = document.getElementById('iw-key-input').value.trim();
+  if (!val) { toast('Please enter an admin key', 'error'); return; }
+  localStorage.setItem('poseidon_iw_key', val);
+  _iwKey = val;
+  document.getElementById('iw-key-prompt').style.display = 'none';
+  document.getElementById('iw-shell').style.display = 'block';
+  iwGoto('ow-list');
+}
+function iwChangeKey() {
+  localStorage.removeItem('poseidon_iw_key');
+  _iwKey = '';
+  document.getElementById('iw-shell').style.display = 'none';
+  document.getElementById('iw-key-prompt').style.display = 'block';
+  const inp = document.getElementById('iw-key-input');
+  if (inp) { inp.value = ''; inp.focus(); }
+}
+
+// ── ZeusHire API helpers ───────────────────────────────────────────────────────
+async function iwApi(method, path, body = null) {
+  return fetch(INTERVIEW_API + path, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': _iwKey },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+async function iwApiJSON(method, path, body = null) {
+  const res = await iwApi(method, path, body);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Request failed' }));
+    if (res.status === 401) { toast('Invalid admin key — please re-enter', 'error'); iwChangeKey(); }
+    throw new Error(err.error || 'Request failed');
+  }
+  return res.json();
+}
+
+// ── ZeusHire navigation ────────────────────────────────────────────────────────
+function iwGoto(page) {
+  const navMap = {
+    'ow-list': 'iw-nav-ow', 'ow-create': 'iw-nav-ow',
+    'tw-list': 'iw-nav-tw', 'tw-schedule': 'iw-nav-tw',
+    'booking': 'iw-nav-booking', 'booking-create': 'iw-nav-booking', 'booking-edit': 'iw-nav-booking',
+    'scripts': 'iw-nav-scripts',
+  };
+  const activeNav = navMap[page] || 'iw-nav-ow';
+  ['iw-nav-ow','iw-nav-tw','iw-nav-booking','iw-nav-scripts'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', id === activeNav);
+  });
+  const main = document.getElementById('iw-main');
+  if (!main) return;
+  main.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner"></div></div>';
+
+  if (page === 'ow-list')        iwRenderOWListPage();
+  if (page === 'ow-create')      iwRenderOWCreatePage();
+  if (page === 'tw-list')        iwRenderTWListPage();
+  if (page === 'tw-schedule')    iwRenderTWSchedulePage();
+  if (page === 'booking')        iwRenderBookingPage();
+  if (page === 'booking-create') iwRenderCreateBookingLinkPage();
+  if (page === 'booking-edit')   iwRenderEditBookingLinkPage(_iwEditingBookingToken);
+  if (page === 'scripts')        iwRenderScriptPage();
+}
+
+// ── ZeusHire modals ────────────────────────────────────────────────────────────
+function iwOpenModal(id)  { const el = document.getElementById(id); if (el) el.classList.add('open'); }
+function iwCloseModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
+
+// ── One-Way: List page ─────────────────────────────────────────────────────────
+async function iwRenderOWListPage() {
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:700;margin:0">One-Way Interviews</h2>
+      <button class="btn btn-primary" onclick="iwGoto('ow-create')">+ New Interview</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <input type="text" id="iw-search-interviews" placeholder="Search interviews…" oninput="iwFilterAndRenderInterviews()"
+        style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:220px">
+      <select id="iw-sort-interviews" onchange="iwFilterAndRenderInterviews()"
+        style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:auto">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="az">A → Z</option>
+        <option value="za">Z → A</option>
+        <option value="candidates">Most candidates</option>
+      </select>
+    </div>
+    <div id="iw-interviews-list"><div class="iw-empty-state"><div class="spinner"></div></div></div>`;
+  iwLoadInterviewList();
+}
+
+// ── One-Way: Create page ───────────────────────────────────────────────────────
+function iwRenderOWCreatePage() {
+  _iwQuestions = [{ text: '', duration: 120 }];
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="max-width:680px">
+      <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">New One-Way Interview</h2>
+      <div class="card">
+        <div class="form-group"><label>Interview Title *</label><input type="text" id="iw-new-title" placeholder="e.g. J1 Intern Initial Screening"></div>
+        <div class="form-group"><label>Description (shown to candidate)</label><textarea id="iw-new-desc" placeholder="Brief instructions for the candidate…"></textarea></div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <label style="margin:0;font-size:.75rem;text-transform:uppercase;font-weight:700;color:var(--text-muted)">Questions</label>
+          <button class="btn btn-ghost btn-sm" onclick="iwAddQuestion()">+ Add Question</button>
+        </div>
+        <div id="iw-questions-builder"></div>
+        <div style="display:flex;gap:8px;margin-top:20px">
+          <button class="btn btn-primary" onclick="iwSubmitInterview()">Create Interview</button>
+          <button class="btn btn-ghost" onclick="iwGoto('ow-list')">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  iwRenderQuestions();
+}
+
+// ── Interview list loader ──────────────────────────────────────────────────────
+async function iwLoadInterviewList() {
+  const el = document.getElementById('iw-interviews-list');
+  if (!el) return;
+  el.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
+  try {
+    _iwAllInterviews = await iwApiJSON('GET', '/api/interviews');
+    if (!_iwAllInterviews.length) {
+      el.innerHTML = `<div class="iw-empty-state">No interviews yet.<br><button class="btn btn-primary" style="margin-top:12px" onclick="iwGoto('ow-create')">Create one</button></div>`;
+      return;
+    }
+    iwFilterAndRenderInterviews();
+  } catch (e) {
+    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+function iwFilterAndRenderInterviews() {
+  const query = (document.getElementById('iw-search-interviews')?.value || '').toLowerCase();
+  const sort  = document.getElementById('iw-sort-interviews')?.value || 'newest';
+  let list    = _iwAllInterviews.filter(i => !query || i.title.toLowerCase().includes(query));
+  list.sort((a, b) => {
+    if (sort === 'newest')     return b.createdAt - a.createdAt;
+    if (sort === 'oldest')     return a.createdAt - b.createdAt;
+    if (sort === 'az')         return a.title.localeCompare(b.title);
+    if (sort === 'za')         return b.title.localeCompare(a.title);
+    if (sort === 'candidates') return (b._counts?.total || 0) - (a._counts?.total || 0);
+    return 0;
+  });
+  const el = document.getElementById('iw-interviews-list');
+  if (!el) return;
+  el.innerHTML = list.length ? list.map(iwRenderInterviewCard).join('') : '<div class="iw-empty-state">No interviews match your search.</div>';
+}
+
+function iwRenderInterviewCard(iv) {
+  const qCount  = iv.questions?.length || 0;
+  const created = new Date(iv.createdAt).toLocaleDateString();
+  const c       = iv._counts || { total: 0, pending: 0, completed: 0 };
+  const candLine = c.total > 0
+    ? `<span style="font-weight:600">${c.total} Candidate${c.total !== 1 ? 's' : ''}</span> <span style="color:var(--text-muted)"> · ${c.pending} Pending · ${c.completed} Completed</span>`
+    : `<span style="color:var(--text-muted)">No candidates yet</span>`;
+  return `
+    <div class="card" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div>
+          <div style="font-size:15px;font-weight:600">${esc(iv.title)}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${qCount} question${qCount !== 1 ? 's' : ''} · Created ${created}</div>
+          <div style="font-size:13px;margin-top:5px">${candLine}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+          <button class="btn btn-primary btn-sm" onclick="iwOpenSessions('${iv.id}','${esc(iv.title)}','candidates')">Candidates</button>
+          <button class="btn btn-ghost btn-sm"   onclick="iwOpenSessions('${iv.id}','${esc(iv.title)}','invite')">Invite</button>
+          <button class="btn btn-ghost btn-sm"   onclick="iwOpenEditInterview('${iv.id}')" title="Edit">✏</button>
+          <button class="btn btn-ghost btn-sm"   onclick="iwDeleteInterview('${iv.id}')" title="Delete" style="color:var(--danger)">🗑</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function iwDeleteInterview(id) {
+  if (!confirm('Delete this interview and all its sessions?')) return;
+  try {
+    await iwApiJSON('DELETE', `/api/interview/${id}`);
+    toast('Interview deleted', 'success');
+    iwLoadInterviewList();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Questions builder ──────────────────────────────────────────────────────────
+function iwAddQuestion()         { _iwQuestions.push({ text: '', duration: 120 }); iwRenderQuestions(); }
+function iwRemoveQuestion(i)     { if (_iwQuestions.length === 1) return toast('Need at least one question', 'error'); _iwQuestions.splice(i, 1); iwRenderQuestions(); }
+function iwMoveQuestion(i, dir)  { const j = i + dir; if (j < 0 || j >= _iwQuestions.length) return; [_iwQuestions[i], _iwQuestions[j]] = [_iwQuestions[j], _iwQuestions[i]]; iwRenderQuestions(); }
+
+function iwRenderQuestions() {
+  const el = document.getElementById('iw-questions-builder');
+  if (!el) return;
+  el.innerHTML = _iwQuestions.map((q, i) => `
+    <div class="question-item">
+      <div class="q-num">${i + 1}</div>
+      <div class="q-fields">
+        <input type="text" placeholder="Question text *" value="${esc(q.text)}" oninput="_iwQuestions[${i}].text = this.value">
+        <select onchange="_iwQuestions[${i}].duration = parseInt(this.value)">
+          ${[30,60,90,120,180,240,300].map(s => `<option value="${s}" ${q.duration===s?'selected':''}>${s}s (${s<60?s+'s':(s/60)+' min'})</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="iwMoveQuestion(${i},-1)" ${i===0?'disabled':''}>↑</button>
+      <button class="btn btn-ghost btn-sm" onclick="iwRemoveQuestion(${i})" style="color:var(--danger)">✕</button>
+    </div>`).join('');
+}
+
+async function iwSubmitInterview() {
+  const title       = document.getElementById('iw-new-title').value.trim();
+  const description = document.getElementById('iw-new-desc').value.trim();
+  if (!title) return toast('Title is required', 'error');
+  if (_iwQuestions.some(q => !q.text.trim())) return toast('All questions need text', 'error');
+  try {
+    await iwApiJSON('POST', '/api/interviews', { title, description, questions: _iwQuestions });
+    toast('Interview created!', 'success');
+    iwGoto('ow-list');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Two-Way: List page ─────────────────────────────────────────────────────────
+async function iwRenderTWListPage() {
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:700;margin:0">Two-Way Interview Sessions</h2>
+      <button class="btn btn-primary" onclick="iwGoto('tw-schedule')">+ Schedule Direct Invite</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="iw-tw-search" placeholder="Search candidates…" oninput="iwFilterAndRenderTWSessions()"
+        style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:220px">
+      <div style="display:flex;gap:6px">
+        <button class="filter-chip active" id="iw-tw-fc-all"       onclick="iwSetTWFilter('all')">All Status</button>
+        <button class="filter-chip"        id="iw-tw-fc-scheduled"  onclick="iwSetTWFilter('scheduled')">Scheduled</button>
+        <button class="filter-chip"        id="iw-tw-fc-completed"  onclick="iwSetTWFilter('completed')">Completed</button>
+        <button class="filter-chip"        id="iw-tw-fc-cancelled"  onclick="iwSetTWFilter('cancelled')">Cancelled</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <span style="font-size:12px;color:var(--text-muted);font-weight:500">Source:</span>
+      <div style="display:flex;gap:6px">
+        <button class="filter-chip active" id="iw-tw-src-all"    onclick="iwSetTWSourceFilter('all')">All</button>
+        <button class="filter-chip"        id="iw-tw-src-direct" onclick="iwSetTWSourceFilter('DIRECT_INVITE')">✉ Direct Invite</button>
+        <button class="filter-chip"        id="iw-tw-src-booked" onclick="iwSetTWSourceFilter('CANDIDATE_BOOKING')">🗓 Self-Booked</button>
+      </div>
+    </div>
+    <div class="iw-tw-table-header">
+      <span>Candidate</span>
+      <span>Position</span>
+      <span style="cursor:pointer;user-select:none" onclick="iwToggleTWSort()">Scheduled <span id="iw-tw-sort-ind">↓</span></span>
+      <span style="text-align:center">Status</span>
+      <span style="text-align:right">Actions</span>
+    </div>
+    <div id="iw-tw-sessions-list"></div>`;
+  await iwLoadTWSessions();
+}
+
+async function iwLoadTWSessions() {
+  const el = document.getElementById('iw-tw-sessions-list');
+  if (!el) return;
+  el.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
+  try {
+    _iwAllTWSessions = await iwApiJSON('GET', '/api/tw-sessions/unified');
+    _iwTwFilter      = 'all';
+    _iwTwSourceFilter = 'all';
+    iwSetTWFilter('all');
+  } catch (e) {
+    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+function iwToggleTWSort() {
+  _iwTwSort = _iwTwSort === 'asc' ? 'desc' : 'asc';
+  const ind = document.getElementById('iw-tw-sort-ind');
+  if (ind) ind.textContent = _iwTwSort === 'asc' ? '↑' : '↓';
+  iwFilterAndRenderTWSessions();
+}
+
+function iwSetTWFilter(filter) {
+  _iwTwFilter = filter;
+  ['all','scheduled','completed','cancelled'].forEach(f => {
+    const c = document.getElementById(`iw-tw-fc-${f}`);
+    if (c) c.classList.toggle('active', f === filter);
+  });
+  iwFilterAndRenderTWSessions();
+}
+
+function iwSetTWSourceFilter(source) {
+  _iwTwSourceFilter = source;
+  const idMap = { all:'iw-tw-src-all', DIRECT_INVITE:'iw-tw-src-direct', CANDIDATE_BOOKING:'iw-tw-src-booked' };
+  Object.entries(idMap).forEach(([k, id]) => {
+    const c = document.getElementById(id);
+    if (c) c.classList.toggle('active', k === source);
+  });
+  iwFilterAndRenderTWSessions();
+}
+
+function iwFilterAndRenderTWSessions() {
+  const query = (document.getElementById('iw-tw-search')?.value || '').toLowerCase();
+  let list = _iwAllTWSessions.filter(s => {
+    if (_iwTwFilter !== 'all' && s.status !== _iwTwFilter) return false;
+    if (_iwTwSourceFilter !== 'all' && s.scheduling_source !== _iwTwSourceFilter) return false;
+    if (query && !s.candidateName.toLowerCase().includes(query) &&
+        !(s.candidateEmail || '').toLowerCase().includes(query) &&
+        !(s.position || '').toLowerCase().includes(query)) return false;
+    return true;
+  });
+  list.sort((a, b) => {
+    const ta = a.scheduledAt || 0, tb = b.scheduledAt || 0;
+    return _iwTwSort === 'asc' ? ta - tb : tb - ta;
+  });
+  const el = document.getElementById('iw-tw-sessions-list');
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = `<div class="iw-empty-state">${_iwAllTWSessions.length ? 'No sessions match your filter.' : 'No sessions scheduled yet.'}</div>`;
+    return;
+  }
+  el.innerHTML = list.map(iwRenderTWSessionRow).join('');
+}
+
+function iwRenderTWSessionRow(s) {
+  const dt      = s.scheduledAt ? new Date(s.scheduledAt) : null;
+  const dateStr = dt ? dt.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
+  const timeStr = dt ? dt.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+  const safeName = esc(s.candidateName).replace(/'/g, "\\'");
+
+  const statusBadge = {
+    scheduled: `<span class="badge badge-active">Scheduled</span>`,
+    completed:  `<span class="badge badge-approved">Completed</span>`,
+    cancelled:  `<span class="badge badge-new">Cancelled</span>`,
+  }[s.status] || `<span class="badge badge-new">${esc(s.status)}</span>`;
+
+  const sourceBadge = s.scheduling_source === 'DIRECT_INVITE'
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.2);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;margin-top:3px">✉ Direct Invite</span>`
+    : `<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(22,163,74,.1);color:#16a34a;border:1px solid rgba(22,163,74,.2);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;margin-top:3px">🗓 Self-Booked</span>`;
+
+  let actions = '';
+  if (s.scheduling_source === 'DIRECT_INVITE') {
+    if (s.status === 'scheduled') {
+      actions = `
+        ${s.meetingLink ? `<a href="${esc(s.meetingLink)}" target="_blank" class="btn btn-ghost btn-sm">${s.teamsGenerated?'🟦':'🔗'} Join</a>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="iwMarkTWCompleted('${s.id}')">✓ Done</button>
+        <button class="btn btn-danger btn-sm" onclick="iwCancelTWSession('${s.id}','${safeName}')">Cancel</button>`;
+    } else if (s.status === 'completed') {
+      actions = s.recordingDriveItemId
+        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="iwOpenTWRecording('${s.id}')">▶ Recording</button>`
+        : `<button class="btn btn-ghost btn-sm" onclick="iwFetchAndRefreshTWRecording('${s.id}')">⟳ Fetch</button>`;
+      actions += ` <button class="btn btn-ghost btn-sm" onclick="iwDeleteTWSession('${s.id}','${safeName}')" style="color:var(--danger)">🗑</button>`;
+    } else {
+      actions = `<button class="btn btn-ghost btn-sm" onclick="iwDeleteTWSession('${s.id}','${safeName}')" style="color:var(--danger)">🗑</button>`;
+    }
+  } else {
+    if (s.status === 'scheduled') {
+      actions = `
+        ${s.meetingLink ? `<a href="${esc(s.meetingLink)}" target="_blank" class="btn btn-ghost btn-sm">🟦 Join</a>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="iwMarkSelfBookedCompleted('${s.id}')">✓ Done</button>
+        <button class="btn btn-danger btn-sm" onclick="iwCancelSelfBookedSession('${s.id}','${safeName}')">Cancel</button>`;
+    } else if (s.status === 'completed') {
+      actions = s.recordingDriveItemId
+        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="iwOpenBookingRecording('${s.id}')">▶ Recording</button>`
+        : `<button class="btn btn-ghost btn-sm" onclick="iwFetchAndRefreshBookingRecording('${s.id}')">⟳ Fetch</button>`;
+    } else {
+      actions = `<span style="font-size:12px;color:var(--text-muted)">—</span>`;
+    }
+  }
+
+  const positionLabel = s.position || (s.linkTitle ? `via ${esc(s.linkTitle)}` : '—');
+  return `
+    <div class="iw-tw-session-row">
+      <div style="min-width:0">
+        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.candidateName)}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${s.candidateEmail ? esc(s.candidateEmail) : ''}${s.teamsGenerated ? ' · <span style="color:#6264a7">Teams</span>' : ''}</div>
+        ${sourceBadge}
+      </div>
+      <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted)">${positionLabel}</div>
+      <div>
+        <div style="font-size:13px">${dateStr}</div>
+        <div style="font-size:11px;color:var(--text-muted)">${timeStr}${s.duration ? ' · ' + s.duration + ' min' : ''}</div>
+      </div>
+      <div style="text-align:center">${statusBadge}</div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap">${actions}</div>
+    </div>`;
+}
+
+async function iwMarkTWCompleted(id) {
+  if (!confirm('Mark this session as completed?')) return;
+  try {
+    await iwApiJSON('PUT', `/api/tw-session/${id}`, { status: 'completed' });
+    toast('Marked as completed — searching for recording…', 'info');
+    await iwLoadTWSessions();
+    try {
+      const result = await iwApiJSON('POST', `/api/tw-session/${id}/fetch-recording`);
+      if (result.ok) { toast('Recording found and linked!', 'success'); await iwLoadTWSessions(); }
+      else toast(result.message || 'No recording found yet — use ⟳ Fetch to retry.', 'info');
+    } catch { /* not ready yet */ }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwFetchAndRefreshTWRecording(id) {
+  toast('Searching OneDrive Recordings…', 'info');
+  try {
+    const r = await iwApiJSON('POST', `/api/tw-session/${id}/fetch-recording`);
+    r.ok ? (toast('Recording found: ' + r.fileName, 'success'), await iwLoadTWSessions()) : toast(r.message || 'No recording found yet.', 'info');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwOpenTWRecording(id) {
+  toast('Loading recording…', 'info');
+  try {
+    const { downloadUrl, webUrl, fileName } = await iwApiJSON('GET', `/api/tw-session/${id}/recording-url`);
+    document.getElementById('iw-review-candidate-name').textContent  = fileName || 'Meeting Recording';
+    document.getElementById('iw-review-interview-title').textContent = 'Two-Way Interview Recording';
+    document.getElementById('iw-review-content').innerHTML = downloadUrl
+      ? `<div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:10px">
+           <video src="${downloadUrl}" controls style="width:100%;border-radius:6px;background:#000"></video>
+           <div style="text-align:right"><a href="${webUrl}" target="_blank" class="btn btn-ghost btn-sm">Open in OneDrive ↗</a></div>
+         </div>`
+      : `<div style="flex:1;display:flex;align-items:center;justify-content:center">
+           <a href="${webUrl}" target="_blank" class="btn btn-primary">Open Recording in OneDrive ↗</a>
+         </div>`;
+    iwOpenModal('iw-modal-review');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwCancelTWSession(id, name) {
+  if (!confirm(`Cancel ${name}'s interview session? A cancellation email will be sent if on file.`)) return;
+  try {
+    const data = await iwApiJSON('PUT', `/api/tw-session/${id}`, { status: 'cancelled' });
+    toast(data.emailSent ? 'Session cancelled & candidate notified' : 'Session cancelled', 'success');
+    await iwLoadTWSessions();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwDeleteTWSession(id, name) {
+  if (!confirm(`Delete ${name}'s session record?`)) return;
+  try {
+    await iwApiJSON('DELETE', `/api/tw-session/${id}`);
+    toast('Session deleted', 'success');
+    await iwLoadTWSessions();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwMarkSelfBookedCompleted(id) {
+  if (!confirm('Mark this booking as completed?')) return;
+  try {
+    await iwApiJSON('PUT', `/api/booking/booking/${id}`, { status: 'completed' });
+    toast('Marked as completed — searching for recording…', 'info');
+    await iwLoadTWSessions();
+    try {
+      const r = await iwApiJSON('POST', `/api/booking/booking/${id}/fetch-recording`);
+      if (r.ok) { toast('Recording found!', 'success'); await iwLoadTWSessions(); }
+      else toast(r.message || 'No recording yet — use ⟳ Fetch to retry.', 'info');
+    } catch { /* not ready */ }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwFetchAndRefreshBookingRecording(id) {
+  toast('Searching OneDrive Recordings…', 'info');
+  try {
+    const r = await iwApiJSON('POST', `/api/booking/booking/${id}/fetch-recording`);
+    r.ok ? (toast('Recording found: ' + r.fileName, 'success'), await iwLoadTWSessions()) : toast(r.message || 'No recording found yet.', 'info');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwOpenBookingRecording(id) {
+  toast('Loading recording…', 'info');
+  try {
+    const { downloadUrl, webUrl, fileName } = await iwApiJSON('GET', `/api/booking/booking/${id}/recording-url`);
+    document.getElementById('iw-review-candidate-name').textContent  = fileName || 'Meeting Recording';
+    document.getElementById('iw-review-interview-title').textContent = 'Two-Way Interview Recording';
+    document.getElementById('iw-review-content').innerHTML = downloadUrl
+      ? `<div style="flex:1;padding:20px"><video src="${downloadUrl}" controls style="width:100%;border-radius:6px;background:#000"></video>
+         <div style="text-align:right;margin-top:8px"><a href="${webUrl}" target="_blank" class="btn btn-ghost btn-sm">Open in OneDrive ↗</a></div></div>`
+      : `<div style="flex:1;display:flex;align-items:center;justify-content:center">
+         <a href="${webUrl}" target="_blank" class="btn btn-primary">Open Recording in OneDrive ↗</a></div>`;
+    iwOpenModal('iw-modal-review');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwCancelSelfBookedSession(id, name) {
+  if (!confirm(`Cancel ${name}'s booking? Teams meeting will be removed and candidate notified.`)) return;
+  try {
+    const data = await iwApiJSON('DELETE', `/api/booking/booking/${id}`);
+    toast(data.emailSent ? 'Booking cancelled & candidate notified' : 'Booking cancelled (email failed)', 'success');
+    await iwLoadTWSessions();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Two-Way: Schedule page ─────────────────────────────────────────────────────
+function iwRenderTWSchedulePage() {
+  const main = document.getElementById('iw-main');
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; })();
+  const today = new Date().toISOString().split('T')[0];
+  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
+  main.innerHTML = `
+    <div style="max-width:680px">
+      <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">Schedule Two-Way Interview</h2>
+      <div class="card">
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0"><label>Candidate Name *</label><input type="text" id="iw-tw-cand-name" placeholder="Full name"></div>
+          <div class="form-group" style="margin-bottom:0"><label>Candidate Email *</label><input type="email" id="iw-tw-cand-email" placeholder="email@example.com"></div>
+        </div>
+        <div class="form-group" style="margin-top:16px"><label>Position / Role *</label><input type="text" id="iw-tw-position" placeholder="e.g. J1 Summer Intern – Marketing"></div>
+        <div class="form-row-3" style="margin-top:8px">
+          <div class="form-group" style="margin-bottom:0"><label>Date *</label><input type="date" id="iw-tw-date" value="${tomorrow}" min="${today}"></div>
+          <div class="form-group" style="margin-bottom:0">
+            <label>Time * <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)">${tz}</span></label>
+            <div style="display:flex;gap:6px">
+              <select id="iw-tw-time-h" style="flex:1">${[...Array(12)].map((_,i)=>{ const v=String(i+1).padStart(2,'0'); return `<option value="${v}"${i===8?' selected':''}>${v}</option>`; }).join('')}</select>
+              <select id="iw-tw-time-m" style="flex:1"><option value="00" selected>00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option></select>
+              <select id="iw-tw-time-ap" style="flex:1"><option value="AM" selected>AM</option><option value="PM">PM</option></select>
+            </div>
+          </div>
+          <div class="form-group" style="margin-bottom:0"><label>Duration</label>
+            <select id="iw-tw-duration">
+              <option value="30">30 minutes</option><option value="45">45 minutes</option>
+              <option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">2 hours</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:16px">
+          <label>Microsoft Teams Meeting</label>
+          <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer" onclick="document.getElementById('iw-tw-auto-meeting').click()">
+            <input type="checkbox" id="iw-tw-auto-meeting" checked style="accent-color:var(--blue);width:16px;height:16px;flex-shrink:0;margin-top:2px;cursor:pointer" onclick="event.stopPropagation()" onchange="iwToggleTWAutoMeeting(this.checked)">
+            <div>
+              <div style="font-size:13px;font-weight:600">Auto-generate Microsoft Teams link</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Creates a Teams meeting on <strong>corporate-recruiter@cti-usa.com</strong> calendar. Candidate receives a calendar invite automatically.</div>
+            </div>
+          </div>
+        </div>
+        <div id="iw-tw-manual-link-wrap" style="display:none">
+          <div class="form-group"><label>Meeting Link (manual)</label><input type="url" id="iw-tw-meeting-link" placeholder="https://teams.microsoft.com/…"></div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:16px;font-size:13px;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">
+            <input type="checkbox" id="iw-tw-send-email" style="accent-color:var(--blue);width:14px;height:14px;cursor:pointer">
+            Send email invite to candidate
+          </label>
+        </div>
+        <div class="form-group"><label>Notes (optional)</label><textarea id="iw-tw-notes" placeholder="Internal notes…"></textarea></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary" id="iw-tw-schedule-btn" onclick="iwSubmitTWSession()">Schedule &amp; Create Teams Meeting</button>
+          <button class="btn btn-ghost" onclick="iwGoto('tw-list')">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function iwToggleTWAutoMeeting(checked) {
+  document.getElementById('iw-tw-manual-link-wrap').style.display = checked ? 'none' : 'block';
+  document.getElementById('iw-tw-schedule-btn').textContent = checked ? 'Schedule & Create Teams Meeting' : 'Schedule Interview';
+}
+
+async function iwSubmitTWSession() {
+  const candidateName  = document.getElementById('iw-tw-cand-name').value.trim();
+  const candidateEmail = document.getElementById('iw-tw-cand-email').value.trim();
+  const position       = document.getElementById('iw-tw-position').value.trim();
+  const date           = document.getElementById('iw-tw-date').value;
+  const twH  = document.getElementById('iw-tw-time-h').value;
+  const twM  = document.getElementById('iw-tw-time-m').value;
+  const twAP = document.getElementById('iw-tw-time-ap').value;
+  let hour24 = parseInt(twH);
+  if (twAP === 'PM' && hour24 !== 12) hour24 += 12;
+  if (twAP === 'AM' && hour24 === 12) hour24 = 0;
+  const time        = `${String(hour24).padStart(2,'0')}:${twM}`;
+  const duration    = parseInt(document.getElementById('iw-tw-duration').value);
+  const autoMeeting = document.getElementById('iw-tw-auto-meeting').checked;
+  const meetingLink = !autoMeeting ? (document.getElementById('iw-tw-meeting-link')?.value.trim() || '') : '';
+  const notes       = document.getElementById('iw-tw-notes').value.trim();
+  const sendEmail   = !autoMeeting && document.getElementById('iw-tw-send-email')?.checked;
+
+  if (!candidateName)  return toast('Candidate name is required', 'error');
+  if (!candidateEmail) return toast('Candidate email is required', 'error');
+  if (!position)       return toast('Position is required', 'error');
+  if (!date || !time)  return toast('Date and time are required', 'error');
+
+  const btn = document.getElementById('iw-tw-schedule-btn');
+  btn.disabled = true;
+  btn.textContent = autoMeeting ? 'Creating Teams meeting…' : 'Scheduling…';
+  const scheduledAt = new Date(`${date}T${time}`).getTime();
+  try {
+    const session = await iwApiJSON('POST', '/api/tw-sessions', { candidateName, candidateEmail, position, scheduledAt, duration, meetingLink, notes, autoMeeting });
+    if (session.teamsError)          toast('Scheduled, but Teams failed: ' + session.teamsError, 'info');
+    else if (autoMeeting && session.teamsGenerated) toast('Teams meeting created! Calendar invite sent.', 'success');
+    else if (sendEmail && session.id) {
+      try { await iwApiJSON('POST', `/api/tw-session/${session.id}/send-email`); toast('Scheduled & email sent!', 'success'); }
+      catch { toast('Scheduled, but email could not be sent', 'info'); }
+    } else toast('Session scheduled!', 'success');
+    iwGoto('tw-list');
+  } catch (e) {
+    toast(e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = autoMeeting ? 'Schedule & Create Teams Meeting' : 'Schedule Interview';
+  }
+}
+
+// ── Sessions modal (one-way invite + candidates) ───────────────────────────────
+function iwSwitchSessionTab(name) {
+  const invite = document.getElementById('iw-session-pane-invite');
+  const cands  = document.getElementById('iw-session-pane-candidates');
+  if (!invite || !cands) return;
+  invite.style.display = name === 'invite' ? 'block' : 'none';
+  cands.style.display  = name === 'candidates' ? 'flex' : 'none';
+  const inner = document.getElementById('iw-sessions-modal-inner');
+  if (inner) {
+    if (name === 'invite') {
+      inner.style.width    = '';
+      inner.style.maxWidth = '660px';
+      inner.style.height   = '';
+    } else {
+      inner.style.width    = 'calc(100vw - 100px)';
+      inner.style.maxWidth = 'calc(100vw - 100px)';
+      inner.style.height   = 'calc(100vh - 60px)';
+    }
+  }
+  ['iw-tab-invite','iw-tab-candidates'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', id === `iw-tab-${name}`);
+  });
+}
+
+function iwResetInviteForm() {
+  const nn = document.getElementById('iw-new-cand-name'); if (nn) nn.value = '';
+  const ne = document.getElementById('iw-new-cand-email'); if (ne) ne.value = '';
+  const lb = document.getElementById('iw-generated-link-box'); if (lb) lb.style.display = 'none';
+  const sb = document.getElementById('iw-send-email-btn'); if (sb) { sb.style.display = 'none'; sb.disabled = false; sb.textContent = '✉ Send Email'; }
+  iwResetBulkUpload();
+  iwSwitchInviteMode('single');
+}
+
+function iwSwitchInviteMode(mode) {
+  const ss = document.getElementById('iw-invite-single-section'); if (ss) ss.style.display = mode === 'single' ? 'block' : 'none';
+  const bs = document.getElementById('iw-invite-bulk-section'); if (bs) bs.style.display = mode === 'bulk' ? 'block' : 'none';
+  const ms = document.getElementById('iw-invite-mode-single'); if (ms) ms.classList.toggle('active', mode === 'single');
+  const mb = document.getElementById('iw-invite-mode-bulk'); if (mb) mb.classList.toggle('active', mode === 'bulk');
+}
+
+async function iwOpenSessions(interviewId, title, tab = 'invite') {
+  _iwCurrentInterviewId = interviewId;
+  const el = document.getElementById('iw-modal-interview-title');
+  if (el) el.textContent = title;
+  iwResetInviteForm();
+  _iwDecisionFilter = 'all'; _iwStarFilter = 0; _iwSessionSortCol = null; _iwSessionSortDir = 'desc';
+  ['iw-fd-all','iw-fd-fwd','iw-fd-rej'].forEach((id, idx) => {
+    const c = document.getElementById(id); if (c) c.classList.toggle('active', idx === 0);
+  });
+  [0,1,2,3,4,5].forEach(i => {
+    const c = document.getElementById(`iw-fs-${i}`); if (c) c.classList.toggle('active', i === 0);
+  });
+  iwSwitchSessionTab(tab);
+  iwOpenModal('iw-modal-sessions');
+  await iwLoadSessions(interviewId);
+}
+
+async function iwLoadSessions(interviewId) {
+  const el = document.getElementById('iw-sessions-list');
+  if (!el) return;
+  el.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
+  try {
+    _iwAllSessions = await iwApiJSON('GET', `/api/interview/${interviewId}/sessions`);
+    _iwSessionFilter = 'all';
+    iwSetSessionFilter('all');
+  } catch (e) {
+    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+function iwSetSessionFilter(filter) {
+  _iwSessionFilter = filter;
+  ['all','pending','completed'].forEach(f => {
+    const c = document.getElementById(`iw-fc-${f}`); if (c) c.classList.toggle('active', f === filter);
+  });
+  iwFilterAndRenderSessions();
+}
+
+function iwSetDecisionFilter(filter) {
+  _iwDecisionFilter = filter;
+  [['iw-fd-all','all'],['iw-fd-fwd','move_forward'],['iw-fd-rej','not_moving_forward']].forEach(([id, val]) => {
+    const c = document.getElementById(id); if (c) c.classList.toggle('active', filter === val);
+  });
+  iwFilterAndRenderSessions();
+}
+
+function iwSetStarFilter(n) {
+  _iwStarFilter = n;
+  [0,1,2,3,4,5].forEach(i => {
+    const c = document.getElementById(`iw-fs-${i}`); if (c) c.classList.toggle('active', i === n);
+  });
+  iwFilterAndRenderSessions();
+}
+
+function iwToggleSessionSort(col) {
+  if (_iwSessionSortCol === col) _iwSessionSortDir = _iwSessionSortDir === 'asc' ? 'desc' : 'asc';
+  else { _iwSessionSortCol = col; _iwSessionSortDir = 'desc'; }
+  iwFilterAndRenderSessions();
+}
+
+function iwFilterAndRenderSessions() {
+  const query = (document.getElementById('iw-search-candidates')?.value || '').toLowerCase();
+  let list = _iwAllSessions.filter(s => {
+    if (_iwSessionFilter !== 'all' && s.status !== _iwSessionFilter) return false;
+    if (query && !s.candidateName.toLowerCase().includes(query) && !(s.candidateEmail||'').toLowerCase().includes(query)) return false;
+    if (_iwDecisionFilter !== 'all' && s.reviewDecision !== _iwDecisionFilter) return false;
+    if (_iwStarFilter > 0 && (s.reviewStars || 0) < _iwStarFilter) return false;
+    return true;
+  });
+  if (_iwSessionSortCol === 'review')       list.sort((a,b) => { const sa=a.reviewStars||0,sb=b.reviewStars||0; return _iwSessionSortDir==='desc'?sb-sa:sa-sb; });
+  else if (_iwSessionSortCol === 'status')  list.sort((a,b) => { const o={completed:2,in_progress:1,pending:0}; const sa=o[a.status]??0,sb=o[b.status]??0; return _iwSessionSortDir==='desc'?sb-sa:sa-sb; });
+  else if (_iwSessionSortCol === 'date')    list.sort((a,b) => { const ta=a.createdAt||0,tb=b.createdAt||0; return _iwSessionSortDir==='desc'?tb-ta:ta-tb; });
+
+  const rv = document.getElementById('iw-sort-review-ind'); if (rv) rv.textContent = _iwSessionSortCol==='review' ? (_iwSessionSortDir==='desc'?'↓':'↑') : '↕';
+  const st = document.getElementById('iw-sort-status-ind'); if (st) st.textContent = _iwSessionSortCol==='status' ? (_iwSessionSortDir==='desc'?'↓':'↑') : '↕';
+  const dt = document.getElementById('iw-sort-date-ind');   if (dt) dt.textContent = _iwSessionSortCol==='date'   ? (_iwSessionSortDir==='desc'?'↓':'↑') : '↕';
+
+  const hd = document.getElementById('iw-sessions-heading'); if (hd) hd.textContent = `Candidates (${_iwAllSessions.length})`;
+  const el = document.getElementById('iw-sessions-list'); if (!el) return;
+  if (!list.length) {
+    el.innerHTML = `<div class="iw-empty-state">${_iwAllSessions.length ? 'No candidates match your filter.' : 'No candidates yet. Use the Invite tab to generate a link.'}</div>`;
+    return;
+  }
+  el.innerHTML = list.map((s, i) => iwRenderSessionRow(s, i + 1)).join('');
+  list.filter(s => s.profilePhotoItemId).forEach(s => iwLoadAvatarPhoto(s.token));
+}
+
+function iwCandidateInitials(name) {
+  const w = name.trim().split(/\s+/);
+  return (w.length >= 2 ? w[0][0] + w[w.length-1][0] : w[0].slice(0,2)).toUpperCase();
+}
+
+async function iwLoadAvatarPhoto(token) {
+  const el = document.getElementById(`iw-av-${token}`); if (!el) return;
+  try {
+    const data = await iwApiJSON('GET', `/api/session/${token}/profile-photo`);
+    if (data.downloadUrl) el.innerHTML = `<img src="${data.downloadUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+  } catch { /* silently skip */ }
+}
+
+const IW_DECISION_STYLE = { move_forward:'background:#16a34a;color:#fff', not_moving_forward:'background:#dc2626;color:#fff' };
+const IW_DECISION_LABEL = { move_forward:'✓ Moving Forward', not_moving_forward:'✗ Not Moving Forward' };
+
+function iwRenderSessionRow(s, num) {
+  const invitedDate = s.createdAt ? new Date(s.createdAt).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
+  const responseCount = s.responses?.length || 0;
+  const avatarContent = `<span style="font-size:11px;font-weight:700;color:var(--text-muted)">${iwCandidateInitials(s.candidateName)}</span>`;
+  const videosCell = responseCount > 0
+    ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue);white-space:nowrap" onclick="iwOpenReview('${s.token}','${esc(s.candidateName)}')">🎥 View ${responseCount}</button>`
+    : `<span style="font-size:12px;color:var(--text-muted)">—</span>`;
+  const actionsCell = s.status === 'pending'
+    ? `<button class="btn btn-ghost btn-sm" title="Copy link" onclick="iwCopySessionLink('${s.token}')">🔗</button>
+       <button class="btn btn-danger btn-sm" onclick="iwRevokeSession('${s.token}','${esc(s.candidateName)}')">Revoke</button>`
+    : `<button class="btn btn-ghost btn-sm" onclick="iwOpenReview('${s.token}','${esc(s.candidateName)}')">Review</button>`;
+
+  return `
+    <div class="iw-session-row">
+      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-align:center">${num}</div>
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <div id="iw-av-${s.token}" class="candidate-avatar">${avatarContent}</div>
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.candidateName)}</div>
+          <div style="font-size:11px;color:var(--text-muted)">${s.candidateEmail ? esc(s.candidateEmail) : ''}</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        ${s.reviewDecision
+          ? `<div><span style="font-size:10px;padding:2px 7px;border-radius:10px;${IW_DECISION_STYLE[s.reviewDecision]||''};white-space:nowrap">${IW_DECISION_LABEL[s.reviewDecision]||s.reviewDecision}</span></div>
+             ${s.reviewStars ? `<div style="font-size:13px;color:#f59e0b">${'★'.repeat(s.reviewStars)}<span style="color:var(--border)">${'★'.repeat(5-s.reviewStars)}</span></div>` : ''}`
+          : `<span style="font-size:12px;color:var(--text-muted)">—</span>`}
+      </div>
+      <div><span style="font-size:12px;color:var(--text-muted)">${invitedDate}</span></div>
+      <div style="text-align:center"><span class="badge badge-${s.status === 'completed' ? 'approved' : s.status === 'pending' ? 'new' : 'active'}">${s.status.replace('_',' ')}</span></div>
+      <div style="text-align:center">${videosCell}</div>
+      <div style="display:flex;align-items:center;justify-content:flex-end;gap:5px">${actionsCell}</div>
+    </div>`;
+}
+
+async function iwGenerateLink() {
+  const name  = document.getElementById('iw-new-cand-name').value.trim();
+  const email = document.getElementById('iw-new-cand-email').value.trim();
+  if (!name)  return toast('Candidate name is required', 'error');
+  if (!email) return toast('Email is required', 'error');
+  try {
+    const data = await iwApiJSON('POST', `/api/interview/${_iwCurrentInterviewId}/sessions`, { candidateName: name, candidateEmail: email });
+    const link = iwBuildTakeUrl(data.token);
+    document.getElementById('iw-generated-link-text').textContent = link;
+    document.getElementById('iw-generated-link-box').style.display = 'block';
+    const sb = document.getElementById('iw-send-email-btn');
+    if (sb) { sb.style.display = 'inline-flex'; sb.onclick = () => iwSendLinkEmail(data.token, link, email); }
+    toast('Link generated!', 'success');
+    await iwLoadSessions(_iwCurrentInterviewId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function iwBuildTakeUrl(token)    { return `${IW_TAKE_BASE}/take.html?token=${token}`; }
+function iwCopySessionLink(token) { navigator.clipboard.writeText(iwBuildTakeUrl(token)); toast('Link copied!', 'success'); }
+function iwCopyLink()             { navigator.clipboard.writeText(document.getElementById('iw-generated-link-text').textContent); toast('Copied!', 'success'); }
+
+async function iwSendLinkEmail(token, link, email) {
+  const btn = document.getElementById('iw-send-email-btn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await iwApiJSON('POST', `/api/session/${token}/send-email`, { link });
+    toast(`Email sent to ${email}`, 'success');
+    iwResetInviteForm();
+    await iwLoadSessions(_iwCurrentInterviewId);
+  } catch (e) {
+    toast('Failed: ' + e.message, 'error');
+    btn.disabled = false; btn.textContent = '✉ Send Email';
+  }
+}
+
+async function iwRevokeSession(token, name) {
+  if (!confirm(`Revoke ${name}'s invitation? Their link will stop working immediately.`)) return;
+  try {
+    await iwApiJSON('DELETE', `/api/session/${token}`);
+    toast('Invitation revoked', 'success');
+    await iwLoadSessions(_iwCurrentInterviewId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Bulk import ────────────────────────────────────────────────────────────────
+async function iwHandleBulkFile(file) {
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  let rows, headers;
+  try {
+    if (ext === 'csv') {
+      const text = await file.text();
+      ({ rows, headers } = iwParseCsvText(text));
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      if (typeof XLSX === 'undefined') return toast('Excel library not loaded — try CSV instead', 'error');
+      const buffer = await file.arrayBuffer();
+      ({ rows, headers } = iwParseXlsxBuffer(buffer));
+    } else return toast('Please upload .csv, .xlsx, or .xls', 'error');
+  } catch (e) { return toast('Could not read file: ' + e.message, 'error'); }
+  if (!rows.length) return toast('No data rows found in file', 'error');
+  _iwBulkRows = rows; _iwBulkHeaders = headers;
+  _iwBulkNameCol  = iwDetectBestCol(headers, ['full name','fullname','name','candidate']);
+  if (!_iwBulkNameCol) {
+    const first = headers.find(h => /first.?name|fname/i.test(h));
+    const last  = headers.find(h => /last.?name|lname|surname/i.test(h));
+    if (first && last) _iwBulkNameCol = `__concat__${first}__${last}`;
+    else _iwBulkNameCol = first || last || headers[0];
+  }
+  _iwBulkEmailCol = iwDetectBestCol(headers, ['email','e-mail','mail']);
+  iwRenderBulkPreview();
+}
+
+function iwDetectBestCol(headers, keywords) {
+  for (const kw of keywords) { const m = headers.find(h => h.toLowerCase().includes(kw)); if (m) return m; }
+  return null;
+}
+
+function iwParseCsvText(text) {
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().split('\n');
+  if (!lines.length) return { rows:[], headers:[] };
+  const parseRow = line => {
+    const result=[]; let cur=''; let inQ=false;
+    for (let i=0;i<line.length;i++) {
+      const ch=line[i];
+      if (ch==='"') { if (inQ&&line[i+1]==='"'){cur+='"';i++;} else inQ=!inQ; }
+      else if (ch===','&&!inQ) { result.push(cur.trim()); cur=''; }
+      else cur+=ch;
+    }
+    result.push(cur.trim()); return result;
+  };
+  const headers = parseRow(lines[0]);
+  const rows=[];
+  for (let i=1;i<lines.length;i++) {
+    const cells=parseRow(lines[i]);
+    if (cells.every(c=>!c)) continue;
+    const obj={}; headers.forEach((h,idx)=>{ obj[h]=cells[idx]||''; }); rows.push(obj);
+  }
+  return { rows, headers };
+}
+
+function iwParseXlsxBuffer(buffer) {
+  const wb=XLSX.read(buffer,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
+  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  if (!data.length) return { rows:[], headers:[] };
+  const headers=data[0].map(String); const rows=[];
+  for (let i=1;i<data.length;i++) {
+    const cells=data[i]; if (cells.every(c=>!String(c))) continue;
+    const obj={}; headers.forEach((h,idx)=>{ obj[h]=String(cells[idx]??''); }); rows.push(obj);
+  }
+  return { rows, headers };
+}
+
+function iwGetBulkName(row) {
+  if (_iwBulkNameCol?.startsWith('__concat__')) {
+    const parts=_iwBulkNameCol.slice('__concat__'.length).split('__');
+    return parts.map(k=>row[k]||'').filter(Boolean).join(' ');
+  }
+  return row[_iwBulkNameCol]||'';
+}
+function iwGetBulkEmail(row) { return row[_iwBulkEmailCol]||''; }
+
+function iwRenderBulkPreview() {
+  const section = document.getElementById('iw-bulk-preview-section');
+  if (!section) return;
+  const first=_iwBulkHeaders.find(h=>/first.?name|fname/i.test(h));
+  const last =_iwBulkHeaders.find(h=>/last.?name|lname|surname/i.test(h));
+  const concatKey = first&&last ? `__concat__${first}__${last}` : null;
+  const nameOpts=[
+    ...(concatKey?[`<option value="${esc(concatKey)}" ${_iwBulkNameCol===concatKey?'selected':''}>First + Last Name</option>`]:[]),
+    ..._iwBulkHeaders.map(h=>`<option value="${esc(h)}" ${_iwBulkNameCol===h?'selected':''}>${esc(h)}</option>`),
+  ].join('');
+  const emailOpts=_iwBulkHeaders.map(h=>`<option value="${esc(h)}" ${_iwBulkEmailCol===h?'selected':''}>${esc(h)}</option>`).join('');
+  const preview=_iwBulkRows.slice(0,5);
+  const validCount=_iwBulkRows.filter(r=>iwGetBulkName(r)&&iwGetBulkEmail(r)).length;
+  section.style.display='block';
+  section.innerHTML=`
+    <div style="margin-top:14px;padding:14px 16px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px">
+        <div>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);display:block;margin-bottom:4px">Name Column</label>
+          <select id="iw-bulk-name-col" onchange="_iwBulkNameCol=this.value;iwRenderBulkPreview()"
+            style="width:100%;background:var(--navy-light);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">${nameOpts}</select>
+        </div>
+        <div>
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);display:block;margin-bottom:4px">Email Column</label>
+          <select id="iw-bulk-email-col" onchange="_iwBulkEmailCol=this.value;iwRenderBulkPreview()"
+            style="width:100%;background:var(--navy-light);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">${emailOpts}</select>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="iwResetBulkUpload()">✕ Clear</button>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">
+        Preview — first 5 of <strong style="color:var(--text)">${_iwBulkRows.length}</strong> rows
+        ${validCount<_iwBulkRows.length?`<span style="color:var(--danger)"> · ${_iwBulkRows.length-validCount} rows missing name or email</span>`:''}
+      </div>
+      <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;padding:7px 12px;background:var(--navy-mid);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">
+          <span>Name</span><span>Email</span></div>
+        ${preview.map(r=>{
+          const n=iwGetBulkName(r),e=iwGetBulkEmail(r);
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;padding:7px 12px;border-top:1px solid var(--border);font-size:12px${!n||!e?';background:rgba(239,68,68,.05)':''}">
+            <span style="${!n?'color:var(--danger)':''}">${n||'⚠ missing'}</span>
+            <span style="${!e?'color:var(--danger)':''}">${e||'⚠ missing'}</span>
+          </div>`;
+        }).join('')}
+        ${_iwBulkRows.length>5?`<div style="padding:6px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);text-align:center">and ${_iwBulkRows.length-5} more…</div>`:''}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="iwRunBulkImport(false)">Generate Links for ${validCount}</button>
+        <button class="btn btn-ghost" onclick="iwRunBulkImport(true)">Generate &amp; Send Emails</button>
+      </div>
+    </div>`;
+}
+
+function iwResetBulkUpload() {
+  _iwBulkRows=[]; _iwBulkHeaders=[]; _iwBulkNameCol=null; _iwBulkEmailCol=null;
+  const preview=document.getElementById('iw-bulk-preview-section'); if (preview) { preview.style.display='none'; preview.innerHTML=''; }
+  const progress=document.getElementById('iw-bulk-import-progress'); if (progress) { progress.style.display='none'; progress.innerHTML=''; }
+  const fi=document.getElementById('iw-bulk-file-input'); if (fi) fi.value='';
+}
+
+async function iwRunBulkImport(sendEmails) {
+  const valid=_iwBulkRows.filter(r=>iwGetBulkName(r)&&iwGetBulkEmail(r));
+  if (!valid.length) return toast('No valid rows to import', 'error');
+  document.getElementById('iw-bulk-preview-section').querySelectorAll('button,select').forEach(el=>el.disabled=true);
+  const progress=document.getElementById('iw-bulk-import-progress'); progress.style.display='block';
+  let done=0, failed=0; const errors=[]; const total=valid.length;
+  const showProg=()=>{
+    const pct=Math.round((done+failed)/total*100);
+    progress.innerHTML=`
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Importing${sendEmails?' &amp; sending emails':''}… <strong>${done+failed}</strong> / ${total}</div>
+      <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
+        <div style="background:var(--blue);height:100%;border-radius:4px;width:${pct}%;transition:width .15s"></div>
+      </div>`;
+  };
+  showProg();
+  for (const row of valid) {
+    try {
+      const n=iwGetBulkName(row), e=iwGetBulkEmail(row);
+      const data=await iwApiJSON('POST',`/api/interview/${_iwCurrentInterviewId}/sessions`,{candidateName:n,candidateEmail:e});
+      if (sendEmails&&data.token) {
+        try { await iwApiJSON('POST',`/api/session/${data.token}/send-email`,{link:iwBuildTakeUrl(data.token)}); } catch {}
+      }
+      done++;
+    } catch (e) { failed++; errors.push(e.message); }
+    showProg();
+  }
+  progress.innerHTML=`
+    <div style="padding:14px 16px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:8px">Import complete</div>
+      <div style="display:flex;gap:16px">
+        <span style="color:var(--success)">✓ ${done} imported${sendEmails?' &amp; emailed':''}</span>
+        ${failed?`<span style="color:var(--danger)">✗ ${failed} failed</span>`:''}
+      </div>
+      ${errors.length?`<div style="font-size:12px;color:var(--text-muted);margin-top:8px">${errors.slice(0,3).map(e=>`<div>• ${esc(e)}</div>`).join('')}${errors.length>3?`<div>…and ${errors.length-3} more</div>`:''}</div>`:''}
+      <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="iwResetBulkUpload();iwSwitchInviteMode('single')">Done</button>
+    </div>`;
+  await iwLoadSessions(_iwCurrentInterviewId);
+  iwLoadInterviewList();
+}
+
+// ── Review modal ───────────────────────────────────────────────────────────────
+function iwStarsHTML(n, max=5) {
+  return Array.from({length:max},(_,i)=>`<span style="color:${i<n?'#f59e0b':'var(--border)'}">★</span>`).join('');
+}
+
+const IW_LEVEL_COLORS = { 'Excellent':'#16a34a','Good':'#2563eb','Intermediate':'#d97706','Basic':'#dc2626','Very limited':'#9ca3af' };
+
+function iwRenderAnalysisPanel(analysis, token) {
+  const overall=analysis.overall||{};
+  const levelColor=IW_LEVEL_COLORS[overall.level]||'var(--blue)';
+  const ts=analysis.analyzedAt?new Date(analysis.analyzedAt).toLocaleString():'';
+  const qCards=(analysis.questions||[]).map(q=>`
+    <div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px">
+        <div style="font-size:13px;font-weight:600">Q${q.questionIndex+1}: ${esc(q.qText||'')}</div>
+        <div style="flex-shrink:0;font-size:18px;line-height:1">${iwStarsHTML(q.stars)}</div>
+      </div>
+      <p style="font-size:12px;color:var(--text);margin:0 0 8px">${esc(q.feedback||'')}</p>
+      ${q.transcript?`<details style="margin-top:4px"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer">Show transcript</summary><p style="font-size:11px;color:var(--text-muted);margin:6px 0 0;line-height:1.55;font-style:italic">"${esc(q.transcript)}"</p></details>`:''}
+    </div>`).join('');
+
+  return `
+    <div id="iw-analysis-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h3 style="margin:0;font-size:15px">English Analysis</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${ts?`<span style="font-size:11px;color:var(--text-muted)">${ts}</span>`:''}
+          <button class="btn btn-ghost btn-sm" onclick="iwRunAnalysis('${token}')">Re-analyze</button>
+        </div>
+      </div>
+      <div style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;gap:20px;align-items:center">
+        <div style="text-align:center;flex-shrink:0">
+          <div style="font-size:28px;line-height:1">${iwStarsHTML(overall.stars)}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${overall.stars||'?'} / 5</div>
+        </div>
+        <div>
+          <span style="display:inline-block;background:${levelColor};color:#fff;font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;margin-bottom:6px">${esc(overall.level||'')}</span>
+          <p style="font-size:13px;color:var(--text);margin:0;line-height:1.5">${esc(overall.summary||'')}</p>
+        </div>
+      </div>
+      ${qCards}
+    </div>`;
+}
+
+async function iwOpenReview(token, candidateName) {
+  document.getElementById('iw-review-candidate-name').textContent  = candidateName;
+  document.getElementById('iw-review-interview-title').textContent = '';
+  iwOpenModal('iw-modal-review');
+  const content = document.getElementById('iw-review-content');
+  content.style.cssText = 'flex:1;min-height:0;display:flex';
+  content.innerHTML = '<div style="margin:auto"><div class="spinner"></div></div>';
+  _iwReviewDecision = null;
+
+  try {
+    const [{ session, interview }, cachedAnalysis, resumeData, reviewData] = await Promise.all([
+      fetch(`${INTERVIEW_API}/api/session/${token}`,          { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()),
+      fetch(`${INTERVIEW_API}/api/session/${token}/analysis`, { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({notFound:true})),
+      fetch(`${INTERVIEW_API}/api/session/${token}/resume-url`,{ headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({notFound:true})),
+      fetch(`${INTERVIEW_API}/api/session/${token}/review`,   { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({notFound:true})),
+    ]);
+
+    document.getElementById('iw-review-interview-title').textContent = interview?.title || '';
+
+    const videoItems = session.responses?.length
+      ? await Promise.all(session.responses.map(async r => {
+          const q = interview?.questions?.[r.questionIndex];
+          const { downloadUrl, webUrl } = await fetch(`${INTERVIEW_API}/api/session/${token}/video/${r.questionIndex}`, { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({}));
+          return { q, downloadUrl, webUrl, questionIndex: r.questionIndex };
+        }))
+      : [];
+
+    const videosHTML = videoItems.length
+      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+          ${videoItems.map(({q,downloadUrl,webUrl,questionIndex})=>`
+            <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--input-bg)">
+              ${downloadUrl
+                ?`<video src="${downloadUrl}" controls preload="metadata" style="width:100%;aspect-ratio:16/9;background:#000;display:block"></video>`
+                :`<div style="aspect-ratio:16/9;background:#111;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">Unavailable</div>`}
+              <div style="padding:8px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
+                <div>
+                  <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:2px">Q${questionIndex+1}</div>
+                  <div style="font-size:11px;color:var(--text);line-height:1.4">${q?esc(q.text):'Question '+(questionIndex+1)}</div>
+                </div>
+                ${webUrl?`<a href="${webUrl}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 5px;flex-shrink:0">↗</a>`:''}
+              </div>
+            </div>`).join('')}
+        </div>`
+      : `<div class="iw-empty-state">No recordings yet</div>`;
+
+    const analysisSection = cachedAnalysis?.notFound
+      ? `<div style="margin-top:8px;text-align:center">
+           <button class="btn btn-primary" onclick="iwRunAnalysis('${token}')" id="iw-analyze-btn">🤖 Analyze English Proficiency</button>
+           <p style="font-size:12px;color:var(--text-muted);margin-top:6px">~20–40 s · transcribes &amp; rates all answers</p>
+         </div>`
+      : iwRenderAnalysisPanel(cachedAnalysis, token);
+
+    let resumeSection = '';
+    if (resumeData?.downloadUrl) {
+      const ext = (resumeData.ext||'pdf').toLowerCase();
+      const enc = encodeURIComponent(resumeData.downloadUrl);
+      const viewerSrc = (ext==='doc'||ext==='docx')
+        ? `https://view.officeapps.live.com/op/embed.aspx?src=${enc}`
+        : `https://docs.google.com/viewer?url=${enc}&embedded=true`;
+      resumeSection = `
+        <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="margin:0;font-size:14px">Resume</h3>
+            <a href="${resumeData.downloadUrl}" target="_blank" class="btn btn-ghost btn-sm">Download ↗</a>
+          </div>
+          <iframe src="${viewerSrc}" style="flex:1;min-height:400px;border:1px solid var(--border);border-radius:8px;width:100%" frameborder="0"></iframe>
+        </div>`;
+    } else {
+      resumeSection = `<div class="iw-empty-state" style="flex:none">No resume uploaded</div>`;
+    }
+
+    if (reviewData&&!reviewData.notFound) { _iwReviewDecision=reviewData.decision; _iwReviewStars=reviewData.stars||0; }
+    else _iwReviewStars = 0;
+
+    const reviewOutcome = `
+      <div style="border-top:1px solid var(--border);padding-top:16px;flex-shrink:0">
+        <h3 style="margin:0 0 12px;font-size:14px">Review Outcome</h3>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <button id="iw-btn-fwd" onclick="iwSetReviewDecision('move_forward')"
+            class="btn-outcome btn-outcome-fwd${_iwReviewDecision==='move_forward'?' selected':''}">✓ Move Forward</button>
+          <button id="iw-btn-rej" onclick="iwSetReviewDecision('not_moving_forward')"
+            class="btn-outcome btn-outcome-rej${_iwReviewDecision==='not_moving_forward'?' selected':''}">✗ Not Moving Forward</button>
+          <div id="iw-star-picker" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center">
+            ${Array.from({length:5},(_,i)=>
+              `<span style="font-size:24px;cursor:pointer;color:${i<_iwReviewStars?'#f59e0b':'var(--border)'};transition:color .1s;line-height:1;padding:0 1px"
+                onmouseenter="iwHighlightStars(${i+1})"
+                onmouseleave="iwHighlightStars(_iwReviewStars)"
+                onclick="iwSetReviewStars(${i+1})">★</span>`).join('')}
+          </div>
+        </div>
+        <textarea id="iw-review-notes" placeholder="Notes about this candidate…"
+          style="width:100%;min-height:90px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box"
+        >${reviewData?.notes?esc(reviewData.notes):''}</textarea>
+        <div style="margin-top:10px;text-align:right">
+          <button class="btn btn-ghost" onclick="iwSaveReviewOutcome('${token}')">💾 Save Review</button>
+        </div>
+      </div>`;
+
+    content.innerHTML = `
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)">
+        <div style="flex:1;overflow-y:auto;padding:20px 20px 12px">
+          <h3 style="margin:0 0 12px;font-size:14px">Recordings</h3>
+          ${videosHTML}
+        </div>
+        <div style="flex-shrink:0;padding:14px 20px;border-top:1px solid var(--border);background:var(--navy-light)">
+          ${analysisSection}
+        </div>
+      </div>
+      <div style="flex:1;min-width:0;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px">
+        ${resumeSection}
+        ${reviewOutcome}
+      </div>`;
+  } catch (e) {
+    content.innerHTML = `<div style="margin:auto;color:var(--danger);font-size:13px">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+function iwSetReviewDecision(decision) {
+  _iwReviewDecision = decision;
+  const fwd = document.getElementById('iw-btn-fwd'); if (fwd) fwd.classList.toggle('selected', decision === 'move_forward');
+  const rej = document.getElementById('iw-btn-rej'); if (rej) rej.classList.toggle('selected', decision === 'not_moving_forward');
+}
+
+async function iwSaveReviewOutcome(token) {
+  const notes    = document.getElementById('iw-review-notes')?.value || '';
+  const decision = _iwReviewDecision;
+  const stars    = _iwReviewStars || 0;
+  if (!decision) return toast('Please select a decision first', 'error');
+  try {
+    await iwApiJSON('POST', `/api/session/${token}/review`, { notes, decision, stars });
+    toast('Review saved', 'success');
+    iwCloseModal('iw-modal-review');
+    if (_iwCurrentInterviewId) {
+      iwSwitchSessionTab('candidates');
+      await iwLoadSessions(_iwCurrentInterviewId);
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function iwHighlightStars(n) {
+  const container = document.getElementById('iw-star-picker'); if (!container) return;
+  container.querySelectorAll('span').forEach((s, i) => { s.style.color = i < n ? '#f59e0b' : 'var(--border)'; });
+}
+function iwSetReviewStars(n) { _iwReviewStars = n; iwHighlightStars(n); }
+
+async function iwRunAnalysis(token) {
+  const panel = document.getElementById('iw-analysis-panel');
+  const btn   = document.getElementById('iw-analyze-btn');
+  const loadingHTML = `<div id="iw-analysis-panel" style="text-align:center">
+    <div class="spinner" style="margin:0 auto 12px"></div>
+    <p style="font-size:13px;color:var(--text-muted)">Transcribing recordings and analyzing English…</p>
+    <p style="font-size:11px;color:var(--text-muted)">This may take 20–40 seconds</p>
+  </div>`;
+  if (panel) panel.outerHTML = loadingHTML;
+  else if (btn) btn.closest('div').outerHTML = loadingHTML;
+  try {
+    const res  = await fetch(`${INTERVIEW_API}/api/session/${token}/analyze`, { method:'POST', headers:{'X-Admin-Key':_iwKey} });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const newPanel = document.getElementById('iw-analysis-panel');
+    if (newPanel) newPanel.outerHTML = iwRenderAnalysisPanel(data, token);
+  } catch (e) {
+    const newPanel = document.getElementById('iw-analysis-panel');
+    if (newPanel) newPanel.outerHTML = `<div id="iw-analysis-panel"><p style="color:var(--danger);font-size:13px">Analysis failed: ${esc(e.message)}</p>
+      <button class="btn btn-ghost btn-sm" onclick="iwRunAnalysis('${token}')">Try again</button></div>`;
+  }
+}
+
+// ── Edit Interview modal ───────────────────────────────────────────────────────
+async function iwOpenEditInterview(id) {
+  _iwEditInterviewId = id;
+  try {
+    const iv = await iwApiJSON('GET', `/api/interview/${id}`);
+    document.getElementById('iw-edit-title').value = iv.title;
+    document.getElementById('iw-edit-desc').value  = iv.description || '';
+    _iwEditQuestions = iv.questions.map(q => ({ ...q }));
+    iwRenderEditQuestions();
+    iwOpenModal('iw-modal-edit');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function iwAddEditQuestion()        { _iwEditQuestions.push({ text:'', duration:120 }); iwRenderEditQuestions(); }
+function iwRemoveEditQuestion(i)    { if (_iwEditQuestions.length===1) return toast('Need at least one question','error'); _iwEditQuestions.splice(i,1); iwRenderEditQuestions(); }
+function iwMoveEditQuestion(i, dir) { const j=i+dir; if (j<0||j>=_iwEditQuestions.length) return; [_iwEditQuestions[i],_iwEditQuestions[j]]=[_iwEditQuestions[j],_iwEditQuestions[i]]; iwRenderEditQuestions(); }
+
+function iwRenderEditQuestions() {
+  const el = document.getElementById('iw-edit-questions-builder'); if (!el) return;
+  el.innerHTML = _iwEditQuestions.map((q, i) => `
+    <div class="question-item">
+      <div class="q-num">${i+1}</div>
+      <div class="q-fields">
+        <input type="text" placeholder="Question text *" value="${esc(q.text)}" oninput="_iwEditQuestions[${i}].text=this.value">
+        <select onchange="_iwEditQuestions[${i}].duration=parseInt(this.value)">
+          ${[30,60,90,120,180,240,300].map(s=>`<option value="${s}" ${q.duration===s?'selected':''}>${s}s (${s<60?s+'s':(s/60)+' min'})</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="iwMoveEditQuestion(${i},-1)" ${i===0?'disabled':''}>↑</button>
+      <button class="btn btn-ghost btn-sm" onclick="iwRemoveEditQuestion(${i})" style="color:var(--danger)">✕</button>
+    </div>`).join('');
+}
+
+async function iwSubmitEditInterview() {
+  const title       = document.getElementById('iw-edit-title').value.trim();
+  const description = document.getElementById('iw-edit-desc').value.trim();
+  if (!title) return toast('Title is required', 'error');
+  if (_iwEditQuestions.some(q => !q.text.trim())) return toast('All questions need text', 'error');
+  try {
+    await iwApiJSON('PUT', `/api/interview/${_iwEditInterviewId}`, { title, description, questions: _iwEditQuestions });
+    toast('Interview updated!', 'success');
+    iwCloseModal('iw-modal-edit');
+    iwLoadInterviewList();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Booking page ───────────────────────────────────────────────────────────────
+async function iwRenderBookingPage() {
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="max-width:820px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:16px;font-weight:700;margin:0">Booking Interview</h2>
+        <button class="btn btn-primary" onclick="iwGoto('booking-create')">+ New Booking Link</button>
+      </div>
+      <div id="iw-booking-links-list"><div class="iw-empty-state"><div class="spinner"></div></div></div>
+    </div>`;
+  await iwLoadBookingLinks();
+}
+
+async function iwLoadBookingLinks() {
+  const el = document.getElementById('iw-booking-links-list'); if (!el) return;
+  try {
+    _iwBookingLinks = await iwApiJSON('GET', '/api/booking/links');
+    if (!_iwBookingLinks.length) {
+      el.innerHTML = `<div class="iw-empty-state">No booking links yet. Click "+ New Booking Link" to create one.</div>`;
+      return;
+    }
+    el.innerHTML = _iwBookingLinks.map(link => {
+      const created = new Date(link.createdAt).toLocaleDateString();
+      const active  = link.active;
+      const bookUrl = `${IW_TAKE_BASE}/book.html?t=${link.token}`;
+      return `
+        <div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <span style="font-size:15px;font-weight:700">${esc(link.title)}</span>
+                <span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;${active?'background:rgba(22,163,74,.12);color:#16a34a':'background:rgba(148,163,184,.12);color:var(--text-muted)'}">${active?'● Active':'○ Inactive'}</span>
+              </div>
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
+                ${link.clientName ? esc(link.clientName)+' · ':''} ${link.position ? esc(link.position)+' · ':''} 🟦 Teams · ${link.duration||30} min · Created ${created}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <code style="font-size:11px;color:var(--text-muted);word-break:break-all">${bookUrl}</code>
+                <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${bookUrl}');toast('Link copied!','success')">📋</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+              <button class="btn btn-ghost btn-sm" onclick="_iwEditingBookingToken='${link.token}';iwGoto('booking-edit')" title="Edit">✏ Edit</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="iwDeleteBookingLink('${link.token}','${esc(link.title)}')" title="Delete">🗑</button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
+  }
+}
+
+async function iwDeleteBookingLink(token, title) {
+  if (!confirm(`Delete booking link "${title}"? This cannot be undone.`)) return;
+  try {
+    await iwApiJSON('DELETE', `/api/booking/link/${token}`);
+    toast('Booking link deleted', 'success');
+    await iwLoadBookingLinks();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function iwRenderCreateBookingLinkPage() {
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="max-width:680px">
+      <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">New Booking Link</h2>
+      <div class="card">
+        <div class="form-group"><label>Title *</label><input type="text" id="iw-bk-title" placeholder="e.g. J1 Hospitality Interview"></div>
+        <div class="form-row">
+          <div class="form-group"><label>Client Name</label><input type="text" id="iw-bk-client" placeholder="Optional"></div>
+          <div class="form-group"><label>Position</label><input type="text" id="iw-bk-position" placeholder="Optional"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Duration (min)</label>
+            <select id="iw-bk-duration">
+              <option value="15">15</option><option value="30" selected>30</option>
+              <option value="45">45</option><option value="60">60</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Days Ahead (booking window)</label>
+            <select id="iw-bk-days">
+              <option value="7">7 days</option><option value="14" selected>14 days</option>
+              <option value="21">21 days</option><option value="30">30 days</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group"><label>Min Notice (hours)</label>
+          <select id="iw-bk-notice">
+            <option value="3">3 Hours</option><option value="6">6 Hours</option>
+            <option value="12">12 Hours</option><option value="24" selected>24 Hours</option><option value="48">48 Hours</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" onclick="iwSubmitCreateBookingLink()">Create Booking Link</button>
+          <button class="btn btn-ghost" onclick="iwGoto('booking')">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function iwSubmitCreateBookingLink() {
+  const title    = document.getElementById('iw-bk-title').value.trim();
+  const client   = document.getElementById('iw-bk-client').value.trim();
+  const position = document.getElementById('iw-bk-position').value.trim();
+  const duration = parseInt(document.getElementById('iw-bk-duration').value);
+  const daysAhead = parseInt(document.getElementById('iw-bk-days').value);
+  const minNoticeHours = parseInt(document.getElementById('iw-bk-notice').value);
+  if (!title) return toast('Title is required', 'error');
+  try {
+    await iwApiJSON('POST', '/api/booking/links', { title, clientName: client, position, duration, daysAhead, minNoticeHours, active: true });
+    toast('Booking link created!', 'success');
+    iwGoto('booking');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwRenderEditBookingLinkPage(token) {
+  if (!token) { iwGoto('booking'); return; }
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `<div style="max-width:680px"><div class="iw-empty-state"><div class="spinner"></div></div></div>`;
+  try {
+    const link = await iwApiJSON('GET', `/api/booking/link/${token}`);
+    main.innerHTML = `
+      <div style="max-width:680px">
+        <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">Edit Booking Link</h2>
+        <div class="card">
+          <div class="form-group"><label>Title *</label><input type="text" id="iw-bk-edit-title" value="${esc(link.title)}"></div>
+          <div class="form-row">
+            <div class="form-group"><label>Client Name</label><input type="text" id="iw-bk-edit-client" value="${esc(link.clientName||'')}"></div>
+            <div class="form-group"><label>Position</label><input type="text" id="iw-bk-edit-position" value="${esc(link.position||'')}"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Duration (min)</label>
+              <select id="iw-bk-edit-duration">
+                ${[15,30,45,60].map(v=>`<option value="${v}" ${link.duration===v?'selected':''}>${v}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group"><label>Active</label>
+              <select id="iw-bk-edit-active">
+                <option value="true"  ${link.active?'selected':''}>Active</option>
+                <option value="false" ${!link.active?'selected':''}>Inactive</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary" onclick="iwSubmitEditBookingLink('${token}')">Save Changes</button>
+            <button class="btn btn-ghost" onclick="iwGoto('booking')">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+  } catch (e) { main.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`; }
+}
+
+async function iwSubmitEditBookingLink(token) {
+  const title    = document.getElementById('iw-bk-edit-title').value.trim();
+  const client   = document.getElementById('iw-bk-edit-client').value.trim();
+  const position = document.getElementById('iw-bk-edit-position').value.trim();
+  const duration = parseInt(document.getElementById('iw-bk-edit-duration').value);
+  const active   = document.getElementById('iw-bk-edit-active').value === 'true';
+  if (!title) return toast('Title is required', 'error');
+  try {
+    await iwApiJSON('PUT', `/api/booking/link/${token}`, { title, clientName: client, position, duration, active });
+    toast('Booking link updated!', 'success');
+    iwGoto('booking');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// ── Interview Scripts page ─────────────────────────────────────────────────────
+async function iwRenderScriptPage() {
+  _iwCurrentScriptClientId = null;
+  const main = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="max-width:720px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h2 style="font-size:16px;font-weight:700;margin:0">Interview Scripts</h2>
+        <button class="btn btn-primary" onclick="iwPromptAddClient()">+ Add Client</button>
+      </div>
+      <div id="iw-script-clients-list"><div class="iw-empty-state"><div class="spinner"></div></div></div>
+    </div>`;
+  await iwLoadScriptClientsList();
+}
+
+async function iwLoadScriptClientsList() {
+  const el = document.getElementById('iw-script-clients-list'); if (!el) return;
+  try {
+    _iwScriptClients = await iwApiJSON('GET', '/api/script/clients');
+    if (!_iwScriptClients.length) {
+      el.innerHTML = `<div class="iw-empty-state">No clients yet. Click "+ Add Client" to get started.</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="card" style="padding:0;overflow:hidden">
+        ${_iwScriptClients.map((c, i) => {
+          const initials = c.name.trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
+          return `
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;${i<_iwScriptClients.length-1?'border-bottom:1px solid var(--border)':''};transition:background .12s"
+            onmouseenter="this.style.background='var(--navy-mid)'" onmouseleave="this.style.background=''"
+            onclick="iwOpenScriptClient('${c.id}')">
+            <div id="iw-cl-av-${c.id}" style="width:44px;height:44px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:13px;font-weight:700;color:#fff">${initials}</div>
+            <div style="flex:1;font-size:14px;font-weight:600">${esc(c.name)}</div>
+            <span style="color:var(--text-muted);font-size:20px;font-weight:300">›</span>
+          </div>`;
+        }).join('')}
+      </div>`;
+  } catch (e) { el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`; }
+}
+
+async function iwOpenScriptClient(clientId) {
+  _iwCurrentScriptClientId = clientId;
+  const client = _iwScriptClients.find(c => c.id === clientId);
+  const main   = document.getElementById('iw-main');
+  main.innerHTML = `
+    <div style="max-width:720px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+        <button class="btn btn-ghost btn-sm" onclick="iwRenderScriptPage()">← Scripts</button>
+        <span style="color:var(--text-muted)">›</span>
+        <span style="font-size:15px;font-weight:700">${esc(client?.name||'')}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="margin:0;font-size:14px;font-weight:600">Positions</h3>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="iwPromptAddPosition('${clientId}')">+ Add Position</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="iwDeleteScriptClient('${clientId}','${esc(client?.name||'').replace(/'/g,"\\'")}')" title="Delete client">🗑</button>
+        </div>
+      </div>
+      <div id="iw-sc-positions-${clientId}"><div class="iw-empty-state"><div class="spinner"></div></div></div>
+    </div>`;
+  await iwLoadClientPositions(clientId);
+}
+
+async function iwLoadClientPositions(clientId) {
+  const el = document.getElementById(`iw-sc-positions-${clientId}`); if (!el) return;
+  try {
+    const positions = await iwApiJSON('GET', `/api/script/client/${clientId}/positions`);
+    if (!positions.length) {
+      el.innerHTML = `<div class="iw-empty-state">No positions yet. Click "+ Add Position".</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="card" style="padding:0;overflow:hidden">
+      ${positions.map((p, i) => {
+        const hasDoc = !!p.driveItemId;
+        const uploaded = p.uploadedAt ? new Date(p.uploadedAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : null;
+        const notLast  = i < positions.length - 1;
+        return `
+          <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;${notLast?'border-bottom:1px solid var(--border)':''}">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600">${esc(p.name)}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${hasDoc?`📄 ${esc(p.fileName||'Document')}${uploaded?' · '+uploaded:''}`:'No document uploaded'}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+              ${hasDoc?`
+                <button class="btn btn-ghost btn-sm" onclick="iwViewScriptDoc('${p.id}','${esc(p.fileName||'document')}')">View</button>
+                <button class="btn btn-ghost btn-sm" onclick="iwDownloadScriptDoc('${p.id}')">↓</button>`:''}
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+                ${hasDoc?'Replace':'Upload'}
+                <input type="file" accept=".pdf,.doc,.docx" style="display:none" onchange="iwUploadScriptDoc('${p.id}',this)">
+              </label>
+              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="iwDeleteScriptPosition('${p.id}','${esc(p.name).replace(/'/g,"\\'")}','${clientId}')">🗑</button>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+  } catch (e) { el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`; }
+}
+
+function iwPromptAddClient() {
+  document.getElementById('iw-new-client-name').value = '';
+  const btn = document.getElementById('iw-add-client-btn');
+  if (btn) { btn.disabled = false; btn.textContent = 'Add Client'; }
+  iwOpenModal('iw-modal-add-client');
+  setTimeout(() => document.getElementById('iw-new-client-name')?.focus(), 80);
+}
+
+async function iwSubmitAddClient() {
+  const name = document.getElementById('iw-new-client-name').value.trim();
+  if (!name) return toast('Client name is required', 'error');
+  const btn = document.getElementById('iw-add-client-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+  try {
+    await iwApiJSON('POST', '/api/script/clients', { name });
+    toast('Client added', 'success');
+    iwCloseModal('iw-modal-add-client');
+    await iwLoadScriptClientsList();
+  } catch (e) {
+    toast(e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Add Client'; }
+  }
+}
+
+async function iwDeleteScriptClient(id, name) {
+  if (!confirm(`Delete client "${name}"? This will also delete all positions and documents.`)) return;
+  try { await iwApiJSON('DELETE', `/api/script/client/${id}`); toast('Client deleted','success'); iwRenderScriptPage(); }
+  catch (e) { toast(e.message,'error'); }
+}
+
+async function iwPromptAddPosition(clientId) {
+  const name = prompt('Enter position / role name:');
+  if (!name?.trim()) return;
+  try {
+    await iwApiJSON('POST', `/api/script/client/${clientId}/positions`, { name: name.trim() });
+    toast('Position added', 'success');
+    await iwLoadClientPositions(clientId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function iwDeleteScriptPosition(id, name, clientId) {
+  if (!confirm(`Delete position "${name}"?`)) return;
+  try { await iwApiJSON('DELETE', `/api/script/position/${id}`); toast('Position deleted','success'); await iwLoadClientPositions(clientId); }
+  catch (e) { toast(e.message,'error'); }
+}
+
+async function iwUploadScriptDoc(positionId, input) {
+  const file = input.files?.[0]; if (!file) return;
+  const label = input.closest('label'); const origText = label?.textContent?.trim();
+  if (label) { label.textContent='Uploading…'; label.style.pointerEvents='none'; label.style.opacity='0.6'; }
+  try {
+    const form = new FormData(); form.append('file', file);
+    const res  = await fetch(`${INTERVIEW_API}/api/script/position/${positionId}/upload`, { method:'POST', headers:{'X-Admin-Key':_iwKey}, body:form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error||'Upload failed');
+    toast('Document uploaded', 'success');
+    if (_iwCurrentScriptClientId) await iwLoadClientPositions(_iwCurrentScriptClientId);
+  } catch (e) {
+    toast(e.message,'error');
+    if (label) { label.textContent=origText||'Upload'; label.style.pointerEvents=''; label.style.opacity=''; }
+  }
+}
+
+async function iwViewScriptDoc(positionId, fileName) {
+  try {
+    const data = await iwApiJSON('GET', `/api/script/position/${positionId}/doc-url`);
+    if (!data.downloadUrl) return toast('Document not available','error');
+    const ext = (data.ext||fileName.split('.').pop()||'pdf').toLowerCase();
+    const enc = encodeURIComponent(data.downloadUrl);
+    const src = (ext==='doc'||ext==='docx')
+      ? `https://view.officeapps.live.com/op/embed.aspx?src=${enc}`
+      : `https://docs.google.com/viewer?url=${enc}&embedded=true`;
+    window.open(src,'_blank');
+  } catch (e) { toast(e.message,'error'); }
+}
+
+async function iwDownloadScriptDoc(positionId) {
+  try {
+    const data = await iwApiJSON('GET', `/api/script/position/${positionId}/doc-url`);
+    if (!data.downloadUrl) return toast('Document not available','error');
+    window.open(data.downloadUrl,'_blank');
+  } catch (e) { toast(e.message,'error'); }
 }
 
 // ── Clients ───────────────────────────────────────────────────────────────────

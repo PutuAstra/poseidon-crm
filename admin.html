@@ -357,13 +357,29 @@
           <div class="pagination" id="arc-pagination"></div>
         </div>
 
-        <!-- Interviews -->
+        <!-- Interview Setup (ZeusHire injection) -->
         <div id="pane-interviews" class="pane hidden">
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Title</th><th>Type</th><th>Created By</th><th>Created</th><th>Actions</th></tr></thead>
-              <tbody id="interviews-tbody"><tr><td colspan="5" class="table-empty">Loading…</td></tr></tbody>
-            </table>
+          <!-- Key not configured -->
+          <div id="iw-key-prompt" class="card" style="max-width:440px;margin:60px auto;text-align:center;display:none">
+            <div style="font-size:42px;margin-bottom:10px">🎥</div>
+            <div class="card-title" style="margin-bottom:6px">Interview Setup</div>
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:20px">Enter your ZeusHire admin key to connect to the interview management system.</p>
+            <div class="form-group" style="text-align:left">
+              <label>Admin Key</label>
+              <input type="password" id="iw-key-input" placeholder="Enter admin key…" onkeydown="if(event.key==='Enter')iwSaveKey()">
+            </div>
+            <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="iwSaveKey()">Connect to ZeusHire</button>
+          </div>
+          <!-- Main shell -->
+          <div id="iw-shell" style="display:none">
+            <div class="iw-subnav">
+              <button class="filter-chip active" id="iw-nav-ow"      onclick="iwGoto('ow-list')">🎬 One-Way</button>
+              <button class="filter-chip"        id="iw-nav-tw"      onclick="iwGoto('tw-list')">📅 Two-Way</button>
+              <button class="filter-chip"        id="iw-nav-booking" onclick="iwGoto('booking')">🔗 Booking</button>
+              <button class="filter-chip"        id="iw-nav-scripts" onclick="iwGoto('scripts')">📋 Scripts</button>
+              <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px;color:var(--text-muted)" onclick="iwChangeKey()">🔑 Change Key</button>
+            </div>
+            <div id="iw-main"></div>
           </div>
         </div>
 
@@ -489,6 +505,154 @@
 <div id="modal-container"></div>
 <div id="toast-container"></div>
 
-<script src="admin.js?v=20250525b"></script>
+<!-- IW Sessions Modal (One-Way interview invite + candidates) -->
+<div id="iw-modal-sessions" class="iw-modal-overlay">
+  <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;max-height:calc(100vh - 60px);overflow:hidden;min-width:660px;max-width:calc(100vw - 60px);animation:slideUp .15s ease" id="iw-sessions-modal-inner">
+    <!-- Header -->
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:8px" id="iw-modal-interview-title"></div>
+        <div style="display:flex;gap:8px">
+          <button class="filter-chip active" id="iw-tab-invite"     onclick="iwSwitchSessionTab('invite')">Invite</button>
+          <button class="filter-chip"        id="iw-tab-candidates" onclick="iwSwitchSessionTab('candidates')"><span id="iw-sessions-heading">Candidates</span></button>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="iwCloseModal('iw-modal-sessions')" style="padding:5px 8px">✕</button>
+    </div>
+
+    <!-- Invite pane -->
+    <div id="iw-session-pane-invite" style="padding:20px;overflow-y:auto;width:660px;max-width:100%">
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="filter-chip active" id="iw-invite-mode-single" onclick="iwSwitchInviteMode('single')">Single Invite</button>
+        <button class="filter-chip"        id="iw-invite-mode-bulk"   onclick="iwSwitchInviteMode('bulk')">Bulk CSV / Excel</button>
+      </div>
+      <!-- Single -->
+      <div id="iw-invite-single-section">
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0"><label>Candidate Name *</label><input type="text" id="iw-new-cand-name" placeholder="Full name"></div>
+          <div class="form-group" style="margin-bottom:0"><label>Email Address *</label><input type="email" id="iw-new-cand-email" placeholder="email@example.com"></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-primary" onclick="iwGenerateLink()">Generate Link</button>
+          <button class="btn btn-ghost btn-sm" id="iw-send-email-btn" style="display:none" onclick="">✉ Send Email</button>
+        </div>
+        <div id="iw-generated-link-box" style="display:none;margin-top:14px;padding:12px 14px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">Interview Link:</div>
+          <div style="word-break:break-all;font-size:12px;color:var(--text)" id="iw-generated-link-text"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="iwCopyLink()">📋 Copy</button>
+        </div>
+      </div>
+      <!-- Bulk -->
+      <div id="iw-invite-bulk-section" style="display:none">
+        <div style="border:2px dashed var(--border);border-radius:8px;padding:28px;text-align:center;cursor:pointer;transition:border-color .15s"
+          onclick="document.getElementById('iw-bulk-file-input').click()"
+          ondragover="event.preventDefault();this.style.borderColor='var(--blue)'"
+          ondragleave="this.style.borderColor=''"
+          ondrop="event.preventDefault();this.style.borderColor='';iwHandleBulkFile(event.dataTransfer.files[0])">
+          <div style="font-size:28px;margin-bottom:8px">📁</div>
+          <div style="font-weight:600;margin-bottom:4px">Drop CSV or Excel file here</div>
+          <div style="font-size:12px;color:var(--text-muted)">or click to browse · .csv · .xlsx · .xls</div>
+        </div>
+        <input type="file" id="iw-bulk-file-input" style="display:none" accept=".csv,.xlsx,.xls" onchange="iwHandleBulkFile(this.files[0])">
+        <div id="iw-bulk-preview-section" style="display:none"></div>
+        <div id="iw-bulk-import-progress" style="display:none;margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Candidates pane -->
+    <div id="iw-session-pane-candidates" style="display:none;flex-direction:column;overflow:hidden;width:calc(100vw - 100px);max-width:1300px;height:calc(100vh - 150px)">
+      <!-- Filters -->
+      <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;flex-shrink:0">
+        <input type="text" id="iw-search-candidates" placeholder="Search candidates…" oninput="iwFilterAndRenderSessions()"
+          style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:190px">
+        <div style="display:flex;gap:5px">
+          <button class="filter-chip active" id="iw-fc-all"       onclick="iwSetSessionFilter('all')">All</button>
+          <button class="filter-chip"        id="iw-fc-pending"   onclick="iwSetSessionFilter('pending')">Pending</button>
+          <button class="filter-chip"        id="iw-fc-completed" onclick="iwSetSessionFilter('completed')">Completed</button>
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="filter-chip active" id="iw-fd-all" onclick="iwSetDecisionFilter('all')">All</button>
+          <button class="filter-chip"        id="iw-fd-fwd" onclick="iwSetDecisionFilter('move_forward')">✓ Forward</button>
+          <button class="filter-chip"        id="iw-fd-rej" onclick="iwSetDecisionFilter('not_moving_forward')">✗ Not Fwd</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:12px;color:var(--text-muted)">★≥</span>
+          <button class="filter-chip active" id="iw-fs-0" onclick="iwSetStarFilter(0)" style="padding:3px 8px">Any</button>
+          <button class="filter-chip"        id="iw-fs-1" onclick="iwSetStarFilter(1)" style="padding:3px 8px">1</button>
+          <button class="filter-chip"        id="iw-fs-2" onclick="iwSetStarFilter(2)" style="padding:3px 8px">2</button>
+          <button class="filter-chip"        id="iw-fs-3" onclick="iwSetStarFilter(3)" style="padding:3px 8px">3</button>
+          <button class="filter-chip"        id="iw-fs-4" onclick="iwSetStarFilter(4)" style="padding:3px 8px">4</button>
+          <button class="filter-chip"        id="iw-fs-5" onclick="iwSetStarFilter(5)" style="padding:3px 8px">5</button>
+        </div>
+      </div>
+      <!-- Column header -->
+      <div style="display:grid;grid-template-columns:28px 1fr 160px 100px 80px 100px 170px;gap:10px;padding:8px 20px;border-bottom:1px solid var(--border);flex-shrink:0">
+        <span></span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted)">Candidate</span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);cursor:pointer" onclick="iwToggleSessionSort('review')">Review <span id="iw-sort-review-ind">↕</span></span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);cursor:pointer" onclick="iwToggleSessionSort('date')">Invited <span id="iw-sort-date-ind">↕</span></span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);cursor:pointer;text-align:center" onclick="iwToggleSessionSort('status')">Status <span id="iw-sort-status-ind">↕</span></span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);text-align:center">Videos</span>
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);text-align:right">Actions</span>
+      </div>
+      <div id="iw-sessions-list" style="flex:1;overflow-y:auto;padding:4px 20px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- IW Review Modal (full-screen video review) -->
+<div id="iw-modal-review" class="iw-modal-overlay" style="align-items:stretch;justify-content:stretch;padding:20px">
+  <div style="flex:1;display:flex;flex-direction:column;background:var(--navy-light);border:1px solid var(--border);border-radius:12px;overflow:hidden;animation:slideUp .15s ease">
+    <div style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:700" id="iw-review-candidate-name"></div>
+        <div style="font-size:12px;color:var(--text-muted)" id="iw-review-interview-title"></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="iwCloseModal('iw-modal-review')">✕ Close</button>
+    </div>
+    <div id="iw-review-content" style="flex:1;min-height:0;display:flex;overflow:hidden"></div>
+  </div>
+</div>
+
+<!-- IW Edit Interview Modal -->
+<div id="iw-modal-edit" class="iw-modal-overlay">
+  <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;animation:slideUp .15s ease">
+    <div class="modal-header">
+      <div class="modal-title">Edit Interview</div>
+      <button class="modal-close" onclick="iwCloseModal('iw-modal-edit')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="form-group"><label>Title</label><input type="text" id="iw-edit-title"></div>
+    <div class="form-group"><label>Description</label><textarea id="iw-edit-desc" rows="2"></textarea></div>
+    <div style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <label style="margin:0;font-size:.75rem;text-transform:uppercase;font-weight:700;color:var(--text-muted)">Questions</label>
+        <button class="btn btn-ghost btn-sm" onclick="iwAddEditQuestion()">+ Add Question</button>
+      </div>
+      <div id="iw-edit-questions-builder"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="iwCloseModal('iw-modal-edit')">Cancel</button>
+      <button class="btn btn-primary" onclick="iwSubmitEditInterview()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- IW Add Client Modal (Scripts) -->
+<div id="iw-modal-add-client" class="iw-modal-overlay">
+  <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:12px;padding:24px;width:100%;max-width:440px;animation:slideUp .15s ease">
+    <div class="modal-header">
+      <div class="modal-title">Add Client</div>
+      <button class="modal-close" onclick="iwCloseModal('iw-modal-add-client')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="form-group"><label>Client Name *</label><input type="text" id="iw-new-client-name" placeholder="e.g. Royal Caribbean" onkeydown="if(event.key==='Enter')iwSubmitAddClient()"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="iwCloseModal('iw-modal-add-client')">Cancel</button>
+      <button class="btn btn-primary" id="iw-add-client-btn" onclick="iwSubmitAddClient()">Add Client</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="admin.js?v=20250526a"></script>
 </body>
 </html>
