@@ -70,7 +70,7 @@ button { cursor: pointer; border: none; outline: none; }
   border-bottom: 1px solid var(--border);
 }
 
-.sidebar-logo img { height: 28px; }
+.sidebar-logo img { height: 48px; }
 
 .sidebar-logo .brand {
   font-size: 15px;
