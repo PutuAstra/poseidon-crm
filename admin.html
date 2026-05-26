@@ -84,77 +84,22 @@
         Dashboard
       </div>
 
-      <!-- ── J1 PROGRAM ───────────────────────────────────────────── -->
-      <div class="prog-section" id="prog-J1_PROGRAM" data-prog="J1_PROGRAM">
-        <div class="prog-header" id="prog-hdr-J1_PROGRAM" onclick="toggleProgram('J1_PROGRAM')">
-          <span class="prog-icon">🎓</span>
-          <span class="prog-label">J1 Program</span>
-          <svg class="prog-chevron" id="chevron-J1_PROGRAM" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="prog-body" id="body-J1_PROGRAM">
-          <div class="prog-group-label">Pipeline</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="NEW_SUBMISSION"    onclick="showStage('J1_PROGRAM','NEW_SUBMISSION')"><span class="stage-icon">📥</span> New Submission <span class="nav-badge" id="nb-J1_PROGRAM-NEW_SUBMISSION" style="display:none"></span></div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="CONSULTATION_CALL" onclick="showStage('J1_PROGRAM','CONSULTATION_CALL')"><span class="stage-icon">📞</span> Consultation</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_1"        onclick="showStage('J1_PROGRAM','J1_STAGE_1')"><span class="stage-icon">①</span> Stage 1</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_2"        onclick="showStage('J1_PROGRAM','J1_STAGE_2')"><span class="stage-icon">②</span> Stage 2</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_3"        onclick="showStage('J1_PROGRAM','J1_STAGE_3')"><span class="stage-icon">③</span> Stage 3</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_STAGE_4"        onclick="showStage('J1_PROGRAM','J1_STAGE_4')"><span class="stage-icon">④</span> Stage 4</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="J1_VISA"           onclick="showStage('J1_PROGRAM','J1_VISA')"><span class="stage-icon">🛂</span> J1-Visa</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="CLIENTS"           onclick="showStage('J1_PROGRAM','CLIENTS')"><span class="stage-icon">👔</span> Clients</div>
-          <div class="stage-nav-item" data-prog="J1_PROGRAM" data-stage="ARCHIVED"          onclick="showStage('J1_PROGRAM','ARCHIVED')"><span class="stage-icon">📦</span> Archived</div>
-          <div class="prog-group-label">Tools</div>
-          <div class="tool-nav-item" data-prog="J1_PROGRAM" data-tool="local"  onclick="showTool('J1_PROGRAM','local')"><span class="tool-icon">⚙</span> Local Settings</div>
-          <div class="tool-nav-item" data-prog="J1_PROGRAM" data-tool="fields" onclick="showTool('J1_PROGRAM','fields')"><span class="tool-icon">📋</span> Stage Fields</div>
-          <div class="tool-nav-item" data-prog="J1_PROGRAM" data-tool="docs"   onclick="showTool('J1_PROGRAM','docs')"><span class="tool-icon">📁</span> Documents</div>
-        </div>
+      <!-- ── PROGRAMS (click to open slide-in sub-panel) ───────────── -->
+      <div class="sidebar-section" style="margin-top:4px">Programs</div>
+      <div class="prog-nav-item" data-prog="J1_PROGRAM" onclick="openSubPanel('J1_PROGRAM')">
+        <span style="font-size:15px">🎓</span>
+        <span>J1 Program</span>
+        <svg style="width:12px;height:12px;margin-left:auto;opacity:0.45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
-
-      <!-- ── SEA-BASED ────────────────────────────────────────────── -->
-      <div class="prog-section" id="prog-SEA_BASED" data-prog="SEA_BASED">
-        <div class="prog-header" id="prog-hdr-SEA_BASED" onclick="toggleProgram('SEA_BASED')">
-          <span class="prog-icon">🚢</span>
-          <span class="prog-label">Sea-Based</span>
-          <svg class="prog-chevron" id="chevron-SEA_BASED" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="prog-body" id="body-SEA_BASED">
-          <div class="prog-group-label">Pipeline</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="NEW_SUBMISSION"  onclick="showStage('SEA_BASED','NEW_SUBMISSION')"><span class="stage-icon">📥</span> New Submission <span class="nav-badge" id="nb-SEA_BASED-NEW_SUBMISSION" style="display:none"></span></div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="CANDIDATES"      onclick="showStage('SEA_BASED','CANDIDATES')"><span class="stage-icon">👥</span> Candidates</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="FINAL_INTERVIEW" onclick="showStage('SEA_BASED','FINAL_INTERVIEW')"><span class="stage-icon">🎯</span> Final Interview</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="OFFER_LETTER"    onclick="showStage('SEA_BASED','OFFER_LETTER')"><span class="stage-icon">📄</span> Offer Letter</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="ONBOARDING"      onclick="showStage('SEA_BASED','ONBOARDING')"><span class="stage-icon">⚓</span> Onboarding</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="C1D_VISA"        onclick="showStage('SEA_BASED','C1D_VISA')"><span class="stage-icon">🛂</span> C1-D Visa</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="CLIENTS"         onclick="showStage('SEA_BASED','CLIENTS')"><span class="stage-icon">👔</span> Clients</div>
-          <div class="stage-nav-item" data-prog="SEA_BASED" data-stage="ARCHIVED"        onclick="showStage('SEA_BASED','ARCHIVED')"><span class="stage-icon">📦</span> Archived</div>
-          <div class="prog-group-label">Tools</div>
-          <div class="tool-nav-item" data-prog="SEA_BASED" data-tool="local"  onclick="showTool('SEA_BASED','local')"><span class="tool-icon">⚙</span> Local Settings</div>
-          <div class="tool-nav-item" data-prog="SEA_BASED" data-tool="fields" onclick="showTool('SEA_BASED','fields')"><span class="tool-icon">📋</span> Stage Fields</div>
-          <div class="tool-nav-item" data-prog="SEA_BASED" data-tool="docs"   onclick="showTool('SEA_BASED','docs')"><span class="tool-icon">📁</span> Documents</div>
-        </div>
+      <div class="prog-nav-item" data-prog="SEA_BASED" onclick="openSubPanel('SEA_BASED')">
+        <span style="font-size:15px">🚢</span>
+        <span>Sea-Based</span>
+        <svg style="width:12px;height:12px;margin-left:auto;opacity:0.45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
-
-      <!-- ── LAND-BASED ────────────────────────────────────────────── -->
-      <div class="prog-section" id="prog-LAND_BASED" data-prog="LAND_BASED">
-        <div class="prog-header" id="prog-hdr-LAND_BASED" onclick="toggleProgram('LAND_BASED')">
-          <span class="prog-icon">🏨</span>
-          <span class="prog-label">Land-Based</span>
-          <svg class="prog-chevron" id="chevron-LAND_BASED" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="prog-body" id="body-LAND_BASED">
-          <div class="prog-group-label">Pipeline</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="NEW_SUBMISSION"  onclick="showStage('LAND_BASED','NEW_SUBMISSION')"><span class="stage-icon">📥</span> New Submission <span class="nav-badge" id="nb-LAND_BASED-NEW_SUBMISSION" style="display:none"></span></div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="CANDIDATES"      onclick="showStage('LAND_BASED','CANDIDATES')"><span class="stage-icon">👥</span> Candidates</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="FINAL_INTERVIEW" onclick="showStage('LAND_BASED','FINAL_INTERVIEW')"><span class="stage-icon">🎯</span> Final Interview</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="OFFER_LETTER"    onclick="showStage('LAND_BASED','OFFER_LETTER')"><span class="stage-icon">📄</span> Offer Letter</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="ONBOARDING"      onclick="showStage('LAND_BASED','ONBOARDING')"><span class="stage-icon">🏨</span> Onboarding</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="LB_VISA"         onclick="showStage('LAND_BASED','LB_VISA')"><span class="stage-icon">🛂</span> Visa</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="CLIENTS"         onclick="showStage('LAND_BASED','CLIENTS')"><span class="stage-icon">👔</span> Clients</div>
-          <div class="stage-nav-item" data-prog="LAND_BASED" data-stage="ARCHIVED"        onclick="showStage('LAND_BASED','ARCHIVED')"><span class="stage-icon">📦</span> Archived</div>
-          <div class="prog-group-label">Tools</div>
-          <div class="tool-nav-item" data-prog="LAND_BASED" data-tool="local"  onclick="showTool('LAND_BASED','local')"><span class="tool-icon">⚙</span> Local Settings</div>
-          <div class="tool-nav-item" data-prog="LAND_BASED" data-tool="fields" onclick="showTool('LAND_BASED','fields')"><span class="tool-icon">📋</span> Stage Fields</div>
-          <div class="tool-nav-item" data-prog="LAND_BASED" data-tool="docs"   onclick="showTool('LAND_BASED','docs')"><span class="tool-icon">📁</span> Documents</div>
-        </div>
+      <div class="prog-nav-item" data-prog="LAND_BASED" onclick="openSubPanel('LAND_BASED')">
+        <span style="font-size:15px">🏨</span>
+        <span>Land-Based</span>
+        <svg style="width:12px;height:12px;margin-left:auto;opacity:0.45" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
 
       <!-- ── GENERAL ────────────────────────────────────────────────── -->
@@ -190,6 +135,15 @@
         </div>
       </div>
     </nav>
+
+    <!-- Slide-in secondary sub-panel (programs) -->
+    <div id="prog-sub-panel">
+      <div id="prog-sub-header"></div>
+      <div id="prog-sub-close" onclick="closeSubPanel()" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </div>
+      <div id="prog-sub-body"></div>
+    </div>
 
     <!-- Main -->
     <div id="main">

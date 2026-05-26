@@ -404,36 +404,73 @@ function _showPane(name) {
 }
 
 function _renderSidebarActive() {
-  document.querySelectorAll('.nav-item, .stage-nav-item, .tool-nav-item').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.prog-section').forEach(el => el.classList.remove('active'));
-  if (!_navProgram) return;
-  const section = document.getElementById(`prog-${_navProgram}`);
-  if (section) section.classList.add('active');
-  if (_navStage) document.querySelector(`[data-prog="${_navProgram}"][data-stage="${_navStage}"]`)?.classList.add('active');
-  if (_navTool)  document.querySelector(`[data-prog="${_navProgram}"][data-tool="${_navTool}"]`)?.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
+  if (_navProgram) {
+    document.querySelector(`.prog-nav-item[data-prog="${_navProgram}"]`)?.classList.add('active');
+  }
 }
 
-function toggleProgram(prog) {
-  const body    = document.getElementById(`body-${prog}`);
-  const chevron = document.getElementById(`chevron-${prog}`);
-  const hdr     = document.getElementById(`prog-hdr-${prog}`);
-  if (!body) return;
-  const isOpen = body.classList.toggle('open');
-  chevron.style.transform = isOpen ? 'rotate(180deg)' : '';
-  hdr.classList.toggle('open', isOpen);
+function openSubPanel(prog) {
+  _navProgram = _navProgram === prog ? _navProgram : prog;
+  const panel = document.getElementById('prog-sub-panel');
+  panel.setAttribute('data-prog', prog);
+  panel.classList.add('open');
+  _renderSubPanel(prog);
+  document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.prog-nav-item[data-prog="${prog}"]`)?.classList.add('active');
+  // Mark active sub-item if already on this program
+  if (_navProgram === prog) {
+    if (_navStage) _markSubActive('stage', _navStage);
+    if (_navTool)  _markSubActive('tool',  _navTool);
+  }
 }
 
-function _ensureProgOpen(prog) {
-  const body = document.getElementById(`body-${prog}`);
-  if (body && !body.classList.contains('open')) toggleProgram(prog);
+function closeSubPanel() {
+  document.getElementById('prog-sub-panel').classList.remove('open');
+  document.querySelectorAll('.prog-nav-item').forEach(el => el.classList.remove('active'));
 }
+
+function _renderSubPanel(prog) {
+  const pm     = PROGRAM_META[prog];
+  const stages = PIPELINE_STAGES[prog] || [];
+  document.getElementById('prog-sub-header').innerHTML =
+    `<span style="font-size:18px;line-height:1">${pm.icon}</span><span style="font-weight:600;font-size:13px">${pm.label}</span>`;
+  document.getElementById('prog-sub-body').innerHTML = `
+    <div class="sub-group-label">Pipeline</div>
+    ${stages.map(s => `
+      <div class="sub-stage-item" data-prog="${prog}" data-stage="${s.id}" onclick="showStage('${prog}','${s.id}')">
+        <span>${s.icon}</span><span>${s.label}</span>
+        ${s.id === 'NEW_SUBMISSION' ? `<span class="nav-badge" id="nb-${prog}-NEW_SUBMISSION" style="display:none;margin-left:auto"></span>` : ''}
+      </div>`).join('')}
+    <div class="sub-group-label">Tools</div>
+    <div class="sub-tool-item" data-prog="${prog}" data-tool="local"  onclick="showTool('${prog}','local')"><span>⚙</span><span>Local Settings</span></div>
+    <div class="sub-tool-item" data-prog="${prog}" data-tool="fields" onclick="showTool('${prog}','fields')"><span>📋</span><span>Stage Fields</span></div>
+    <div class="sub-tool-item" data-prog="${prog}" data-tool="docs"   onclick="showTool('${prog}','docs')"><span>📁</span><span>Documents</span></div>`;
+}
+
+function _markSubActive(kind, id) {
+  document.querySelectorAll('.sub-stage-item, .sub-tool-item').forEach(el => el.classList.remove('active'));
+  if (kind === 'stage') {
+    document.querySelector(`#prog-sub-body .sub-stage-item[data-stage="${id}"]`)?.classList.add('active');
+  } else {
+    document.querySelector(`#prog-sub-body .sub-tool-item[data-tool="${id}"]`)?.classList.add('active');
+  }
+}
+
+function _ensureProgOpen(prog) { /* no-op — sub-panel opened explicitly */ }
 
 function showStage(program, stage) {
-  _navProgram = program;
-  _navStage   = stage;
-  _navTool    = null;
+  _navProgram    = program;
+  _navStage      = stage;
+  _navTool       = null;
   _stagePanePage = 1;
-  _ensureProgOpen(program);
+  // Ensure sub-panel is open and rendered for this program
+  const panel = document.getElementById('prog-sub-panel');
+  if (!panel.classList.contains('open') || panel.getAttribute('data-prog') !== program) {
+    openSubPanel(program);
+  }
+  _markSubActive('stage', stage);
   _renderSidebarActive();
   _showPane('stage');
   const pm = PROGRAM_META[program];
@@ -449,7 +486,12 @@ function showTool(program, tool) {
   _navProgram = program;
   _navStage   = null;
   _navTool    = tool;
-  _ensureProgOpen(program);
+  // Ensure sub-panel is open and rendered for this program
+  const panel = document.getElementById('prog-sub-panel');
+  if (!panel.classList.contains('open') || panel.getAttribute('data-prog') !== program) {
+    openSubPanel(program);
+  }
+  _markSubActive('tool', tool);
   _renderSidebarActive();
   const paneMap = { local: 'prog-local', fields: 'prog-fields', docs: 'prog-docs' };
   _showPane(paneMap[tool]);
@@ -468,6 +510,8 @@ function showView(name) {
   _navProgram = null;
   _navStage   = null;
   _navTool    = null;
+  // Close sub-panel when navigating to a general view
+  document.getElementById('prog-sub-panel')?.classList.remove('open');
   _renderSidebarActive();
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
