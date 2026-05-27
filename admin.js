@@ -558,11 +558,12 @@ function _renderSidebarStages(prog) {
         ? `<span class="nav-badge" id="nb-${prog}-NEW_SUBMISSION" style="display:none;margin-left:auto"></span>`
         : ''}
     </div>`).join('');
-  // Render tools
+  // Render tools (monochrome line icons for a clean, consistent look)
+  const ico = svg => `<span class="stage-icon-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svg}</svg></span>`;
   document.getElementById('sidebar-tools').innerHTML = `
-    <div class="sidebar-stage-item" data-tool="local"  onclick="showTool('${prog}','local')"><span class="stage-icon-sm">⚙</span><span>Local Settings</span></div>
-    <div class="sidebar-stage-item" data-tool="fields" onclick="showTool('${prog}','fields')"><span class="stage-icon-sm">📋</span><span>Stage Fields</span></div>
-    <div class="sidebar-stage-item" data-tool="docs"   onclick="showTool('${prog}','docs')"><span class="stage-icon-sm">📁</span><span>Documents</span></div>`;
+    <div class="sidebar-stage-item" data-tool="local"  onclick="showTool('${prog}','local')">${ico('<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>')}<span>Local Settings</span></div>
+    <div class="sidebar-stage-item" data-tool="fields" onclick="showTool('${prog}','fields')">${ico('<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>')}<span>Stage Fields</span></div>
+    <div class="sidebar-stage-item" data-tool="docs"   onclick="showTool('${prog}','docs')">${ico('<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>')}<span>Documents</span></div>`;
 }
 
 function _ensureProgOpen(prog) { /* no-op */ }

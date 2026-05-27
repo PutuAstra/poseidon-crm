@@ -247,7 +247,12 @@ button { cursor: pointer; border: none; outline: none; }
   text-align: center;
   flex-shrink: 0;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.stage-icon-sm svg { width: 15px; height: 15px; opacity: 0.75; }
+.sidebar-stage-item.active .stage-icon-sm svg { opacity: 1; }
 
 /* ── Workspace popup items (inside #prog-sub-panel) ─────────────────────── */
 .prog-popup-item {
