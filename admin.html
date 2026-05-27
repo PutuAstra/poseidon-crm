@@ -347,6 +347,18 @@
           <div class="pagination" id="stage-pane-pagination"></div>
         </div>
 
+        <!-- ── Workspace Overview Pane (per-workspace dashboard) ───────── -->
+        <div id="pane-workspace-overview" class="pane hidden">
+          <div class="pane-header-row">
+            <div>
+              <div class="pane-title" id="ws-overview-title"></div>
+              <div class="pane-sub" id="ws-overview-sub"></div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="loadWorkspaceOverview(_navProgram)">↻ Refresh</button>
+          </div>
+          <div id="workspace-overview-content"></div>
+        </div>
+
         <!-- ── Local Settings Pane ───────────────────────────────────── -->
         <div id="pane-prog-local" class="pane hidden">
           <div id="local-settings-content"></div>

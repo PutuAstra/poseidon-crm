@@ -304,8 +304,9 @@ function bootApp() {
     const [prog, sub] = savedView.split(':');
     if (PIPELINE_STAGES[prog]) {
       setTimeout(() => {
-        if (['local','fields','docs'].includes(sub)) showTool(prog, sub);
-        else                                          showStage(prog, sub);
+        if (sub === 'overview')                           showOverview(prog);
+        else if (['local','fields','docs'].includes(sub)) showTool(prog, sub);
+        else                                              showStage(prog, sub);
       }, 0);
     } else { showView('dashboard'); }
   } else {
@@ -417,7 +418,9 @@ function _renderSidebarActive() {
 function _markSidebarActive(kind, id) {
   document.querySelectorAll('#sidebar-stages .sidebar-stage-item, #sidebar-tools .sidebar-stage-item')
     .forEach(el => el.classList.remove('active'));
-  if (kind === 'stage') {
+  if (kind === 'overview') {
+    document.querySelector('#sidebar-stages .sidebar-stage-item[data-overview]')?.classList.add('active');
+  } else if (kind === 'stage') {
     document.querySelector(`#sidebar-stages .sidebar-stage-item[data-stage="${id}"]`)?.classList.add('active');
   } else {
     document.querySelector(`#sidebar-tools .sidebar-stage-item[data-tool="${id}"]`)?.classList.add('active');
@@ -509,11 +512,12 @@ function switchProgram(prog) {
   _navStage   = null;
   _navTool    = null;
   _renderSidebarStages(prog);
-  // Restore last known state for this workspace, or default to NEW_SUBMISSION
+  // Restore last known state for this workspace, or land on the Overview
   const cached = _workspaceCache[prog];
-  if (cached?.tool)       showTool(prog, cached.tool);
-  else if (cached?.stage) showStage(prog, cached.stage);
-  else                    showStage(prog, 'NEW_SUBMISSION');
+  if (cached?.tool)                      showTool(prog, cached.tool);
+  else if (cached?.stage === 'overview') showOverview(prog);
+  else if (cached?.stage)                showStage(prog, cached.stage);
+  else                                   showOverview(prog);
 }
 
 // ── Permanent sidebar stage/tool rendering ────────────────────────────────────
@@ -527,8 +531,13 @@ function _renderSidebarStages(prog) {
   const btn = document.getElementById('prog-switcher-btn');
   btn.setAttribute('data-prog', prog);
   document.getElementById('sidebar').setAttribute('data-prog', prog);
-  // Render pipeline stages
-  document.getElementById('sidebar-stages').innerHTML = stages.map(s => `
+  // Render Overview (workspace dashboard) + pipeline stages
+  const overviewItem = `
+    <div class="sidebar-stage-item" data-overview="1" onclick="showOverview('${prog}')">
+      <span class="stage-icon-sm">📊</span>
+      <span>Overview</span>
+    </div>`;
+  document.getElementById('sidebar-stages').innerHTML = overviewItem + stages.map(s => `
     <div class="sidebar-stage-item" data-stage="${s.id}" onclick="showStage('${prog}','${s.id}')">
       <span class="stage-icon-sm">${s.icon}</span>
       <span>${s.label}</span>
@@ -546,6 +555,101 @@ function _renderSidebarStages(prog) {
 function _ensureProgOpen(prog) { /* no-op */ }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
+
+// PROGRAM key → API workspace token
+const PROGRAM_TYPE = { J1_PROGRAM: 'J1', SEA_BASED: 'SEA', LAND_BASED: 'LAND' };
+
+function showOverview(program) {
+  _navProgram    = program;
+  _navStage      = 'overview';
+  _navTool       = null;
+  closeProgSwitcher();
+  _renderSidebarActive();
+  _markSidebarActive('overview');
+  _showPane('workspace-overview');
+  const pm = PROGRAM_META[program];
+  document.getElementById('page-title').textContent = `${pm.icon} ${pm.label} — Overview`;
+  document.getElementById('ws-overview-title').textContent = 'Overview';
+  document.getElementById('ws-overview-sub').innerHTML =
+    `<span class="prog-badge ${pm.badgeClass}">${pm.icon} ${pm.label}</span>`;
+  document.getElementById('topbar-action').style.display = 'none';
+  STATE.currentView = `${program}:overview`;
+  localStorage.setItem('poseidon_view', `${program}:overview`);
+  loadWorkspaceOverview(program);
+}
+
+async function loadWorkspaceOverview(program) {
+  const el = document.getElementById('workspace-overview-content');
+  el.innerHTML = '<div class="spinner" style="margin:48px auto"></div>';
+  try {
+    const d = await api('GET', `/workspaces/${PROGRAM_TYPE[program]}/dashboard`);
+    renderWorkspaceOverview(program, d);
+  } catch (e) {
+    el.innerHTML = `<div class="table-empty">Failed to load overview: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderWorkspaceOverview(program, d) {
+  const el = document.getElementById('workspace-overview-content');
+  const pm = PROGRAM_META[program];
+  const mf = d.macroFunnel || {};
+  const comp = d.compliance || {};
+  const compTotal = (comp.expired || 0) + (comp.expiringSoon || 0);
+  const accent = { J1_PROGRAM: 'purple', SEA_BASED: 'blue', LAND_BASED: 'green' }[program];
+  const totalActive = Object.entries(d.funnel || {}).reduce((n, [s, c]) => s === 'ARCHIVED' ? n : n + c, 0);
+
+  const cards = [
+    { label: 'Active Candidates', value: totalActive,                  cls: accent },
+    { label: 'Conversion Rate',   value: (d.conversionRate ?? 0) + '%', cls: 'green' },
+    { label: 'New (30 days)',     value: d.intakeLast30Days ?? 0,        cls: 'amber' },
+    { label: 'Compliance Alerts', value: compTotal,                      cls: compTotal ? 'red' : 'green' },
+  ];
+
+  const funnelStages = [
+    { key: 'newInputs',      label: 'New Submissions' },
+    { key: 'liveEvaluation', label: 'In Evaluation' },
+    { key: 'finalInterview', label: 'Final Interview' },
+    { key: 'offerLetter',    label: 'Offer Letter' },
+    { key: 'onboarding',     label: 'Onboarding' },
+    { key: 'placed',         label: 'Visa / Placed' },
+  ];
+  const maxVal = Math.max(1, ...funnelStages.map(s => mf[s.key] || 0));
+
+  el.innerHTML = `
+    <div class="stat-grid">
+      ${cards.map(c => `
+        <div class="stat-card ${c.cls}">
+          <div class="stat-value">${c.value}</div>
+          <div class="stat-label">${c.label}</div>
+        </div>`).join('')}
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-header"><span class="card-title">Active Pipeline Funnel</span></div>
+      <div style="padding:8px 20px 18px">
+        ${funnelStages.map(s => {
+          const v = mf[s.key] || 0;
+          const pct = Math.round((v / maxVal) * 100);
+          return `
+          <div style="display:flex;align-items:center;gap:12px;padding:7px 0">
+            <div style="width:140px;font-size:.78rem;color:var(--text-muted);flex-shrink:0">${s.label}</div>
+            <div style="flex:1;background:var(--navy-mid);border-radius:4px;height:10px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${pm.color};border-radius:4px;transition:width .4s"></div>
+            </div>
+            <div style="width:40px;text-align:right;font-weight:600">${v}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <div class="card-header"><span class="card-title">Document Compliance</span></div>
+      <div class="stat-grid" style="padding:16px 20px">
+        <div class="stat-card red"><div class="stat-value">${comp.expired || 0}</div><div class="stat-label">Expired</div></div>
+        <div class="stat-card amber"><div class="stat-value">${comp.expiringSoon || 0}</div><div class="stat-label">Expiring ≤ 30 days</div></div>
+      </div>
+    </div>`;
+}
 
 function showStage(program, stage) {
   _navProgram    = program;
