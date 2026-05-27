@@ -194,6 +194,12 @@ class Router {
       if (!m) continue;
       try {
         const res = await route.h(req, env, ctx, m.pathname.groups, url);
+        // Signal the master roll-up to refresh after any successful candidate/
+        // submission mutation (keeps the cached executive view near-real-time).
+        if (req.method !== 'GET' && res.status < 300 &&
+            /\/api\/v1\/(candidates|submissions)/.test(url.pathname)) {
+          ctx.waitUntil(refreshMasterDashboard(env).catch(() => {}));
+        }
         const h2 = new Headers(res.headers);
         Object.entries(ch).forEach(([k, v]) => h2.set(k, v));
         return new Response(res.body, { status: res.status, headers: h2 });
@@ -1677,6 +1683,137 @@ R.get('/api/v1/stats', async (req, env) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// WORKSPACE + MASTER DASHBOARDS  (data-isolation + global roll-up)
+// ═════════════════════════════════════════════════════════════════════════════
+
+const TYPE_TO_PIPELINE = { J1: 'J1_PROGRAM', SEA: 'SEA_BASED', LAND: 'LAND_BASED' };
+
+// Status buckets — inclusive of BOTH the generic 6-state machine and the
+// per-pipeline stage ids, so funnel counts are correct whichever a row uses.
+const FUNNEL = {
+  evaluations: {
+    J1_PROGRAM: ['CONSULTATION_CALL', 'J1_STAGE_1', 'J1_STAGE_2', 'J1_STAGE_3', 'J1_STAGE_4', 'CANDIDATES'],
+    SEA_BASED:  ['CANDIDATES'],
+    LAND_BASED: ['CANDIDATES'],
+  },
+  finalInterview: {
+    J1_PROGRAM: ['FINAL_INTERVIEW'],
+    SEA_BASED:  ['FINAL_INTERVIEW'],
+    LAND_BASED: ['FINAL_INTERVIEW'],
+  },
+  placed: {
+    J1_PROGRAM: ['J1_VISA'],
+    SEA_BASED:  ['C1D_VISA'],
+    LAND_BASED: ['LB_VISA'],
+  },
+};
+
+// ── Per-workspace dashboard (strictly scoped by pipeline; recruiters see own rows)
+R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
+  const u = await auth(req, env);
+  const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
+
+  const pipeline = TYPE_TO_PIPELINE[(p.type || '').toUpperCase()];
+  if (!pipeline) return err('Unknown workspace', 404);
+
+  const isRecruiter = u.role === 'RECRUITER';
+  // mandatory candidate-table scope
+  const cScope = ['pipeline=?']; const cBinds = [pipeline];
+  if (isRecruiter) { cScope.push('assigned_recruiter_id=?'); cBinds.push(u.id); }
+  const cWhere = `WHERE ${cScope.join(' AND ')}`;
+  // documents-join scope (aliased; inherits the pipeline scope through the join)
+  const dScope = ['c.pipeline=?', 'd.expiration_date IS NOT NULL']; const dBinds = [pipeline];
+  if (isRecruiter) { dScope.push('c.assigned_recruiter_id=?'); dBinds.push(u.id); }
+  const dWhere = `WHERE ${dScope.join(' AND ')}`;
+
+  const [funnel, intake30, compliance] = await Promise.all([
+    env.DB.prepare(`SELECT status, COUNT(*) cnt FROM candidates ${cWhere} GROUP BY status`).bind(...cBinds).all(),
+    env.DB.prepare(`SELECT COUNT(*) cnt FROM candidates ${cWhere} AND created_at>=datetime('now','-30 days')`).bind(...cBinds).first(),
+    env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN d.expiration_date < datetime('now') THEN 1 ELSE 0 END) expired,
+         SUM(CASE WHEN d.expiration_date >= datetime('now')
+                   AND d.expiration_date <= datetime('now','+30 days') THEN 1 ELSE 0 END) expiringSoon
+       FROM documents d JOIN candidates c ON d.candidate_id=c.id ${dWhere}`
+    ).bind(...dBinds).first(),
+  ]);
+
+  const byStatus = Object.fromEntries((funnel.results || []).map(r => [r.status, r.cnt]));
+  const sum = ids => (ids || []).reduce((n, s) => n + (byStatus[s] || 0), 0);
+  const entered = Object.entries(byStatus).reduce((n, [s, c]) => s === 'ARCHIVED' ? n : n + c, 0);
+  const placed = sum(FUNNEL.placed[pipeline]);
+
+  return json({
+    pipeline,
+    funnel: byStatus,
+    macroFunnel: {
+      newInputs:      byStatus['NEW_SUBMISSION'] || 0,
+      liveEvaluation: sum(FUNNEL.evaluations[pipeline]),
+      finalInterview: sum(FUNNEL.finalInterview[pipeline]),
+      onboarding:     byStatus['ONBOARDING'] || 0,
+      placed,
+    },
+    conversionRate: entered ? +(placed / entered * 100).toFixed(1) : 0,
+    intakeLast30Days: intake30.cnt,
+    compliance: { expired: compliance?.expired || 0, expiringSoon: compliance?.expiringSoon || 0 },
+  });
+});
+
+// ── Master dashboard (KV-cached global roll-up; stale-while-revalidate) ─────────
+const MASTER_KEY = 'master_dashboard';
+const MASTER_TTL_MS = 15 * 60 * 1000;
+
+async function computeMasterDashboard(env) {
+  const [byPipeline, byStatusPipe, recruiterLoad, pending] = await Promise.all([
+    env.DB.prepare(`SELECT pipeline, COUNT(*) cnt FROM candidates GROUP BY pipeline`).all(),
+    env.DB.prepare(`SELECT pipeline, status, COUNT(*) cnt FROM candidates GROUP BY pipeline, status`).all(),
+    env.DB.prepare(
+      `SELECT c.assigned_recruiter_id rid, u.first_name fn, u.last_name ln, COUNT(*) load
+       FROM candidates c JOIN users u ON c.assigned_recruiter_id=u.id
+       WHERE c.status NOT IN ('ARCHIVED','J1_VISA','C1D_VISA','LB_VISA')
+       GROUP BY c.assigned_recruiter_id ORDER BY load DESC`
+    ).all(),
+    env.DB.prepare(`SELECT COUNT(*) cnt FROM submissions WHERE reviewed_at IS NULL`).first(),
+  ]);
+
+  const macro = { newInputs: 0, liveEvaluation: 0, finalInterview: 0, onboarding: 0, placed: 0 };
+  for (const r of (byStatusPipe.results || [])) {
+    if (r.status === 'NEW_SUBMISSION') macro.newInputs += r.cnt;
+    if (r.status === 'ONBOARDING')     macro.onboarding += r.cnt;
+    if (FUNNEL.evaluations[r.pipeline]?.includes(r.status))    macro.liveEvaluation += r.cnt;
+    if (FUNNEL.finalInterview[r.pipeline]?.includes(r.status)) macro.finalInterview += r.cnt;
+    if (FUNNEL.placed[r.pipeline]?.includes(r.status))         macro.placed += r.cnt;
+  }
+
+  return {
+    computedAt: Date.now(),
+    byPipeline: Object.fromEntries((byPipeline.results || []).map(r => [r.pipeline, r.cnt])),
+    globalFunnel: macro,
+    totalPlacements: macro.placed,
+    pendingSubmissions: pending.cnt,
+    recruiterLoad: recruiterLoad.results || [],
+  };
+}
+
+async function refreshMasterDashboard(env) {
+  const data = await computeMasterDashboard(env);
+  await env.KV.put(MASTER_KEY, JSON.stringify(data));
+  return data;
+}
+
+R.get('/api/v1/master/dashboard', async (req, env, ctx) => {
+  const u = await auth(req, env);
+  const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;   // executive-only
+  const cached = await env.KV.get(MASTER_KEY, { type: 'json' });
+  if (cached) {
+    const stale = Date.now() - cached.computedAt > MASTER_TTL_MS;
+    if (stale) ctx.waitUntil(refreshMasterDashboard(env).catch(() => {}));
+    return json({ ...cached, stale });
+  }
+  return json(await refreshMasterDashboard(env));   // cold start
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
 // CANDIDATE HISTORY (portal-accessible)
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -1774,5 +1911,9 @@ async function provisionPortal(env, candidateId) {
 export default {
   async fetch(request, env, ctx) {
     return R.handle(request, env, ctx);
+  },
+  // Cron Trigger (configure in Dashboard → Worker → Settings → Triggers, e.g. */15 * * * *)
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(refreshMasterDashboard(env));
   }
 };
