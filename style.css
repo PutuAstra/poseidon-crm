@@ -66,12 +66,12 @@ button { cursor: pointer; border: none; outline: none; }
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
+  width: 2px;
   background: linear-gradient(180deg, var(--purple, #8b5cf6), #38bdf8, var(--success, #22c55e));
-  opacity: 0.55;
+  opacity: 0.15;
   transition: opacity 0.2s ease, width 0.2s ease;
 }
-#edge-trigger:hover::before { opacity: 1; width: 6px; }
+#edge-trigger:hover::before { opacity: 0.9; width: 5px; }
 
 /* hide the affordance while the drawer is open */
 #prog-sub-panel.open ~ #edge-trigger::before { opacity: 0; }
