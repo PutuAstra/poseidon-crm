@@ -73,32 +73,8 @@ button { cursor: pointer; border: none; outline: none; }
 }
 #edge-trigger:hover::before { opacity: 1; width: 6px; }
 
-/* Visible grab tab in the middle so it's obvious you can point here */
-#edge-trigger::after {
-  content: '›';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--navy-mid);
-  color: var(--text);
-  font-size: 15px;
-  font-weight: 700;
-  border-radius: 0 8px 8px 0;
-  box-shadow: 1px 0 8px rgba(0, 0, 0, 0.35);
-  opacity: 0.85;
-  transition: opacity 0.2s ease, background 0.2s ease;
-}
-#edge-trigger:hover::after { opacity: 1; background: var(--blue); }
-
 /* hide the affordance while the drawer is open */
-#prog-sub-panel.open ~ #edge-trigger::before,
-#prog-sub-panel.open ~ #edge-trigger::after { opacity: 0; }
+#prog-sub-panel.open ~ #edge-trigger::before { opacity: 0; }
 
 /* ── Workspace Drawer (hover-revealed, floats over sidebar — zero layout shift) ── */
 #prog-sub-panel {
