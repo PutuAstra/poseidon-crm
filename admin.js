@@ -493,13 +493,26 @@ function _initWorkspaceDrawer() {
   const panel   = document.getElementById('prog-sub-panel');
   if (!trigger || !panel || trigger._wired) return;
   trigger._wired = true;
-  let closeTimer = null;
-  const cancel = () => { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } };
-  const open   = () => { cancel(); openProgSwitcher(); };
-  const close  = () => { cancel(); closeTimer = setTimeout(closeProgSwitcher, 180); };
-  trigger.addEventListener('mouseenter', open);
-  panel.addEventListener('mouseenter', cancel);
-  panel.addEventListener('mouseleave', close);
+  let openTimer = null, closeTimer = null;
+  const clearOpen  = () => { if (openTimer)  { clearTimeout(openTimer);  openTimer  = null; } };
+  const clearClose = () => { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } };
+
+  // Open only after the cursor DWELLS on the edge (hover-intent) — a quick
+  // pass-through near the edge no longer fires it.
+  trigger.addEventListener('mouseenter', () => {
+    clearClose();
+    clearOpen();
+    openTimer = setTimeout(openProgSwitcher, 260);
+  });
+  trigger.addEventListener('mouseleave', clearOpen);   // bailed before dwell → cancel
+
+  // Stay open while over the panel; close on leave with a forgiving delay.
+  panel.addEventListener('mouseenter', () => { clearOpen(); clearClose(); });
+  panel.addEventListener('mouseleave', () => {
+    clearOpen();
+    clearClose();
+    closeTimer = setTimeout(closeProgSwitcher, 280);
+  });
 }
 
 function switchProgram(prog) {
