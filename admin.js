@@ -877,6 +877,22 @@ async function loadLocalSettings() {
             : `<input type="${f.type||'text'}" id="ls-${f.key}" value="${esc(s[f.key]||f.default||'')}" placeholder="${esc(f.placeholder||'')}">`
           }
         </div>`).join('')}
+    </div>
+    <div class="local-settings-card" style="margin-top:16px">
+      <div class="section-title">Field Configuration</div>
+      ${prog === 'SEA_BASED'
+        ? `<div onclick="openSfFieldSettings()" style="background:var(--navy);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;display:flex;align-items:center;gap:14px;transition:border-color .15s"
+                onmouseenter="this.style.borderColor='var(--blue)'" onmouseleave="this.style.borderColor='var(--border)'">
+             <div style="width:38px;height:38px;background:#1e3a5f;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+             </div>
+             <div>
+               <div style="font-weight:600;font-size:.92rem;margin-bottom:3px">Candidate Profile Fields</div>
+               <div style="font-size:.8rem;color:var(--text-muted);line-height:1.45">Configure sections, field order, labels, dropdown options and visibility for ${pm.label} candidate profiles.</div>
+             </div>
+           </div>`
+        : `<div style="color:var(--text-muted);font-size:.85rem;padding:6px 2px">Profile field configuration for ${pm.label} is coming soon.</div>`
+      }
     </div>`;
 }
 
@@ -4743,40 +4759,13 @@ function loadSettings() {
   if (!el) return;
   el.innerHTML = `
     <div style="max-width:860px">
-
-      <div style="margin-bottom:32px">
-        <h3 style="font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:600;margin:0 0 16px">Field Configuration</h3>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px">
-
-          <div onclick="openSfFieldSettings()" style="background:var(--navy-light);border:1px solid var(--border);border-radius:10px;padding:20px;cursor:pointer;transition:border-color .15s,background .15s;"
-               onmouseenter="this.style.borderColor='var(--blue)';this.style.background='#1e3a5f22'"
-               onmouseleave="this.style.borderColor='var(--border)';this.style.background='var(--navy-light)'">
-            <div style="width:40px;height:40px;background:#1e3a5f;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </div>
-            <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">Sea-Based Fields</div>
-            <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Configure sections, field order, labels, dropdown options and visibility for Sea-Based candidate profiles.</div>
-          </div>
-
-          <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:10px;padding:20px;opacity:.45;cursor:not-allowed">
-            <div style="width:40px;height:40px;background:var(--navy-mid);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </div>
-            <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">J1 Program Fields <span style="font-size:.7rem;background:var(--navy-mid);padding:2px 6px;border-radius:4px;margin-left:4px;font-weight:400">Soon</span></div>
-            <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Configure field layout for J1 Program candidate profiles.</div>
-          </div>
-
-          <div style="background:var(--navy-light);border:1px solid var(--border);border-radius:10px;padding:20px;opacity:.45;cursor:not-allowed">
-            <div style="width:40px;height:40px;background:var(--navy-mid);border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:12px">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </div>
-            <div style="font-size:.95rem;font-weight:600;margin-bottom:6px">Land-Based Fields <span style="font-size:.7rem;background:var(--navy-mid);padding:2px 6px;border-radius:4px;margin-left:4px;font-weight:400">Soon</span></div>
-            <div style="font-size:.8rem;color:var(--text-muted);line-height:1.5">Configure field layout for Land-Based candidate profiles.</div>
-          </div>
-
+      <div class="local-settings-card">
+        <div class="section-title">System Settings</div>
+        <div style="color:var(--text-muted);font-size:.85rem;line-height:1.6">
+          Candidate profile field configuration now lives inside each workspace.
+          Open a workspace, then go to <strong style="color:var(--text)">Local Settings → Field Configuration</strong> to manage its profile fields.
         </div>
       </div>
-
     </div>`;
 }
 
