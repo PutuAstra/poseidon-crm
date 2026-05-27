@@ -502,7 +502,7 @@ function _initWorkspaceDrawer() {
   trigger.addEventListener('mouseenter', () => {
     clearClose();
     clearOpen();
-    openTimer = setTimeout(openProgSwitcher, 260);
+    openTimer = setTimeout(openProgSwitcher, 120);
   });
   trigger.addEventListener('mouseleave', clearOpen);   // bailed before dwell → cancel
 
