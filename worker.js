@@ -1707,6 +1707,8 @@ const FUNNEL = {
     LAND_BASED: ['LB_VISA'],
   },
 };
+// Offer-letter statuses (between final interview and onboarding) — same across pipelines
+const OFFER_STATUSES = ['OFFER_LETTER', 'OFFER_LETTER_SIGNED'];
 
 // ── Per-workspace dashboard (strictly scoped by pipeline; recruiters see own rows)
 R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
@@ -1741,7 +1743,9 @@ R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
   const byStatus = Object.fromEntries((funnel.results || []).map(r => [r.status, r.cnt]));
   const sum = ids => (ids || []).reduce((n, s) => n + (byStatus[s] || 0), 0);
   const entered = Object.entries(byStatus).reduce((n, [s, c]) => s === 'ARCHIVED' ? n : n + c, 0);
-  const placed = sum(FUNNEL.placed[pipeline]);
+  const onboarding = byStatus['ONBOARDING'] || 0;
+  const placedVisa = sum(FUNNEL.placed[pipeline]);
+  const placements = onboarding + placedVisa;   // "placement" = reached onboarding or beyond
 
   return json({
     pipeline,
@@ -1750,10 +1754,12 @@ R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
       newInputs:      byStatus['NEW_SUBMISSION'] || 0,
       liveEvaluation: sum(FUNNEL.evaluations[pipeline]),
       finalInterview: sum(FUNNEL.finalInterview[pipeline]),
-      onboarding:     byStatus['ONBOARDING'] || 0,
-      placed,
+      offerLetter:    sum(OFFER_STATUSES),
+      onboarding,
+      placed:         placedVisa,
     },
-    conversionRate: entered ? +(placed / entered * 100).toFixed(1) : 0,
+    placements,
+    conversionRate: entered ? +(placements / entered * 100).toFixed(1) : 0,
     intakeLast30Days: intake30.cnt,
     compliance: { expired: compliance?.expired || 0, expiringSoon: compliance?.expiringSoon || 0 },
   });
@@ -1776,10 +1782,11 @@ async function computeMasterDashboard(env) {
     env.DB.prepare(`SELECT COUNT(*) cnt FROM submissions WHERE reviewed_at IS NULL`).first(),
   ]);
 
-  const macro = { newInputs: 0, liveEvaluation: 0, finalInterview: 0, onboarding: 0, placed: 0 };
+  const macro = { newInputs: 0, liveEvaluation: 0, finalInterview: 0, offerLetter: 0, onboarding: 0, placed: 0 };
   for (const r of (byStatusPipe.results || [])) {
     if (r.status === 'NEW_SUBMISSION') macro.newInputs += r.cnt;
     if (r.status === 'ONBOARDING')     macro.onboarding += r.cnt;
+    if (OFFER_STATUSES.includes(r.status))                     macro.offerLetter += r.cnt;
     if (FUNNEL.evaluations[r.pipeline]?.includes(r.status))    macro.liveEvaluation += r.cnt;
     if (FUNNEL.finalInterview[r.pipeline]?.includes(r.status)) macro.finalInterview += r.cnt;
     if (FUNNEL.placed[r.pipeline]?.includes(r.status))         macro.placed += r.cnt;
@@ -1789,7 +1796,7 @@ async function computeMasterDashboard(env) {
     computedAt: Date.now(),
     byPipeline: Object.fromEntries((byPipeline.results || []).map(r => [r.pipeline, r.cnt])),
     globalFunnel: macro,
-    totalPlacements: macro.placed,
+    totalPlacements: macro.onboarding + macro.placed,   // reached onboarding or beyond
     pendingSubmissions: pending.cnt,
     recruiterLoad: recruiterLoad.results || [],
   };
