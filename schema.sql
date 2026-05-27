@@ -54,6 +54,11 @@ CREATE INDEX IF NOT EXISTS idx_candidates_pipeline  ON candidates(pipeline);
 CREATE INDEX IF NOT EXISTS idx_candidates_recruiter ON candidates(assigned_recruiter_id);
 CREATE INDEX IF NOT EXISTS idx_candidates_email     ON candidates(email);
 
+-- Analytics composite indexes (v5) — per-workspace dashboards + master roll-up
+CREATE INDEX IF NOT EXISTS idx_candidates_pipeline_status    ON candidates(pipeline, status);
+CREATE INDEX IF NOT EXISTS idx_candidates_pipeline_recruiter ON candidates(pipeline, assigned_recruiter_id);
+CREATE INDEX IF NOT EXISTS idx_candidates_pipeline_created   ON candidates(pipeline, created_at);
+
 -- ── SUBMISSION FORMS ────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS submission_forms (
@@ -230,6 +235,7 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_candidate ON documents(candidate_id, type);
 CREATE INDEX IF NOT EXISTS idx_documents_expiry    ON documents(expiration_date);
+CREATE INDEX IF NOT EXISTS idx_documents_type_expiry ON documents(type, expiration_date);  -- v5: compliance by type+expiry
 
 -- ── PIPELINE AUDIT LOG ──────────────────────────────────────────────────────
 
