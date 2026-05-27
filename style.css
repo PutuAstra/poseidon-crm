@@ -138,6 +138,13 @@ button { cursor: pointer; border: none; outline: none; }
 .popup-general-item svg { flex-shrink: 0; opacity: 0.65; transition: opacity 0.12s; }
 .popup-general-item:hover svg { opacity: 1; }
 
+/* Collapsible group (Settings) inside the workspace drawer */
+.popup-caret { opacity: 0.5; flex-shrink: 0; transition: transform 0.2s ease; }
+.popup-parent.open .popup-caret { transform: rotate(90deg); }
+.popup-children { display: none; }
+.popup-children.open { display: block; }
+.popup-child { padding-left: 38px; font-size: 12.5px; }
+
 .sub-group-label {
   padding: 14px 12px 4px;
   font-size: 9px;
