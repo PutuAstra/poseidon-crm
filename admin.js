@@ -503,6 +503,12 @@ function showGeneralView(name) {
 function _markDrawerGeneralActive(name) {
   document.querySelectorAll('#prog-sub-body .popup-general-item').forEach(el => el.classList.remove('active'));
   document.querySelector(`#prog-sub-body .popup-general-item[data-view="${name}"]`)?.classList.add('active');
+  // In General mode no workspace is the active context — clear the workspace
+  // active highlight + its inline checkmark in the drawer.
+  document.querySelectorAll('#prog-sub-body .prog-popup-item').forEach(el => {
+    el.classList.remove('active');
+    el.querySelector('svg')?.remove();
+  });
 }
 
 // Expand/collapse a nested group (e.g. Settings) in the workspace drawer
