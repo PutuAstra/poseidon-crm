@@ -138,6 +138,10 @@ button { cursor: pointer; border: none; outline: none; }
 .popup-general-item svg { flex-shrink: 0; opacity: 0.65; transition: opacity 0.12s; }
 .popup-general-item:hover svg { opacity: 1; }
 
+/* Active state when a General view is "pinned" open */
+.popup-general-item.active { background: var(--navy-mid); color: var(--text); }
+.popup-general-item.active svg { opacity: 1; }
+
 /* Collapsible group (Settings) inside the workspace drawer */
 .popup-caret { opacity: 0.5; flex-shrink: 0; transition: transform 0.2s ease; }
 .popup-parent.open .popup-caret { transform: rotate(90deg); }

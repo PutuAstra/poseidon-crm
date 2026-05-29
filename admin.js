@@ -308,9 +308,9 @@ function bootApp() {
         else if (['local','fields','docs'].includes(sub)) showTool(prog, sub);
         else                                              showStage(prog, sub);
       }, 0);
-    } else { showView('dashboard'); }
+    } else { showGeneralView('dashboard'); }
   } else {
-    showView(VIEW_META[savedView] ? savedView : 'dashboard');
+    showGeneralView(VIEW_META[savedView] ? savedView : 'dashboard');
   }
   pollSubmissionBadge();
   pollNotifications();
@@ -453,7 +453,7 @@ function openProgSwitcher() {
 
     <div class="popup-section-label" style="margin-top:6px">General</div>
 
-    <div class="popup-general-item" onclick="closeProgSwitcher();showView('dashboard')">
+    <div class="popup-general-item" data-view="dashboard" onclick="showGeneralView('dashboard')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
       <span>Dashboard</span>
     </div>
@@ -463,16 +463,16 @@ function openProgSwitcher() {
       <svg class="popup-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:auto"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
     <div class="popup-children open">
-      <div class="popup-general-item popup-child" onclick="closeProgSwitcher();showView('interviews')">
+      <div class="popup-general-item popup-child" data-view="interviews" onclick="showGeneralView('interviews')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
         <span>Interview Setup</span>
       </div>
-      <div class="popup-general-item popup-child" onclick="closeProgSwitcher();showView('forms')">
+      <div class="popup-general-item popup-child" data-view="forms" onclick="showGeneralView('forms')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         <span>Form Builder</span>
       </div>
       ${isAdmin ? `
-      <div class="popup-general-item popup-child" onclick="closeProgSwitcher();showView('users')">
+      <div class="popup-general-item popup-child" data-view="users" onclick="showGeneralView('users')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>Users</span>
       </div>` : ''}
@@ -482,7 +482,27 @@ function openProgSwitcher() {
 }
 
 function closeProgSwitcher() {
+  _drawerPinned = false;
   document.getElementById('prog-sub-panel').classList.remove('open');
+}
+
+// Drawer "pinned" state — kept open while the user is on a General view
+// (Dashboard / Interview Setup / Form Builder / Users), since those views use
+// the drawer itself as their navigation context.
+let _drawerPinned = false;
+
+function showGeneralView(name) {
+  _drawerPinned = true;
+  showView(name, true);   // render the pane, but keep the drawer open
+  const panel = document.getElementById('prog-sub-panel');
+  if (!panel.classList.contains('open')) openProgSwitcher();
+  panel.classList.add('open');
+  _markDrawerGeneralActive(name);
+}
+
+function _markDrawerGeneralActive(name) {
+  document.querySelectorAll('#prog-sub-body .popup-general-item').forEach(el => el.classList.remove('active'));
+  document.querySelector(`#prog-sub-body .popup-general-item[data-view="${name}"]`)?.classList.add('active');
 }
 
 // Expand/collapse a nested group (e.g. Settings) in the workspace drawer
@@ -512,11 +532,13 @@ function _initWorkspaceDrawer() {
   });
   trigger.addEventListener('mouseleave', clearOpen);   // bailed before dwell → cancel
 
-  // Stay open while over the panel; close on leave with a forgiving delay.
+  // Stay open while over the panel; close on leave with a forgiving delay
+  // (skipped entirely when pinned — General views keep the drawer visible).
   panel.addEventListener('mouseenter', () => { clearOpen(); clearClose(); });
   panel.addEventListener('mouseleave', () => {
     clearOpen();
     clearClose();
+    if (_drawerPinned) return;
     closeTimer = setTimeout(closeProgSwitcher, 280);
   });
 }
@@ -709,11 +731,11 @@ function showTool(program, tool) {
   if (tool === 'docs')   loadProgDocs();
 }
 
-function showView(name) {
+function showView(name, keepDrawer = false) {
   // Keep _navProgram — sidebar stages stay visible for last active workspace
   _navStage = null;
   _navTool  = null;
-  closeProgSwitcher();
+  if (!keepDrawer) closeProgSwitcher();
   _renderSidebarActive();
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.querySelector(`[data-view="${name}"]`)?.classList.add('active');
