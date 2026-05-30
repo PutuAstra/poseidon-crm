@@ -34,6 +34,16 @@
   #detail-backdrop.open { display: block; }
   .detail-head { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
   .detail-body { flex: 1; overflow-y: auto; padding: 20px; }
+  /* Keep the candidate-detail sub-tabs (Overview/Interviews/Documents/...) pinned to
+     the top of the scrolling body so they stay reachable as you scroll. */
+  .detail-body > .tabs#detail-tabs {
+    position: sticky;
+    top: -20px;                 /* counter the .detail-body top padding so it sits flush */
+    margin: -20px -20px 16px;   /* extend full-width over the body padding */
+    padding: 12px 20px 0;
+    background: var(--navy-light);
+    z-index: 5;
+  }
   .detail-close { margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 6px; }
   .detail-close:hover { background: var(--navy-mid); color: var(--text); }
   .info-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
