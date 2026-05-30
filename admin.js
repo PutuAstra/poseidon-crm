@@ -486,6 +486,7 @@ function openProgSwitcher() {
 
 function closeProgSwitcher() {
   _drawerPinned = false;
+  document.body.classList.remove('drawer-pinned');
   document.getElementById('prog-sub-panel').classList.remove('open');
 }
 
@@ -496,6 +497,7 @@ let _drawerPinned = false;
 
 function showGeneralView(name) {
   _drawerPinned = true;
+  document.body.classList.add('drawer-pinned');
   showView(name, true);   // render the pane, but keep the drawer open
   const panel = document.getElementById('prog-sub-panel');
   if (!panel.classList.contains('open')) openProgSwitcher();

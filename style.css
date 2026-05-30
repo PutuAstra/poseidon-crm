@@ -1213,6 +1213,11 @@ tbody tr:hover td { background: var(--navy-mid); }
 }
 .iw-modal-overlay.open { display: flex; }
 
+/* When the workspace drawer is pinned open (Dashboard / Interview Setup / etc.),
+   shift modals past the drawer so it isn't covered. */
+body.drawer-pinned .iw-modal-overlay,
+body.drawer-pinned .modal-overlay { left: var(--sidebar-w); }
+
 .iw-empty-state {
   display: flex;
   flex-direction: column;
