@@ -432,24 +432,31 @@ R.patch('/api/v1/candidates/:id', async (req, env, ctx, p) => {
   return json({ success: true });
 });
 
+// Generic force-override status setter. The normal flow uses /transitions/*
+// (move-forward, endorse, /decision, /ready, etc.) which enforce guards.
+// This endpoint bypasses all guards and is restricted to SUPER_ADMIN with an
+// explicit `force: true` body flag. Writes a FORCE_OVERRIDE history entry
+// recording every bypassed guard so the timeline shows the override clearly.
 R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { toStatus, reason, metadata } = await req.json();
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN'); if (re) return re;
+  const { toStatus, reason, metadata, force } = await req.json();
+  if (force !== true) return err('Force-override requires { force: true } in the body — use the transition endpoints for the guarded flow', 422);
   if (!toStatus) return err('toStatus required');
-  const VALID_STATES = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING','ARCHIVED'];
+  const VALID_STATES = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING','READY_TO_DEPLOY','DEPLOYED','ARCHIVED'];
   if (!VALID_STATES.includes(toStatus)) return err(`Invalid state: ${toStatus}`, 422);
   const c = await env.DB.prepare('SELECT id,status,pipeline FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   const now = new Date().toISOString();
   const updates = { status: toStatus, updated_at: now };
-  if (toStatus === 'ARCHIVED') { updates.archive_reason = reason || null; updates.archived_at = now; updates.archived_by_id = u.id; }
+  if (toStatus === 'ARCHIVED') { updates.archive_reason = reason || 'Force override'; updates.archived_at = now; updates.archived_by_id = u.id; }
   const setClauses = Object.keys(updates).map(k => `${k}=?`).join(',');
+  const histMeta = { event: 'FORCE_OVERRIDE', from: c.status, to: toStatus, by: u.id, ...(metadata || {}) };
   await env.DB.batch([
     env.DB.prepare(`UPDATE candidates SET ${setClauses} WHERE id=?`).bind(...Object.values(updates), p.id),
     env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)')
-      .bind(cuid(), p.id, c.status, toStatus, u.id, reason||null, metadata?JSON.stringify(metadata):null)
+      .bind(cuid(), p.id, c.status, toStatus, u.id, `FORCE_OVERRIDE: ${reason || '(no reason provided)'}`, JSON.stringify(histMeta))
   ]);
-  return json({ success: true, fromStatus: c.status, toStatus });
+  return json({ success: true, fromStatus: c.status, toStatus, forced: true });
 });
 
 // ── Transitions ───────────────────────────────────────────────────────────────

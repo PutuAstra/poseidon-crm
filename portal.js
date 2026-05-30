@@ -129,30 +129,41 @@ async function bootPortal() {
 
 // ── Status Banner ─────────────────────────────────────────────────────────────
 
+// Canonical statuses. The candidate portal is only accessible once a candidate
+// reaches ONBOARDING — earlier statuses won't be displayed here, but they're
+// kept in the label map so historical timeline rows render correctly.
 const STAGE_LABELS = {
-  NEW_SUBMISSION:'Application Received', SCREENING:'Screening', OWI_INVITED:'Pre-screen Invited',
-  OWI_SUBMITTED:'Pre-screen Submitted', TWI_SCHEDULED:'Interview Scheduled', TWI_COMPLETED:'Interview Completed',
+  NEW_SUBMISSION:'Application Received',
+  CANDIDATES:'Under Review',
+  FINAL_INTERVIEW:'Final Interview',
+  OFFER_LETTER:'Offer Letter',
+  ONBOARDING:'Onboarding',
+  READY_TO_DEPLOY:'Ready to Go',
+  DEPLOYED:'Deployed',
+  ARCHIVED:'Archived',
+  // Legacy labels — still rendered if older history rows exist:
+  SCREENING:'Screening', OWI_INVITED:'Pre-screen Invited', OWI_SUBMITTED:'Pre-screen Submitted',
+  TWI_SCHEDULED:'Interview Scheduled', TWI_COMPLETED:'Interview Completed',
   BOOKING_INVITED:'Booking Invited', BOOKING_CONFIRMED:'Booking Confirmed',
-  PRE_QUAL_APPROVED:'Pre-qualified', ENDORSED:'Endorsed to Client', CLIENT_APPROVED:'Client Approved',
-  CLIENT_REJECTED:'Client Rejected', ONBOARDING:'Onboarding', DOCUMENT_REVIEW:'Document Review',
-  DEPLOYED:'Deployed', ON_HOLD:'On Hold'
+  PRE_QUAL_APPROVED:'Pre-qualified', ENDORSED:'Endorsed to Client',
+  CLIENT_APPROVED:'Client Approved', CLIENT_REJECTED:'Client Rejected',
+  DOCUMENT_REVIEW:'Document Review', ON_HOLD:'On Hold',
 };
 
 const STAGE_FLOW = [
-  'NEW_SUBMISSION','SCREENING','OWI_SUBMITTED','TWI_COMPLETED',
-  'PRE_QUAL_APPROVED','ENDORSED','CLIENT_APPROVED','DOCUMENT_REVIEW','DEPLOYED'
+  'NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER',
+  'ONBOARDING','READY_TO_DEPLOY','DEPLOYED'
 ];
 
 const NEXT_STEP_HINTS = {
   NEW_SUBMISSION:'Your application is being reviewed. We will contact you soon.',
-  SCREENING:'Our recruiters are screening your profile.',
-  OWI_INVITED:'Please check your email for a pre-screening interview link.',
-  TWI_SCHEDULED:'You have an interview scheduled. Check your email for details.',
-  BOOKING_INVITED:'You have been invited to book a slot. Check your email for the booking link.',
-  CLIENT_APPROVED:'Congratulations! Please upload all required documents in the Documents tab.',
-  DOCUMENT_REVIEW:'Your documents are being reviewed.',
-  DEPLOYED:'Congratulations! You have been successfully deployed.',
-  ON_HOLD:'Your application is currently on hold. We will notify you when it resumes.',
+  CANDIDATES:'Our recruiters are reviewing your profile.',
+  FINAL_INTERVIEW:'You are being considered by one or more partner clients. We will reach out once they decide.',
+  OFFER_LETTER:'Your offer is being prepared. Please complete any required tests and sign the contract when sent.',
+  ONBOARDING:'Please upload all required documents in the Documents tab so we can finalize your placement.',
+  READY_TO_DEPLOY:'Your documents are verified. We are finalizing your vessel assignment and sign-on date.',
+  DEPLOYED:'Congratulations! You are currently deployed. Have a safe contract.',
+  ARCHIVED:'Your application has been archived. Reach out if you have questions.',
 };
 
 function renderStatusBanner() {

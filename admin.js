@@ -2242,13 +2242,19 @@ function renderDetailEndorsements(c) {
 function renderDetailHistory(c) {
   const el = document.getElementById('dp-tab-history');
   const hist = (c.stageHistory || []).slice().reverse();
-  el.innerHTML = hist.length ? `<div class="timeline">${hist.map(h => `
+  el.innerHTML = hist.length ? `<div class="timeline">${hist.map(h => {
+    const isForce = (h.reason || '').startsWith('FORCE_OVERRIDE');
+    const forceBadge = isForce
+      ? `<span style="display:inline-block;background:#3a0d0d;color:#fca5a5;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;letter-spacing:.04em;margin-left:6px" title="A SUPER_ADMIN bypassed the normal flow guards">⚠ ADMIN OVERRIDE</span>`
+      : '';
+    return `
     <div class="timeline-item">
-      <div class="timeline-dot"></div>
-      <div class="timeline-label">${h.from_status ? `${statusLabel(h.from_status)} → ` : ''}${statusLabel(h.to_status)}</div>
+      <div class="timeline-dot" ${isForce ? 'style="background:var(--danger)"' : ''}></div>
+      <div class="timeline-label">${h.from_status ? `${statusLabel(h.from_status)} → ` : ''}${statusLabel(h.to_status)}${forceBadge}</div>
       <div class="timeline-meta">${h.fn ? `${esc(h.fn)} ${esc(h.ln)} · ` : ''}${relTime(h.created_at)}</div>
       ${h.reason ? `<div class="text-sm text-muted" style="margin-top:2px">${esc(h.reason)}</div>` : ''}
-    </div>`).join('')}</div>` :
+    </div>`;
+  }).join('')}</div>` :
     '<div class="empty" style="padding:32px"><p>No history yet</p></div>';
 }
 
