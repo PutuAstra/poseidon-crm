@@ -375,6 +375,8 @@ const LOCAL_SETTINGS_FIELDS = {
     { key: 'require_seaman_book',             label: "Require Seaman's Book",              type: 'checkbox', checkLabel: "Mark Seaman's Book as required at Candidates stage" },
     { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default template dispatched at New Submission' },
     { key: 'zeushire_two_way_interview_id',   label: 'ZeusHire Two-Way Interview ID',      placeholder: 'e.g. iv-xyz789', help: 'Default template scheduled at Candidates stage' },
+    { key: 'marlins_max_attempts',            label: 'Marlins Fail Cap (attempts)',        type: 'number', placeholder: '3', help: 'Candidate is auto-archived after this many failed attempts. Leave blank or 0 for unlimited retakes.' },
+    { key: 'onboarding_required_docs',        label: 'Onboarding Required Documents',      placeholder: 'PASSPORT,SEAMAN_BOOK,STCW_BASIC,MEDICAL_CERT,YELLOW_FEVER,C1D_VISA', help: 'Comma-separated doc types required + unexpired before Ready to Go' },
   ],
   LAND_BASED: [
     { key: 'default_contract_type',   label: 'Default Contract Type',             placeholder: 'Fixed-Term' },
@@ -1934,8 +1936,9 @@ async function recordMarlinsTest(candidateId) {
   const code = (prompt('Test code / reference (optional):') || '').trim() || undefined;
   try {
     const r = await api('POST', '/sea/marlins', { candidateId, score, code });
-    if (r.unlocked) toast(`Marlins ${r.result} ✓ — offer letter unlocked`, 'success');
-    else toast(`Marlins ${r.result} (${r.score} < threshold ${r.threshold})`, 'info');
+    if (r.autoArchived) toast(`Marlins ${r.result} — candidate auto-archived (fail cap reached)`, 'error');
+    else if (r.unlocked)  toast(`Marlins ${r.result} ✓ — offer letter unlocked`, 'success');
+    else                  toast(`Marlins ${r.result} (${r.score} < threshold ${r.threshold})`, 'info');
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }

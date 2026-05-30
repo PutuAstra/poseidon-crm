@@ -1388,13 +1388,39 @@ R.post('/api/v1/sea/marlins', async (req, env) => {
   // Return the canonical post-attempt state so the UI can refresh without a re-fetch.
   const sp = await env.DB.prepare('SELECT marlins_attempts, marlins_passed_at FROM seafarer_profiles WHERE candidate_id=?').bind(candidateId).first();
 
+  // Fail-cap policy: after N consecutive failures, auto-archive the candidate.
+  // Configurable via env.MARLINS_MAX_ATTEMPTS or program_settings.SEA_BASED.marlins_max_attempts.
+  // Default 3. Set to 0/empty to disable the cap (unlimited retakes).
+  let autoArchived = false;
+  if (!passed && !sp?.marlins_passed_at) {
+    const capSetting = await env.DB.prepare(
+      "SELECT setting_value FROM program_settings WHERE pipeline='SEA_BASED' AND setting_key='marlins_max_attempts'"
+    ).first();
+    const capRaw = (capSetting?.setting_value ?? env.MARLINS_MAX_ATTEMPTS ?? '3').toString().trim();
+    const cap = parseInt(capRaw, 10);
+    if (!isNaN(cap) && cap > 0 && (sp?.marlins_attempts || 0) >= cap) {
+      const archReason = `Marlins failed (${sp.marlins_attempts} attempts, max ${cap})`;
+      await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE candidates SET status='ARCHIVED', archive_reason=?, archive_sub_stage=?, archived_at=?, archived_by_id=?, updated_at=? WHERE id=? AND status='OFFER_LETTER'"
+        ).bind(archReason, 'Offer Letter - Marlins Failed', now, u.id, now, candidateId),
+        env.DB.prepare(
+          `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
+           VALUES (?, ?, 'OFFER_LETTER','ARCHIVED', ?, ?, json(?))`
+        ).bind(cuid(), candidateId, u.id, archReason, JSON.stringify({ event: 'marlins_fail_cap', attempts: sp.marlins_attempts, cap }))
+      ]);
+      autoArchived = true;
+    }
+  }
+
   return json({
     success: true,
     candidate: { id: candidateId, name: fullName },
     result, score: scoreNum, threshold,
     attempt: sp?.marlins_attempts || 1,
     marlinsPassedAt: sp?.marlins_passed_at || null,
-    unlocked: passed
+    unlocked: passed,
+    autoArchived
   }, 201);
 });
 
@@ -1417,9 +1443,21 @@ R.get('/api/v1/candidates/:id/marlins', async (req, env, ctx, p) => {
 
 // ── Onboarding: verify-docs-and-mark-ready ────────────────────────────────────
 //
-// Required document types for SEA_BASED — all must be present AND unexpired.
-// Stored in the worker for v1; can be promoted to program_settings later.
-const SEA_BASED_REQUIRED_DOC_TYPES = ['PASSPORT', 'SEAMAN_BOOK', 'STCW_BASIC', 'MEDICAL_CERT', 'YELLOW_FEVER', 'C1D_VISA'];
+// Default required document types for SEA_BASED. The actual list is fetched
+// from program_settings(SEA_BASED, onboarding_required_docs) — a comma-separated
+// override. Falls back to this constant when no setting is configured.
+const SEA_BASED_REQUIRED_DOC_TYPES_DEFAULT = ['PASSPORT', 'SEAMAN_BOOK', 'STCW_BASIC', 'MEDICAL_CERT', 'YELLOW_FEVER', 'C1D_VISA'];
+
+async function _resolveRequiredDocs(env, pipeline) {
+  const row = await env.DB.prepare(
+    "SELECT setting_value FROM program_settings WHERE pipeline=? AND setting_key='onboarding_required_docs'"
+  ).bind(pipeline).first();
+  if (row?.setting_value) {
+    const list = row.setting_value.split(',').map(s => s.trim().toUpperCase().replace(/-/g, '_')).filter(Boolean);
+    if (list.length) return list;
+  }
+  return pipeline === 'SEA_BASED' ? SEA_BASED_REQUIRED_DOC_TYPES_DEFAULT : [];
+}
 
 R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
@@ -1429,6 +1467,8 @@ R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => 
   if (c.archived_at) return err('Candidate is archived', 422);
   if (c.pipeline !== 'SEA_BASED') return err('Only Sea-Based candidates have this step', 422);
   if (c.status !== 'ONBOARDING') return err(`Candidate must be in ONBOARDING (is ${c.status})`, 422);
+
+  const required = await _resolveRequiredDocs(env, 'SEA_BASED');
 
   // Inspect documents (type normalized to UPPER_SNAKE via migration_v6 backfill).
   const { results: docs } = await env.DB.prepare(
@@ -1444,7 +1484,7 @@ R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => 
   }
   const missing = [];
   const expired = [];
-  for (const t of SEA_BASED_REQUIRED_DOC_TYPES) {
+  for (const t of required) {
     const set = haveByType.get(t);
     if (!set || !set.length) { missing.push(t); continue; }
     // any unexpired (or no expiry) instance is fine
@@ -1452,7 +1492,7 @@ R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => 
     if (!ok) expired.push(t);
   }
   if (missing.length || expired.length) {
-    return json({ error: 'Required documents missing or expired', missing, expired, required: SEA_BASED_REQUIRED_DOC_TYPES }, 422);
+    return json({ error: 'Required documents missing or expired', missing, expired, required }, 422);
   }
 
   const now = new Date().toISOString();
@@ -1463,12 +1503,12 @@ R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => 
     env.DB.prepare(
       `INSERT INTO pipeline_stage_history (id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)
        VALUES (?,?, 'ONBOARDING','READY_TO_DEPLOY', ?, 'Documents verified — ready to deploy', json(?))`
-    ).bind(cuid(), p.candidateId, u.id, JSON.stringify({ verified_types: SEA_BASED_REQUIRED_DOC_TYPES })),
+    ).bind(cuid(), p.candidateId, u.id, JSON.stringify({ verified_types: required })),
   ]);
   if (!result[0]?.meta || result[0].meta.changes !== 1) {
     return err('Candidate state changed concurrently', 409);
   }
-  return json({ success: true, toStatus: 'READY_TO_DEPLOY', verifiedTypes: SEA_BASED_REQUIRED_DOC_TYPES });
+  return json({ success: true, toStatus: 'READY_TO_DEPLOY', verifiedTypes: required });
 });
 
 
