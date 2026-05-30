@@ -1579,6 +1579,8 @@ async function openCandidateDetail(id) {
       const fetches = [];
       if (!c.seafarerProfile) fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
       if (STATE.sfFieldConfig === undefined) fetches.push(api('GET', '/settings/seafarer-fields').then(cfg => { STATE.sfFieldConfig = cfg || {}; }).catch(() => { STATE.sfFieldConfig = {}; }));
+      // Marlins status: shown as a chip in the action bar + drives the offer-send gate.
+      fetches.push(api('GET', `/candidates/${c.id}/marlins`).then(m => { STATE.currentCandidate.marlins = m; }).catch(() => { STATE.currentCandidate.marlins = null; }));
       if (fetches.length) Promise.all(fetches).then(() => { renderDetailOverview(STATE.currentCandidate); }).catch(() => {});
     }
   } catch (e) { toast(e.message, 'error'); }
@@ -1614,9 +1616,15 @@ function renderDetailOverview(c) {
       <span style="font-size:11px;color:var(--text-muted)">Per-client decisions → open the Final Interview pane</span>
       <button class="btn btn-ghost btn-sm" onclick="showStage(_navProgram||'SEA_BASED','FINAL_INTERVIEW')">Open Final Interview pane</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
-    if (s === 'OFFER_LETTER') return `
+    if (s === 'OFFER_LETTER') {
+      const marlinsBtn = c.pipeline === 'SEA_BASED'
+        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="recordMarlinsTest('${esc(c.id)}')">🎓 Record Marlins Test</button>`
+        : '';
+      return `
+      ${marlinsBtn}
       <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Resend Offer</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    }
     if (s === 'ONBOARDING') return `
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
     if (s === 'ARCHIVED') return `
@@ -1624,9 +1632,23 @@ function renderDetailOverview(c) {
     return '';
   })();
 
+  // Marlins chip (SEA_BASED only, visible from OFFER_LETTER onward when we have data)
+  const marlinsChip = (() => {
+    if (c.pipeline !== 'SEA_BASED') return '';
+    const m = c.marlins;
+    if (!m || (!m.marlinsPassedAt && !m.attempts)) {
+      return `<span style="background:#3b3a0d;color:#fde68a;border-radius:6px;padding:3px 10px;font-size:11px">🎓 Marlins: not taken</span>`;
+    }
+    if (m.marlinsPassedAt) {
+      return `<span style="background:#0f3a1c;color:#86efac;border-radius:6px;padding:3px 10px;font-size:11px" title="Passed ${new Date(m.marlinsPassedAt).toLocaleDateString()}">🎓 Marlins: ✓ Passed (${m.attempts} attempt${m.attempts === 1 ? '' : 's'})</span>`;
+    }
+    return `<span style="background:#3a0d0d;color:#fca5a5;border-radius:6px;padding:3px 10px;font-size:11px">🎓 Marlins: ${m.attempts} attempt${m.attempts === 1 ? '' : 's'}, not passed</span>`;
+  })();
+
   const actionBar = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       ${pipelineBadge(c.pipeline)} ${statusBadge(c.status)}
+      ${marlinsChip}
       ${c.endorsed_client_name ? `<span style="background:var(--navy-mid);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--blue)">🏢 ${esc(c.endorsed_client_name)}</span>` : ''}
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
         ${stateActions}
@@ -1835,6 +1857,25 @@ async function sendSeaTwoWayInterview(candidateId) {
       try { await navigator.clipboard.writeText(r.meetingUrl); toast('Meeting URL copied to clipboard', 'success'); } catch {}
       console.log('ZeusHire meeting URL:', r.meetingUrl);
     }
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function recordMarlinsTest(candidateId) {
+  const scoreRaw = prompt(
+    'Record a Marlins English Test attempt.\n\n' +
+    'Enter the candidate\'s score (0–100). Pass threshold is configured per worker; ' +
+    'default is 70. The candidate\'s offer letter cannot be sent until they pass.\n\n' +
+    'Score:'
+  );
+  if (scoreRaw === null) return;
+  const score = parseFloat(scoreRaw);
+  if (isNaN(score) || score < 0 || score > 100) { toast('Score must be a number between 0 and 100', 'error'); return; }
+  const code = (prompt('Test code / reference (optional):') || '').trim() || undefined;
+  try {
+    const r = await api('POST', '/sea/marlins', { candidateId, score, code });
+    if (r.unlocked) toast(`Marlins ${r.result} ✓ — offer letter unlocked`, 'success');
+    else toast(`Marlins ${r.result} (${r.score} < threshold ${r.threshold})`, 'info');
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }

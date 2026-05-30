@@ -683,7 +683,17 @@ R.post('/api/v1/offer-letters/:id/send', async (req, env, ctx, p) => {
   const ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE id=?').bind(p.id).first();
   if (!ol) return err('Offer letter not found', 404);
   if (!ol.document_url) return err('Guard failed: document_url must be set before sending', 422);
-  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(ol.candidate_id).first();
+  // Preflight: include pipeline + the SEA_BASED Marlins gate.
+  const c = await env.DB.prepare(
+    `SELECT c.id, c.status, c.pipeline, sp.marlins_passed_at
+       FROM candidates c
+       LEFT JOIN seafarer_profiles sp ON sp.candidate_id = c.id
+      WHERE c.id = ?`
+  ).bind(ol.candidate_id).first();
+  if (!c) return err('Candidate not found', 404);
+  if (c.pipeline === 'SEA_BASED' && !c.marlins_passed_at) {
+    return err('Marlins English Test must be passed before sending the offer for a Sea-Based candidate', 422);
+  }
   const now = new Date().toISOString();
   const batchOps = [
     env.DB.prepare("UPDATE offer_letters SET sent_for_signing_at=?,updated_at=? WHERE id=?").bind(now, now, p.id)
@@ -1310,6 +1320,98 @@ R.post('/api/v1/sea/interviews/two-way', async (req, env) => {
   }
 
   return json({ ok: true, candidateInterviewId: ciId, sessionId, meetingUrl }, 201);
+});
+
+
+// ── Marlins English Test (gates offer-letter send for SEA_BASED) ──────────────
+//
+// Stores each attempt in marlins_tests; flips seafarer_profiles.marlins_passed_at
+// on the first PASS. The offer-send endpoint (§/api/v1/offer-letters/:id/send)
+// reads marlins_passed_at to gate Sea-Based contract dispatch.
+
+function _marlinsThreshold(env) {
+  const t = parseFloat(env.MARLINS_PASS_THRESHOLD || '70');
+  return isNaN(t) ? 70 : t;
+}
+
+R.post('/api/v1/sea/marlins', async (req, env) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json().catch(() => ({}));
+  const { candidateId, durationSeconds, code, takenAt } = b;
+  const scoreNum = parseFloat(b.score);
+  if (!candidateId || isNaN(scoreNum)) return err('candidateId and numeric score required');
+  if (scoreNum < 0 || scoreNum > 100) return err('score must be between 0 and 100', 422);
+
+  const c = await env.DB.prepare('SELECT id,first_name,last_name,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
+  if (!c) return err('Candidate not found', 404);
+  if (c.archived_at) return err('Candidate is archived', 422);
+  if (c.pipeline !== 'SEA_BASED') return err('Marlins tests are only recorded for Sea-Based candidates', 422);
+  if (c.status !== 'OFFER_LETTER') return err(`Candidate must be in OFFER_LETTER stage (is ${c.status})`, 422);
+
+  const threshold = _marlinsThreshold(env);
+  const passed    = scoreNum >= threshold;
+  const result    = passed ? 'PASS' : 'FAIL';
+  const now       = new Date().toISOString();
+  const takenAtFinal = takenAt || now;
+  const fullName  = [c.first_name, c.last_name].filter(Boolean).join(' ');
+
+  // Make sure a seafarer_profiles row exists so the UPDATE below moves a row.
+  await env.DB.prepare(
+    "INSERT INTO seafarer_profiles (id, candidate_id, marlins_attempts) VALUES (?, ?, 0) ON CONFLICT(candidate_id) DO NOTHING"
+  ).bind(cuid(), candidateId).run();
+
+  const meta = JSON.stringify({ event: 'marlins_attempt', result, score: scoreNum, threshold });
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO marlins_tests
+         (id, candidate_id, score, duration_seconds, code, result, taken_at, recorded_by_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(cuid(), candidateId, scoreNum, durationSeconds || null, code || null, result, takenAtFinal, u.id),
+    env.DB.prepare(
+      `UPDATE seafarer_profiles
+          SET marlins_attempts = COALESCE(marlins_attempts, 0) + 1,
+              marlins_passed_at = CASE
+                WHEN ? = 1 AND marlins_passed_at IS NULL THEN ?
+                ELSE marlins_passed_at
+              END,
+              updated_at = ?
+        WHERE candidate_id = ?`
+    ).bind(passed ? 1 : 0, now, now, candidateId),
+    env.DB.prepare(
+      `INSERT INTO pipeline_stage_history
+         (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
+       VALUES (?, ?, 'OFFER_LETTER', 'OFFER_LETTER', ?, ?, json(?))`
+    ).bind(cuid(), candidateId, u.id, `Marlins ${result} (${scoreNum})`, meta),
+  ]);
+
+  // Return the canonical post-attempt state so the UI can refresh without a re-fetch.
+  const sp = await env.DB.prepare('SELECT marlins_attempts, marlins_passed_at FROM seafarer_profiles WHERE candidate_id=?').bind(candidateId).first();
+
+  return json({
+    success: true,
+    candidate: { id: candidateId, name: fullName },
+    result, score: scoreNum, threshold,
+    attempt: sp?.marlins_attempts || 1,
+    marlinsPassedAt: sp?.marlins_passed_at || null,
+    unlocked: passed
+  }, 201);
+});
+
+
+R.get('/api/v1/candidates/:id/marlins', async (req, env, ctx, p) => {
+  const u = await auth(req, env);
+  const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
+  const [profile, tests] = await Promise.all([
+    env.DB.prepare('SELECT marlins_attempts, marlins_passed_at FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first(),
+    env.DB.prepare('SELECT id, score, result, duration_seconds, code, taken_at FROM marlins_tests WHERE candidate_id=? ORDER BY taken_at DESC LIMIT 20').bind(p.id).all(),
+  ]);
+  return json({
+    attempts:        profile?.marlins_attempts || 0,
+    marlinsPassedAt: profile?.marlins_passed_at || null,
+    threshold:       _marlinsThreshold(env),
+    history:         tests.results || []
+  });
 });
 
 
