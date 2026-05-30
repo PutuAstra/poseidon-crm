@@ -327,6 +327,7 @@ const PIPELINE_STAGES = {
     { id: 'J1_STAGE_3',        label: 'Stage 3',         icon: '③'  },
     { id: 'J1_STAGE_4',        label: 'Stage 4',         icon: '④'  },
     { id: 'J1_VISA',           label: 'J1-Visa',         icon: '🛂' },
+    { id: 'DEPLOYMENTS',       label: 'Placements',      icon: '🇺🇸' },
     { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
   ],
