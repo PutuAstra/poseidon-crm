@@ -1415,6 +1415,209 @@ R.get('/api/v1/candidates/:id/marlins', async (req, env, ctx, p) => {
 });
 
 
+// ── Onboarding: verify-docs-and-mark-ready ────────────────────────────────────
+//
+// Required document types for SEA_BASED — all must be present AND unexpired.
+// Stored in the worker for v1; can be promoted to program_settings later.
+const SEA_BASED_REQUIRED_DOC_TYPES = ['PASSPORT', 'SEAMAN_BOOK', 'STCW_BASIC', 'MEDICAL_CERT', 'YELLOW_FEVER', 'C1D_VISA'];
+
+R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
+
+  const c = await env.DB.prepare('SELECT id,status,pipeline,archived_at FROM candidates WHERE id=?').bind(p.candidateId).first();
+  if (!c) return err('Candidate not found', 404);
+  if (c.archived_at) return err('Candidate is archived', 422);
+  if (c.pipeline !== 'SEA_BASED') return err('Only Sea-Based candidates have this step', 422);
+  if (c.status !== 'ONBOARDING') return err(`Candidate must be in ONBOARDING (is ${c.status})`, 422);
+
+  // Inspect documents (type normalized to UPPER_SNAKE via migration_v6 backfill).
+  const { results: docs } = await env.DB.prepare(
+    `SELECT UPPER(REPLACE(type,'-','_')) AS type, expiration_date
+       FROM documents WHERE candidate_id=?`
+  ).bind(p.candidateId).all();
+
+  const today = new Date().toISOString().slice(0, 10);
+  const haveByType = new Map();
+  for (const d of (docs || [])) {
+    if (!haveByType.has(d.type)) haveByType.set(d.type, []);
+    haveByType.get(d.type).push(d);
+  }
+  const missing = [];
+  const expired = [];
+  for (const t of SEA_BASED_REQUIRED_DOC_TYPES) {
+    const set = haveByType.get(t);
+    if (!set || !set.length) { missing.push(t); continue; }
+    // any unexpired (or no expiry) instance is fine
+    const ok = set.some(d => !d.expiration_date || d.expiration_date > today);
+    if (!ok) expired.push(t);
+  }
+  if (missing.length || expired.length) {
+    return json({ error: 'Required documents missing or expired', missing, expired, required: SEA_BASED_REQUIRED_DOC_TYPES }, 422);
+  }
+
+  const now = new Date().toISOString();
+  const result = await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE candidates SET status='READY_TO_DEPLOY', updated_at=? WHERE id=? AND status='ONBOARDING'"
+    ).bind(now, p.candidateId),
+    env.DB.prepare(
+      `INSERT INTO pipeline_stage_history (id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)
+       VALUES (?,?, 'ONBOARDING','READY_TO_DEPLOY', ?, 'Documents verified — ready to deploy', json(?))`
+    ).bind(cuid(), p.candidateId, u.id, JSON.stringify({ verified_types: SEA_BASED_REQUIRED_DOC_TYPES })),
+  ]);
+  if (!result[0]?.meta || result[0].meta.changes !== 1) {
+    return err('Candidate state changed concurrently', 409);
+  }
+  return json({ success: true, toStatus: 'READY_TO_DEPLOY', verifiedTypes: SEA_BASED_REQUIRED_DOC_TYPES });
+});
+
+
+// ── Deployments ledger (Sea-Based active sea-duty log) ────────────────────────
+//
+// The master profile STAYS in the candidates table; deployments rows are an
+// append-only ledger. Partial UNIQUE index uq_deploy_one_active enforces at
+// most one ACTIVE deployment per candidate at the DB layer.
+
+R.post('/api/v1/sea/deployments', async (req, env) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const b = await req.json().catch(() => ({}));
+  const { candidateId, vesselName, signOnDate, contractDurationMonths, signOnPort, position, notes } = b;
+  if (!candidateId || !vesselName || !signOnDate || !contractDurationMonths) {
+    return err('candidateId, vesselName, signOnDate, contractDurationMonths required');
+  }
+  const months = parseInt(contractDurationMonths, 10);
+  if (isNaN(months) || months < 1 || months > 24) return err('contractDurationMonths must be 1–24', 422);
+
+  const c = await env.DB.prepare(
+    `SELECT c.id, c.first_name, c.last_name, c.status, c.pipeline,
+            c.endorsed_client_id, cl.name AS client_name,
+            (SELECT id FROM deployments WHERE candidate_id = c.id AND status = 'ACTIVE' LIMIT 1) AS active_deployment_id
+       FROM candidates c
+       LEFT JOIN clients cl ON cl.id = c.endorsed_client_id
+      WHERE c.id = ?`
+  ).bind(candidateId).first();
+  if (!c) return err('Candidate not found', 404);
+  if (c.pipeline !== 'SEA_BASED') return err('Not a Sea-Based candidate', 422);
+  if (c.status !== 'READY_TO_DEPLOY') return err(`Candidate must be READY_TO_DEPLOY (is ${c.status})`, 422);
+  if (!c.endorsed_client_id) return err('No active client on candidate — re-endorse first', 422);
+  if (c.active_deployment_id) return json({ error: 'Candidate already has an ACTIVE deployment', deploymentId: c.active_deployment_id }, 409);
+
+  const deploymentId = cuid();
+  const fullName     = [c.first_name, c.last_name].filter(Boolean).join(' ');
+  const meta         = JSON.stringify({ deployment_id: deploymentId, vessel: vesselName, sign_on_date: signOnDate, duration_months: months });
+
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO deployments
+         (id, candidate_id, candidate_full_name, client_id, client_name,
+          vessel_name, sign_on_date, contract_duration_months,
+          sign_on_port, position, status, notes, created_by_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?, 'ACTIVE', ?, ?)`
+    ).bind(deploymentId, candidateId, fullName,
+           c.endorsed_client_id, c.client_name,
+           vesselName, signOnDate, months,
+           signOnPort || null, position || null, notes || null, u.id),
+    env.DB.prepare(
+      "UPDATE candidates SET status='DEPLOYED', updated_at=datetime('now') WHERE id=? AND status='READY_TO_DEPLOY'"
+    ).bind(candidateId),
+    env.DB.prepare(
+      `INSERT INTO pipeline_stage_history (id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)
+       VALUES (?, ?, 'READY_TO_DEPLOY','DEPLOYED', ?, 'Deployment created', json(?))`
+    ).bind(cuid(), candidateId, u.id, meta),
+  ]);
+
+  // Compensation: if CAS missed, mark the deployment CANCELLED (the partial
+  // unique index already blocked any second concurrent ACTIVE row anyway).
+  const candResult = results[1];
+  if (!candResult?.meta || candResult.meta.changes !== 1) {
+    await env.DB.prepare(
+      "UPDATE deployments SET status='CANCELLED', sign_off_reason='Concurrent state change', updated_at=datetime('now') WHERE id=?"
+    ).bind(deploymentId).run();
+    return err('Candidate state changed during deployment creation', 409);
+  }
+
+  return json({ success: true, deploymentId, toStatus: 'DEPLOYED' }, 201);
+});
+
+
+R.post('/api/v1/sea/deployments/:id/close', async (req, env, ctx, p) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
+  const b = await req.json().catch(() => ({}));
+  const { status, signOffDate, signOffReason } = b;
+  if (!['COMPLETED', 'TERMINATED', 'CANCELLED'].includes(status)) {
+    return err("status must be 'COMPLETED', 'TERMINATED', or 'CANCELLED'", 422);
+  }
+  if (!signOffDate) return err('signOffDate required');
+
+  const d = await env.DB.prepare('SELECT id, candidate_id, status FROM deployments WHERE id=?').bind(p.id).first();
+  if (!d) return err('Deployment not found', 404);
+  if (d.status !== 'ACTIVE') return err(`Deployment is not ACTIVE (is ${d.status})`, 409);
+
+  const now = new Date().toISOString();
+  const results = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE deployments
+          SET status=?, sign_off_date=?, sign_off_reason=?, closed_by_id=?, updated_at=?
+        WHERE id=? AND status='ACTIVE'`
+    ).bind(status, signOffDate, signOffReason || null, u.id, now, p.id),
+    env.DB.prepare(
+      "UPDATE candidates SET status='ONBOARDING', updated_at=? WHERE id=? AND status='DEPLOYED'"
+    ).bind(now, d.candidate_id),
+    env.DB.prepare(
+      `INSERT INTO pipeline_stage_history (id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)
+       VALUES (?, ?, 'DEPLOYED','ONBOARDING', ?, 'Deployment closed — candidate available for re-deployment', json(?))`
+    ).bind(cuid(), d.candidate_id, u.id, JSON.stringify({ deployment_id: p.id, close_status: status }))
+  ]);
+  if (!results[0]?.meta || results[0].meta.changes !== 1) {
+    return err('Deployment state changed concurrently', 409);
+  }
+  return json({ success: true, deploymentStatus: status, candidateStatus: 'ONBOARDING' });
+});
+
+
+R.get('/api/v1/sea/deployments', async (req, env, ctx, p, url) => {
+  const u = await auth(req, env);
+  const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM', 'CLIENT_CONTACT'); if (re) return re;
+  const status = url.searchParams.get('status');
+  const search = url.searchParams.get('search');
+  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
+  const limit = Math.min(100, parseInt(url.searchParams.get('limit') || '50'));
+  const offset = (page - 1) * limit;
+  const where = []; const binds = [];
+  if (status) { where.push('d.status=?'); binds.push(status); }
+  if (search) { where.push('(d.candidate_full_name LIKE ? OR d.vessel_name LIKE ? OR d.client_name LIKE ?)'); binds.push(`%${search}%`, `%${search}%`, `%${search}%`); }
+  if (u.role === 'RECRUITER') { where.push('c.assigned_recruiter_id=?'); binds.push(u.id); }
+  if (u.role === 'CLIENT_CONTACT') {
+    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
+    if (!cc) return err('Forbidden', 403);
+    where.push('d.client_id=?'); binds.push(cc.client_id);
+  }
+  const wc = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const [rows, tot] = await Promise.all([
+    env.DB.prepare(
+      `SELECT d.*
+         FROM deployments d
+         LEFT JOIN candidates c ON c.id = d.candidate_id
+         ${wc}
+         ORDER BY d.sign_on_date DESC
+         LIMIT ? OFFSET ?`
+    ).bind(...binds, limit, offset).all(),
+    env.DB.prepare(`SELECT COUNT(*) cnt FROM deployments d LEFT JOIN candidates c ON c.id=d.candidate_id ${wc}`).bind(...binds).first()
+  ]);
+  return json({ deployments: rows.results || [], total: tot?.cnt || 0, page, limit });
+});
+
+
+R.get('/api/v1/candidates/:id/deployments', async (req, env, ctx, p) => {
+  const u = await auth(req, env);
+  const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM deployments WHERE candidate_id=? ORDER BY sign_on_date DESC'
+  ).bind(p.id).all();
+  return json({ deployments: results || [] });
+});
+
+
 // ── Client decision on an endorsement (multi-client model) ────────────────────
 // Replaces the per-candidate /transitions/client-approved and /client-rejected
 // pattern: every decision is now scoped to a specific endorsement row.

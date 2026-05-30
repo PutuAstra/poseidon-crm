@@ -336,7 +336,8 @@ const PIPELINE_STAGES = {
     { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
     { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
     { id: 'ONBOARDING',        label: 'Onboarding',      icon: '⚓' },
-    { id: 'C1D_VISA',          label: 'C1-D Visa',       icon: '🛂' },
+    { id: 'READY_TO_DEPLOY',   label: 'Ready to Deploy', icon: '✅' },
+    { id: 'DEPLOYMENTS',       label: 'Deployments',     icon: '🚢' },
     { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
   ],
@@ -781,6 +782,8 @@ async function loadStagePane() {
 
   // FINAL_INTERVIEW uses a custom grouped-by-client renderer (multi-client model).
   if (stage === 'FINAL_INTERVIEW') return loadFinalInterviewGrouped(prog);
+  // DEPLOYMENTS is a separate ledger, not a candidate-status filter.
+  if (stage === 'DEPLOYMENTS') return loadDeploymentsLedger(prog);
 
   const search    = document.getElementById('stage-pane-search')?.value || '';
   const recruiter = document.getElementById('stage-pane-recruiter')?.value || '';
@@ -801,6 +804,49 @@ async function loadStagePane() {
       || `<tr><td colspan="5" class="table-empty">No candidates in ${sm?.label || stage}</td></tr>`;
     renderPagination('stage-pane-pagination', d.page, d.totalPages,
       p => { _stagePanePage = p; loadStagePane(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Deployments ledger pane: rows from the deployments table, NOT a candidate-status
+// filter. The master profile stays in the candidates table at status='DEPLOYED'.
+async function loadDeploymentsLedger(prog) {
+  const thead = document.getElementById('stage-pane-thead');
+  const tbody = document.getElementById('stage-pane-tbody');
+  thead.innerHTML = '<th>Candidate</th><th>Client</th><th>Vessel</th><th>Sign-On</th><th>Duration</th><th>Status</th><th></th>';
+  tbody.innerHTML = `<tr><td colspan="7" class="table-empty"><span class="spinner"></span></td></tr>`;
+  document.getElementById('stage-pane-pagination').innerHTML = '';
+
+  const search = document.getElementById('stage-pane-search')?.value?.trim() || '';
+  const params = new URLSearchParams({ limit: 50 });
+  if (search) params.set('search', search);
+
+  try {
+    const d = await api('GET', `/sea/deployments?${params}`);
+    const rows = d.deployments || [];
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="table-empty">No deployments yet</td></tr>`;
+      return;
+    }
+    const badge = st => {
+      const cls = st === 'ACTIVE' ? 'badge-deployed'
+                : st === 'COMPLETED' ? 'badge-approved'
+                : 'badge-new';
+      return `<span class="badge ${cls}">${st}</span>`;
+    };
+    tbody.innerHTML = rows.map(r => `
+      <tr onclick="openDetail('${esc(r.candidate_id)}')" style="cursor:pointer">
+        <td><div style="font-weight:600">${esc(r.candidate_full_name)}</div></td>
+        <td class="text-muted">${esc(r.client_name)}</td>
+        <td>${esc(r.vessel_name)}</td>
+        <td class="text-muted">${r.sign_on_date ? new Date(r.sign_on_date).toLocaleDateString() : '—'}</td>
+        <td class="text-muted">${r.contract_duration_months}m</td>
+        <td>${badge(r.status)}</td>
+        <td style="text-align:right">
+          ${r.status === 'ACTIVE'
+            ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();closeSeaDeployment('${esc(r.id)}')">⚓ Close</button>`
+            : `<span class="text-muted text-sm">${r.sign_off_date ? new Date(r.sign_off_date).toLocaleDateString() : ''}</span>`}
+        </td>
+      </tr>`).join('');
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -1581,6 +1627,12 @@ async function openCandidateDetail(id) {
       if (STATE.sfFieldConfig === undefined) fetches.push(api('GET', '/settings/seafarer-fields').then(cfg => { STATE.sfFieldConfig = cfg || {}; }).catch(() => { STATE.sfFieldConfig = {}; }));
       // Marlins status: shown as a chip in the action bar + drives the offer-send gate.
       fetches.push(api('GET', `/candidates/${c.id}/marlins`).then(m => { STATE.currentCandidate.marlins = m; }).catch(() => { STATE.currentCandidate.marlins = null; }));
+      // Active deployment (only meaningful at DEPLOYED, but harmless to fetch always)
+      if (c.status === 'DEPLOYED') {
+        fetches.push(api('GET', `/candidates/${c.id}/deployments`).then(d => {
+          STATE.currentCandidate.activeDeployment = (d.deployments || []).find(x => x.status === 'ACTIVE') || null;
+        }).catch(() => { STATE.currentCandidate.activeDeployment = null; }));
+      }
       if (fetches.length) Promise.all(fetches).then(() => { renderDetailOverview(STATE.currentCandidate); }).catch(() => {});
     }
   } catch (e) { toast(e.message, 'error'); }
@@ -1625,8 +1677,24 @@ function renderDetailOverview(c) {
       <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Resend Offer</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
     }
-    if (s === 'ONBOARDING') return `
+    if (s === 'ONBOARDING') {
+      const readyBtn = c.pipeline === 'SEA_BASED'
+        ? `<button class="btn btn-primary btn-sm" onclick="markSeaReadyToDeploy('${esc(c.id)}')">✅ Verify Documents & Mark Ready</button>`
+        : '';
+      return `
+      ${readyBtn}
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    }
+    if (s === 'READY_TO_DEPLOY') return `
+      <button class="btn btn-primary btn-sm" onclick="createSeaDeployment('${esc(c.id)}')">🚢 Create Deployment</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    if (s === 'DEPLOYED') {
+      const dep = c.activeDeployment;
+      const closeBtn = dep
+        ? `<button class="btn btn-primary btn-sm" onclick="closeSeaDeployment('${esc(dep.id)}')">⚓ Close Deployment</button>`
+        : `<span style="font-size:11px;color:var(--text-muted)">No active deployment row — out of sync</span>`;
+      return `${closeBtn}`;
+    }
     if (s === 'ARCHIVED') return `
       <button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="transitionRestore('${esc(c.id)}')">↩ Restore</button>`;
     return '';
@@ -1877,6 +1945,58 @@ async function recordMarlinsTest(candidateId) {
     if (r.unlocked) toast(`Marlins ${r.result} ✓ — offer letter unlocked`, 'success');
     else toast(`Marlins ${r.result} (${r.score} < threshold ${r.threshold})`, 'info');
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function markSeaReadyToDeploy(candidateId) {
+  if (!confirm('Verify required documents and mark candidate Ready to Deploy?\n\n(Required: Passport, Seaman Book, STCW Basic, Medical Cert, Yellow Fever, C1/D Visa — all present and unexpired.)')) return;
+  try {
+    await api('POST', `/sea/onboarding/${candidateId}/ready`, {});
+    toast('Documents verified → Ready to Deploy ✓', 'success');
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) {
+    // Surface the missing/expired lists if the worker returned them.
+    let body = null;
+    try { body = JSON.parse(e.message); } catch {}
+    if (body?.missing?.length || body?.expired?.length) {
+      const missing = body.missing?.length ? `\nMissing: ${body.missing.join(', ')}` : '';
+      const expired = body.expired?.length ? `\nExpired: ${body.expired.join(', ')}` : '';
+      alert(`Cannot mark ready:${missing}${expired}`);
+    } else {
+      toast(e.message, 'error');
+    }
+  }
+}
+
+async function createSeaDeployment(candidateId) {
+  const vesselName = (prompt('Vessel name:') || '').trim();
+  if (!vesselName) return;
+  const signOnDate = (prompt('Sign-on date (YYYY-MM-DD):') || '').trim();
+  if (!signOnDate || isNaN(Date.parse(signOnDate))) { toast('Invalid sign-on date', 'error'); return; }
+  const months = parseInt(prompt('Contract duration in months (1–24):') || '', 10);
+  if (isNaN(months) || months < 1 || months > 24) { toast('Duration must be 1–24 months', 'error'); return; }
+  const signOnPort = (prompt('Sign-on port (optional):') || '').trim() || undefined;
+  const position   = (prompt('Position / rank (optional):') || '').trim() || undefined;
+  try {
+    const r = await api('POST', '/sea/deployments', {
+      candidateId, vesselName, signOnDate, contractDurationMonths: months, signOnPort, position
+    });
+    toast(`Deployed to ${vesselName} ✓`, 'success');
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function closeSeaDeployment(deploymentId) {
+  const status = (prompt('Close status — type one of: COMPLETED, TERMINATED, CANCELLED') || '').trim().toUpperCase();
+  if (!['COMPLETED','TERMINATED','CANCELLED'].includes(status)) { toast('Invalid close status', 'error'); return; }
+  const signOffDate = (prompt('Sign-off date (YYYY-MM-DD):') || '').trim();
+  if (!signOffDate || isNaN(Date.parse(signOffDate))) { toast('Invalid sign-off date', 'error'); return; }
+  const signOffReason = (prompt('Sign-off reason (optional):') || '').trim() || undefined;
+  try {
+    await api('POST', `/sea/deployments/${deploymentId}/close`, { status, signOffDate, signOffReason });
+    toast('Deployment closed — candidate available for re-deployment', 'success');
+    const cid = STATE.currentCandidate?.id;
+    if (cid) openCandidateDetail(cid);
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -5822,8 +5942,10 @@ function statusBadge(s) {
     NEW_SUBMISSION:      'badge-new',
     CANDIDATES:          'badge-active',
     FINAL_INTERVIEW:     'badge-hold',
-    OFFER_LETTER: 'badge-approved',
+    OFFER_LETTER:        'badge-approved',
     ONBOARDING:          'badge-deployed',
+    READY_TO_DEPLOY:     'badge-approved',
+    DEPLOYED:            'badge-deployed',
     ARCHIVED:            'badge-new',
   };
   return `<span class="badge ${map[s]||'badge-new'}">${statusLabel(s)}</span>`;
@@ -5834,8 +5956,10 @@ function statusLabel(s) {
     NEW_SUBMISSION:       'New Submission',
     CANDIDATES:           'Candidates',
     FINAL_INTERVIEW:      'Final Interview',
-    OFFER_LETTER:  'Offer Letter',
+    OFFER_LETTER:         'Offer Letter',
     ONBOARDING:           'Onboarding',
+    READY_TO_DEPLOY:      'Ready to Deploy',
+    DEPLOYED:             'Deployed',
     ARCHIVED:             'Archived',
     // Legacy labels (still used in history timeline)
     IN_REVIEW:'In Review', AVAILABLE:'Available', ENGAGED:'Engaged',
