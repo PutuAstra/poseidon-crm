@@ -1802,14 +1802,15 @@ function renderDetailOverview(c) {
     const sp = c.seafarerProfile || {};
     const config = getMergedSfConfig();
 
-    // Dynamic profile sections — only fields flagged for Overview, with values,
-    // AND whose appearsAt stage has already been reached.
+    // Group fields by section. Fields show as long as they're flagged for
+    // Overview and their visible-stages array includes the current status —
+    // empty values render as '—' (matches the Profile tab behaviour) so
+    // configured fields are visible before any data has been entered.
     const fieldsBySec = {};
     config.fields
       .filter(f => f.visible !== false && f.showInOverview !== false && _sfFieldVisibleAt(f, c.status))
       .forEach(f => {
         const raw = (f.source === 'c' ? c : sp)[f.key];
-        if (raw == null || raw === '') return;
         if (!fieldsBySec[f.section]) fieldsBySec[f.section] = [];
         fieldsBySec[f.section].push({ f, raw });
       });
@@ -1822,12 +1823,13 @@ function renderDetailOverview(c) {
       items.forEach(({ f, raw }) => {
         const reg = SEAFARER_FIELD_REGISTRY.find(r => r.key === f.key) || f;
         let disp;
-        if      (reg.type === 'date')     { disp = fmtDate(raw); }
-        else if (reg.type === 'currency') { disp = '$' + Number(raw).toLocaleString(); }
-        else if (reg.type === 'checkbox') { disp = raw ? 'Yes' : 'No'; }
-        else if (reg.type === 'textarea') { disp = `<span style="white-space:pre-wrap">${esc(String(raw))}</span>`; }
-        else if (reg.type === 'url')      { disp = `<a href="${esc(String(raw))}" target="_blank" style="color:var(--blue)">${esc(String(raw))}</a>`; }
-        else { disp = esc(String(raw)); }
+        if (raw == null || raw === '')         { disp = '—'; }
+        else if (reg.type === 'date')          { disp = fmtDate(raw); }
+        else if (reg.type === 'currency')      { disp = '$' + Number(raw).toLocaleString(); }
+        else if (reg.type === 'checkbox')      { disp = raw ? 'Yes' : 'No'; }
+        else if (reg.type === 'textarea')      { disp = `<span style="white-space:pre-wrap">${esc(String(raw))}</span>`; }
+        else if (reg.type === 'url')           { disp = `<a href="${esc(String(raw))}" target="_blank" style="color:var(--blue)">${esc(String(raw))}</a>`; }
+        else                                   { disp = esc(String(raw)); }
         const full = (reg.type === 'textarea') ? ' style="grid-column:1/-1"' : '';
         sectionsHtml += `<div class="info-item"${full}><label>${esc(f.label)}</label><span>${disp}</span></div>`;
       });
