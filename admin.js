@@ -1440,7 +1440,7 @@ async function loadFinalInterview() {
 async function loadOfferLetter() {
   const search = document.getElementById('ol-search')?.value?.trim() || '';
   const page = STATE.olPage || 1;
-  const params = new URLSearchParams({ page, limit: 25, status: 'OFFER_LETTER_SIGNED' });
+  const params = new URLSearchParams({ page, limit: 25, status: 'OFFER_LETTER' });
   if (search) params.set('search', search);
   try {
     const d = await api('GET', `/candidates?${params}`);
@@ -1546,7 +1546,7 @@ function renderDetailOverview(c) {
       <button class="btn btn-primary btn-sm" onclick="transitionClientApproved('${esc(c.id)}')">✓ Client Approved</button>
       <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Send Offer Letter</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionClientRejected('${esc(c.id)}')">✗ Client Rejected</button>`;
-    if (s === 'OFFER_LETTER_SIGNED') return `
+    if (s === 'OFFER_LETTER') return `
       <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Resend Offer</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
     if (s === 'ONBOARDING') return `
@@ -1754,8 +1754,8 @@ async function transitionArchive(candidateId) {
 }
 
 async function transitionRestore(candidateId) {
-  const target = prompt('Restore to which state?\n(NEW_SUBMISSION / CANDIDATES / FINAL_INTERVIEW / OFFER_LETTER_SIGNED / ONBOARDING)');
-  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER_SIGNED','ONBOARDING'];
+  const target = prompt('Restore to which state?\n(NEW_SUBMISSION / CANDIDATES / FINAL_INTERVIEW / OFFER_LETTER / ONBOARDING)');
+  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING'];
   if (!target || !VALID.includes(target.toUpperCase().trim())) { toast('Invalid state', 'error'); return; }
   try {
     await api('POST', `/candidates/${candidateId}/transitions/restore`, { restoreToStatus: target.toUpperCase().trim() });
@@ -5646,7 +5646,7 @@ function statusBadge(s) {
     NEW_SUBMISSION:      'badge-new',
     CANDIDATES:          'badge-active',
     FINAL_INTERVIEW:     'badge-hold',
-    OFFER_LETTER_SIGNED: 'badge-approved',
+    OFFER_LETTER: 'badge-approved',
     ONBOARDING:          'badge-deployed',
     ARCHIVED:            'badge-new',
   };
@@ -5658,7 +5658,7 @@ function statusLabel(s) {
     NEW_SUBMISSION:       'New Submission',
     CANDIDATES:           'Candidates',
     FINAL_INTERVIEW:      'Final Interview',
-    OFFER_LETTER_SIGNED:  'Offer Letter',
+    OFFER_LETTER:  'Offer Letter',
     ONBOARDING:           'Onboarding',
     ARCHIVED:             'Archived',
     // Legacy labels (still used in history timeline)
@@ -5677,8 +5677,8 @@ function nextStages(current, pipeline) {
   const map = {
     NEW_SUBMISSION:      ['CANDIDATES', 'ARCHIVED'],
     CANDIDATES:          ['FINAL_INTERVIEW', 'ARCHIVED'],
-    FINAL_INTERVIEW:     ['OFFER_LETTER_SIGNED', 'ARCHIVED'],
-    OFFER_LETTER_SIGNED: ['ONBOARDING', 'ARCHIVED'],
+    FINAL_INTERVIEW:     ['OFFER_LETTER', 'ARCHIVED'],
+    OFFER_LETTER: ['ONBOARDING', 'ARCHIVED'],
     ONBOARDING:          ['ARCHIVED'],
     ARCHIVED:            ['NEW_SUBMISSION', 'CANDIDATES'],
   };

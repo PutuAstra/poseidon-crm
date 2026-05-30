@@ -436,7 +436,7 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
   const { toStatus, reason, metadata } = await req.json();
   if (!toStatus) return err('toStatus required');
-  const VALID_STATES = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER_SIGNED','ONBOARDING','ARCHIVED'];
+  const VALID_STATES = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING','ARCHIVED'];
   if (!VALID_STATES.includes(toStatus)) return err(`Invalid state: ${toStatus}`, 422);
   const c = await env.DB.prepare('SELECT id,status,pipeline FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
@@ -511,16 +511,22 @@ R.post('/api/v1/candidates/:id/transitions/client-approved', async (req, env, ct
   if (!c) return err('Not found', 404);
   if (c.status !== 'FINAL_INTERVIEW') return err(`Guard failed: expected FINAL_INTERVIEW, got ${c.status}`, 422);
   if (u.role === 'CLIENT_CONTACT') {
+    // Forward-compatible scope: a CLIENT_CONTACT user may approve only if their
+    // client has an active endorsement on this candidate. Avoids relying on
+    // candidates.endorsed_client_id which is intended to be NULL during
+    // FINAL_INTERVIEW once multi-client endorsement lands.
     const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc || cc.client_id !== c.endorsed_client_id) return err('Forbidden', 403);
+    if (!cc) return err('Forbidden', 403);
+    const endo = await env.DB.prepare("SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=? AND status IN ('PENDING','SCHEDULED','APPROVED')").bind(p.id, cc.client_id).first();
+    if (!endo) return err('Forbidden', 403);
   }
   const now = new Date().toISOString();
   await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER_SIGNED',updated_at=? WHERE id=?").bind(now, p.id),
+    env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER',updated_at=? WHERE id=?").bind(now, p.id),
     env.DB.prepare("UPDATE client_endorsements SET status='APPROVED',decided_at=?,decision_notes=?,updated_at=? WHERE candidate_id=? AND client_id=?").bind(now, notes||null, now, p.id, c.endorsed_client_id||''),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'FINAL_INTERVIEW', 'OFFER_LETTER_SIGNED', u.id, notes||'Client approved')
+    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'FINAL_INTERVIEW', 'OFFER_LETTER', u.id, notes||'Client approved')
   ]);
-  return json({ success: true, toStatus: 'OFFER_LETTER_SIGNED' });
+  return json({ success: true, toStatus: 'OFFER_LETTER' });
 });
 
 R.post('/api/v1/candidates/:id/transitions/client-rejected', async (req, env, ctx, p) => {
@@ -530,8 +536,11 @@ R.post('/api/v1/candidates/:id/transitions/client-rejected', async (req, env, ct
   if (!c) return err('Not found', 404);
   if (c.status !== 'FINAL_INTERVIEW') return err(`Guard failed: expected FINAL_INTERVIEW, got ${c.status}`, 422);
   if (u.role === 'CLIENT_CONTACT') {
+    // Forward-compatible scope (see client-approved handler above for rationale).
     const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc || cc.client_id !== c.endorsed_client_id) return err('Forbidden', 403);
+    if (!cc) return err('Forbidden', 403);
+    const endo = await env.DB.prepare("SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=? AND status IN ('PENDING','SCHEDULED','APPROVED')").bind(p.id, cc.client_id).first();
+    if (!endo) return err('Forbidden', 403);
   }
   const now = new Date().toISOString();
   await env.DB.batch([
@@ -560,7 +569,7 @@ R.post('/api/v1/candidates/:id/transitions/archive', async (req, env, ctx, p) =>
 R.post('/api/v1/candidates/:id/transitions/restore', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN'); if (re) return re;
   const { restoreToStatus } = await req.json().catch(() => ({}));
-  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER_SIGNED','ONBOARDING'];
+  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING'];
   if (!restoreToStatus || !VALID.includes(restoreToStatus)) return err('Valid restoreToStatus required', 422);
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
@@ -586,7 +595,7 @@ R.post('/api/v1/candidates/:id/offer-letters', async (req, env, ctx, p) => {
   const { documentUrl, notes, signingPlatform } = await req.json().catch(() => ({}));
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
-  if (!['FINAL_INTERVIEW','OFFER_LETTER_SIGNED'].includes(c.status)) return err(`Guard failed: candidate must be in FINAL_INTERVIEW or OFFER_LETTER_SIGNED state`, 422);
+  if (!['FINAL_INTERVIEW','OFFER_LETTER'].includes(c.status)) return err(`Guard failed: candidate must be in FINAL_INTERVIEW or OFFER_LETTER stage`, 422);
   const now = new Date().toISOString();
   const id = cuid();
   await env.DB.prepare('INSERT INTO offer_letters(id,candidate_id,generated_by_id,document_url,notes,signing_platform,generated_at,created_at,updated_at)VALUES(?,?,?,?,?,?,?,?,?)')
@@ -624,8 +633,8 @@ R.post('/api/v1/offer-letters/:id/send', async (req, env, ctx, p) => {
   ];
   if (c.status === 'FINAL_INTERVIEW') {
     batchOps.push(
-      env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER_SIGNED',updated_at=? WHERE id=?").bind(now, c.id),
-      env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), c.id, 'FINAL_INTERVIEW', 'OFFER_LETTER_SIGNED', u.id, 'Offer letter sent for signing')
+      env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER',updated_at=? WHERE id=?").bind(now, c.id),
+      env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), c.id, 'FINAL_INTERVIEW', 'OFFER_LETTER', u.id, 'Offer letter sent for signing')
     );
   }
   await env.DB.batch(batchOps);
@@ -657,13 +666,16 @@ R.post('/api/v1/webhooks/signature-confirmed', async (req, env) => {
   if (!ol) return err('Offer letter not found', 404);
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(ol.candidate_id).first();
   if (!c) return err('Candidate not found', 404);
-  if (!['OFFER_LETTER_SIGNED','FINAL_INTERVIEW'].includes(c.status)) return json({ ignored: true, reason: 'Candidate not in signable state' });
+  if (!['OFFER_LETTER','FINAL_INTERVIEW'].includes(c.status)) return json({ ignored: true, reason: 'Candidate not in signable state' });
   const now = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare("UPDATE offer_letters SET signed_at=?,signed_blob=?,webhook_verified=1,webhook_received_at=?,updated_at=? WHERE id=?").bind(now, signedBlob||'confirmed', now, now, ol.id),
     env.DB.prepare("UPDATE candidates SET status='ONBOARDING',updated_at=? WHERE id=?").bind(now, ol.candidate_id),
     env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)').bind(cuid(), ol.candidate_id, c.status, 'ONBOARDING', null, 'Offer letter signed — auto-advanced to Onboarding', JSON.stringify({ offerId: ol.id, signingSessionId: signingSessionId||null }))
   ]);
+  // Portal access is unlocked at ONBOARDING (and only here). Best-effort — failure to
+  // send the activation email must not roll back the status advance.
+  try { await provisionPortal(env, ol.candidate_id); } catch (e) { console.error('Portal provision failed:', e?.message); }
   return json({ success: true, candidateId: ol.candidate_id, toStatus: 'ONBOARDING' });
 });
 
@@ -678,9 +690,13 @@ R.post('/api/v1/candidates/:id/assign-recruiter', async (req, env, ctx, p) => {
 
 R.post('/api/v1/candidates/:id/portal-invite', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const c = await env.DB.prepare('SELECT id,email,first_name,user_id FROM candidates WHERE id=?').bind(p.id).first();
+  const c = await env.DB.prepare('SELECT id,email,first_name,user_id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Candidate not found', 404);
   if (c.user_id) return err('Candidate has already activated their portal', 409);
+  // Portal is only available once the candidate enters the Onboarding stage (or beyond).
+  if (!['ONBOARDING','READY_TO_DEPLOY','DEPLOYED'].includes(c.status)) {
+    return err('Portal can only be invited once the candidate reaches Onboarding', 422);
+  }
   const result = await provisionPortal(env, p.id);
   return json({ sent: true, emailSent: result?.emailSent ?? false, activationLink: result?.link ?? null });
 });
@@ -1071,16 +1087,10 @@ R.patch('/api/v1/endorsements/:id', async (req, env, ctx, p) => {
   if (decisionNotes) upd.decision_notes = decisionNotes; if (scheduledAt) upd.scheduled_at = scheduledAt; if (interviewUrl) upd.interview_url = interviewUrl;
   upd.updated_at = new Date().toISOString();
   await env.DB.prepare(`UPDATE client_endorsements SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
-  if (status === 'APPROVED') {
-    const cand = await env.DB.prepare('SELECT status FROM candidates WHERE id=?').bind(e.candidate_id).first();
-    if (cand?.status === 'ENDORSED') {
-      await env.DB.batch([
-        env.DB.prepare("UPDATE candidates SET status='CLIENT_APPROVED',updated_at=datetime('now')WHERE id=?").bind(e.candidate_id),
-        env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,'ENDORSED','CLIENT_APPROVED',?,?)").bind(cuid(), e.candidate_id, u.id, 'Client approved')
-      ]);
-      await provisionPortal(env, e.candidate_id);
-    }
-  }
+  // NOTE: legacy ENDORSED → CLIENT_APPROVED branch removed.
+  // Candidate-level approval flow now lives in /api/v1/candidates/:id/transitions/client-approved.
+  // Portal provisioning is gated to the ONBOARDING transition (signature-confirmed webhook
+  // and the /portal-invite endpoint) — never from the endorsement decision itself.
   return json({ success: true });
 });
 
@@ -1185,10 +1195,19 @@ R.get('/api/v1/candidates/:id/documents/:docId/download-url', async (req, env, c
 // CANDIDATE PORTAL
 // ═════════════════════════════════════════════════════════════════════════════
 
+// Portal access gate: candidate must be in Onboarding or beyond.
+// (Active portal_user records are only created at the ONBOARDING transition, but a
+//  SUPER_ADMIN restore could legally move a candidate back to an earlier stage —
+//  this gate ensures portal data isn't reachable in that case.)
+const PORTAL_ALLOWED_STATUSES = ['ONBOARDING', 'READY_TO_DEPLOY', 'DEPLOYED'];
+
 R.get('/api/v1/portal/me', async (req, env) => {
   const u = await auth(req, env); const re = role(u, 'CANDIDATE'); if (re) return re;
   const c = await env.DB.prepare('SELECT*FROM candidates WHERE user_id=?').bind(u.id).first();
   if (!c) return err('Profile not found', 404);
+  if (!PORTAL_ALLOWED_STATUSES.includes(c.status)) {
+    return err('Portal is not yet available for your profile', 403);
+  }
   const [docs, hist] = await Promise.all([
     env.DB.prepare('SELECT id,type,label,document_number,issuance_date,expiration_date,file_name,is_verified,created_at FROM documents WHERE candidate_id=? ORDER BY created_at DESC').bind(c.id).all(),
     env.DB.prepare('SELECT from_status,to_status,created_at FROM pipeline_stage_history WHERE candidate_id=? ORDER BY created_at ASC').bind(c.id).all()
@@ -1198,8 +1217,11 @@ R.get('/api/v1/portal/me', async (req, env) => {
 
 R.patch('/api/v1/portal/me', async (req, env) => {
   const u = await auth(req, env); const re = role(u, 'CANDIDATE'); if (re) return re;
-  const c = await env.DB.prepare('SELECT id FROM candidates WHERE user_id=?').bind(u.id).first();
+  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE user_id=?').bind(u.id).first();
   if (!c) return err('Not found', 404);
+  if (!PORTAL_ALLOWED_STATUSES.includes(c.status)) {
+    return err('Portal is not yet available for your profile', 403);
+  }
   const b = await req.json();
   const map = {
     first_name: b.first_name, last_name: b.last_name, phone: b.phone,
@@ -1708,7 +1730,7 @@ const FUNNEL = {
   },
 };
 // Offer-letter statuses (between final interview and onboarding) — same across pipelines
-const OFFER_STATUSES = ['OFFER_LETTER', 'OFFER_LETTER_SIGNED'];
+const OFFER_STATUSES = ['OFFER_LETTER'];
 
 // ── Per-workspace dashboard (strictly scoped by pipeline; recruiters see own rows)
 R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
