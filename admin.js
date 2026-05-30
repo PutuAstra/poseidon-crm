@@ -1658,7 +1658,7 @@ function renderDetailOverview(c) {
         : '';
       return `
       ${owBtn}
-      <button class="btn btn-primary btn-sm" onclick="transitionMoveForward('${esc(c.id)}')">✓ Move Forward</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="transitionMoveForward('${esc(c.id)}')">✓ Move Forward</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionNotMovingForward('${esc(c.id)}')">✗ Not Moving Forward</button>`;
     }
     if (s === 'CANDIDATES') {
@@ -1726,7 +1726,7 @@ function renderDetailOverview(c) {
       ${c.endorsed_client_name ? `<span style="background:var(--navy-mid);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--blue)">🏢 ${esc(c.endorsed_client_name)}</span>` : ''}
       <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
         ${stateActions}
-        ${!c.portal_activated_at ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="sendPortalInvite('${esc(c.id)}')">Portal Invite</button>` : ''}
+        ${(!c.portal_activated_at && ['ONBOARDING','READY_TO_DEPLOY','DEPLOYED'].includes(c.status)) ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="sendPortalInvite('${esc(c.id)}')">Portal Invite</button>` : ''}
         <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit</button>
       </div>
     </div>`;
