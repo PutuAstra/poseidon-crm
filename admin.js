@@ -372,7 +372,8 @@ const LOCAL_SETTINGS_FIELDS = {
     { key: 'medical_validity_months',         label: 'Medical Cert Validity (months)',     type: 'number', placeholder: '24' },
     { key: 'stcw_reminder_days',              label: 'STCW Expiry Reminder (days)',        type: 'number', placeholder: '60' },
     { key: 'require_seaman_book',             label: "Require Seaman's Book",              type: 'checkbox', checkLabel: "Mark Seaman's Book as required at Candidates stage" },
-    { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default interview template dispatched from a Sea-Based candidate at the New Submission stage' },
+    { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default template dispatched at New Submission' },
+    { key: 'zeushire_two_way_interview_id',   label: 'ZeusHire Two-Way Interview ID',      placeholder: 'e.g. iv-xyz789', help: 'Default template scheduled at Candidates stage' },
   ],
   LAND_BASED: [
     { key: 'default_contract_type',   label: 'Default Contract Type',             placeholder: 'Fixed-Term' },
@@ -778,6 +779,9 @@ async function loadStagePane() {
   const addBtn = document.getElementById('stage-pane-add-btn');
   addBtn.style.display = stage === 'ARCHIVED' ? 'none' : '';
 
+  // FINAL_INTERVIEW uses a custom grouped-by-client renderer (multi-client model).
+  if (stage === 'FINAL_INTERVIEW') return loadFinalInterviewGrouped(prog);
+
   const search    = document.getElementById('stage-pane-search')?.value || '';
   const recruiter = document.getElementById('stage-pane-recruiter')?.value || '';
   const tbody = document.getElementById('stage-pane-tbody');
@@ -797,6 +801,57 @@ async function loadStagePane() {
       || `<tr><td colspan="5" class="table-empty">No candidates in ${sm?.label || stage}</td></tr>`;
     renderPagination('stage-pane-pagination', d.page, d.totalPages,
       p => { _stagePanePage = p; loadStagePane(); });
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Grouped Final Interview pane: only clients with ≥1 active endorsement show up.
+async function loadFinalInterviewGrouped(prog) {
+  const thead = document.getElementById('stage-pane-thead');
+  const tbody = document.getElementById('stage-pane-tbody');
+  thead.innerHTML = '';
+  tbody.innerHTML = `<tr><td class="table-empty"><span class="spinner"></span></td></tr>`;
+  document.getElementById('stage-pane-pagination').innerHTML = '';
+
+  try {
+    const d = await api('GET', `/endorsements/final-interview-grouped?pipeline=${prog}`);
+    const groups = d.groups || [];
+    if (!groups.length) {
+      tbody.innerHTML = `<tr><td class="table-empty">No active endorsements in Final Interview</td></tr>`;
+      return;
+    }
+
+    const html = groups.map(g => {
+      const rows = g.endorsements.map(e => {
+        const c = e.candidate;
+        const fullName = `${esc(c.firstName || '')} ${esc(c.lastName || '')}`.trim();
+        const statusBadge = e.status === 'PENDING'
+          ? `<span class="badge" style="background:#1e3a5f;color:#93c5fd">Pending</span>`
+          : `<span class="badge" style="background:#3b3a0d;color:#fde68a">Scheduled</span>`;
+        return `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding-left:24px" onclick="openDetail('${c.id}')">
+              <div style="font-weight:600">${fullName || '(unnamed)'}</div>
+              <div style="font-size:11px;color:var(--text-muted)">${esc(c.email || '')}</div>
+            </td>
+            <td>${statusBadge}</td>
+            <td class="text-muted text-sm">${e.scheduledAt ? new Date(e.scheduledAt).toLocaleString() : 'Not scheduled'}</td>
+            <td class="text-muted text-sm">${relTime(c.updatedAt)}</td>
+            <td style="text-align:right">
+              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();decideEndorsement('${esc(e.id)}','APPROVED')">✓ Approve</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="event.stopPropagation();decideEndorsement('${esc(e.id)}','REJECTED')">✗ Reject</button>
+            </td>
+          </tr>`;
+      }).join('');
+      return `
+        <tr style="background:var(--navy-mid)">
+          <td colspan="5" style="padding:12px 16px;font-weight:700;letter-spacing:.02em">
+            🏢 ${esc(g.client.name || '(unnamed client)')}
+            <span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:8px">${g.endorsements.length} active</span>
+          </td>
+        </tr>
+        ${rows}`;
+    }).join('');
+    tbody.innerHTML = html;
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -1546,13 +1601,19 @@ function renderDetailOverview(c) {
       <button class="btn btn-primary btn-sm" onclick="transitionMoveForward('${esc(c.id)}')">✓ Move Forward</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionNotMovingForward('${esc(c.id)}')">✗ Not Moving Forward</button>`;
     }
-    if (s === 'CANDIDATES') return `
-      <button class="btn btn-primary btn-sm" onclick="transitionEndorse('${esc(c.id)}')">→ Endorse to Client</button>
+    if (s === 'CANDIDATES') {
+      const twBtn = c.pipeline === 'SEA_BASED'
+        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendSeaTwoWayInterview('${esc(c.id)}')">🎥 Schedule Two-Way Interview</button>`
+        : '';
+      return `
+      ${twBtn}
+      <button class="btn btn-primary btn-sm" onclick="transitionEndorse('${esc(c.id)}')">→ Endorse to Clients</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
+    }
     if (s === 'FINAL_INTERVIEW') return `
-      <button class="btn btn-primary btn-sm" onclick="transitionClientApproved('${esc(c.id)}')">✓ Client Approved</button>
-      <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Send Offer Letter</button>
-      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionClientRejected('${esc(c.id)}')">✗ Client Rejected</button>`;
+      <span style="font-size:11px;color:var(--text-muted)">Per-client decisions → open the Final Interview pane</span>
+      <button class="btn btn-ghost btn-sm" onclick="showStage(_navProgram||'SEA_BASED','FINAL_INTERVIEW')">Open Final Interview pane</button>
+      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
     if (s === 'OFFER_LETTER') return `
       <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Resend Offer</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
@@ -1718,17 +1779,26 @@ async function transitionNotMovingForward(candidateId) {
 }
 
 async function transitionEndorse(candidateId) {
-  // Build client selector modal
   const clients = STATE.clients.filter(c => c.is_active);
   if (!clients.length) { toast('No active clients available', 'error'); return; }
-  const opts = clients.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
-  openModal('Endorse to Client', `
-    <p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Select the client to endorse this candidate to. This will move them to Final Interview.</p>
-    <div class="form-group">
-      <label>Client</label>
-      <select id="endorse-client-sel">${opts}</select>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+  // Filter clients by candidate's pipeline (Sea-Based → CRUISE_LINE, Land-Based → LAND_BASED, J1 → J1_SPONSOR)
+  const pipeline = STATE.currentCandidate?.pipeline;
+  const typeMap = { SEA_BASED: 'CRUISE_LINE', LAND_BASED: 'LAND_BASED', J1_PROGRAM: 'J1_SPONSOR' };
+  const wanted = typeMap[pipeline];
+  const eligible = wanted ? clients.filter(c => c.type === wanted) : clients;
+  if (!eligible.length) { toast(`No active ${wanted || 'matching'} clients available`, 'error'); return; }
+  const rows = eligible.map(c => `
+    <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
+      <input type="checkbox" class="endorse-client-cb" value="${esc(c.id)}" style="width:16px;height:16px">
+      <span style="flex:1">
+        <div style="font-weight:600">${esc(c.name)}</div>
+        ${c.country ? `<div style="font-size:11px;color:var(--text-muted)">${esc(c.country)}</div>` : ''}
+      </span>
+    </label>`).join('');
+  openModal('Endorse to Clients', `
+    <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">Select one or more clients to endorse this candidate to. They will all be added to the Final Interview pool — the first to approve wins; others get auto-withdrawn.</p>
+    <div style="max-height:340px;overflow-y:auto;margin-bottom:14px">${rows}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="confirmEndorse('${candidateId}')">Endorse → Final Interview</button>
     </div>
@@ -1736,14 +1806,50 @@ async function transitionEndorse(candidateId) {
 }
 
 async function confirmEndorse(candidateId) {
-  const clientId = document.getElementById('endorse-client-sel')?.value;
-  if (!clientId) { toast('Select a client', 'error'); return; }
+  const clientIds = [...document.querySelectorAll('.endorse-client-cb:checked')].map(el => el.value);
+  if (!clientIds.length) { toast('Select at least one client', 'error'); return; }
   try {
-    const d = await api('POST', `/candidates/${candidateId}/transitions/endorse`, { clientId });
-    toast(`Endorsed to ${d.clientName} → Final Interview ✓`, 'success');
+    const d = await api('POST', `/candidates/${candidateId}/transitions/endorse`, { clientIds });
+    const names = (d.clientNames || []).join(', ');
+    toast(`Endorsed to ${names || clientIds.length + ' client(s)'} → Final Interview ✓`, 'success');
     closeModal();
     loadCandidates();
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function sendSeaTwoWayInterview(candidateId) {
+  const scheduledAtRaw = prompt(
+    'Schedule a two-way ZeusHire interview.\n\n' +
+    'Enter the date & time (ISO 8601, e.g. 2026-06-15T14:00:00Z):'
+  );
+  if (!scheduledAtRaw) return;
+  const scheduledAt = scheduledAtRaw.trim();
+  if (isNaN(Date.parse(scheduledAt))) { toast('Invalid date — must be ISO 8601', 'error'); return; }
+  if (Date.parse(scheduledAt) <= Date.now()) { toast('scheduledAt must be in the future', 'error'); return; }
+  const duration = parseInt(prompt('Duration in minutes (default 45):') || '45', 10);
+  try {
+    const r = await api('POST', '/sea/interviews/two-way', { candidateId, scheduledAt, durationMinutes: duration });
+    toast('Two-way interview scheduled ✓', 'success');
+    if (r?.meetingUrl) {
+      try { await navigator.clipboard.writeText(r.meetingUrl); toast('Meeting URL copied to clipboard', 'success'); } catch {}
+      console.log('ZeusHire meeting URL:', r.meetingUrl);
+    }
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function decideEndorsement(endorsementId, decision) {
+  const verb = decision === 'APPROVED' ? 'approve' : 'reject';
+  const notes = prompt(`Notes for ${verb} (optional):`) ?? null;
+  if (notes === null) return;
+  try {
+    const r = await api('POST', `/endorsements/${endorsementId}/decision`, { decision, notes: notes || undefined });
+    toast(decision === 'APPROVED'
+      ? `${r.clientName || 'Client'} approved → Offer Letter ✓`
+      : `Rejected. Candidate ${r.candidateStatus === 'CANDIDATES' ? 'returned to Candidates' : 'stays in Final Interview (other clients still active)'}`,
+      'success');
+    if (typeof loadFinalInterview === 'function') loadFinalInterview();
   } catch (e) { toast(e.message, 'error'); }
 }
 
