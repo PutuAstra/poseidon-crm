@@ -1748,19 +1748,7 @@ function renderDetailOverview(c) {
     const sp = c.seafarerProfile || {};
     const config = getMergedSfConfig();
 
-    // Fixed meta row (always shown)
-    const metaHtml = `
-      <div style="margin-bottom:20px">
-        <div style="${SL}">Candidate Info</div>
-        <div class="info-grid">
-          <div class="info-item"><label>Phone</label><span>${esc(c.phone || '—')}</span></div>
-          <div class="info-item"><label>Portal</label><span>${c.portal_activated_at ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--text-muted)">Not activated</span>'}</span></div>
-          <div class="info-item"><label>Recruiter</label><span>${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</span></div>
-          <div class="info-item"><label>Created</label><span>${relTime(c.created_at)}</span></div>
-        </div>
-      </div>`;
-
-    // Dynamic profile sections — only fields with values
+    // Dynamic profile sections — only fields flagged for Overview, with values.
     const fieldsBySec = {};
     config.fields.filter(f => f.visible !== false && f.showInOverview !== false).forEach(f => {
       const raw = (f.source === 'c' ? c : sp)[f.key];
@@ -1790,29 +1778,33 @@ function renderDetailOverview(c) {
     });
 
     if (!sectionsHtml) {
-      sectionsHtml = `<p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">No profile data yet — go to the <strong>Profile</strong> tab to fill it in.</p>`;
+      sectionsHtml = `
+        <div style="background:var(--navy-mid);border:1px dashed var(--border);border-radius:10px;padding:24px;text-align:center;margin-bottom:20px">
+          <p style="color:var(--text-muted);font-size:13px;margin:0 0 12px">No Overview fields configured yet.</p>
+          <button class="btn btn-ghost btn-sm" onclick="openSfFieldSettings()">⚙ Customize Overview Fields</button>
+          <p style="color:var(--text-muted);font-size:11px;margin:10px 0 0">Choose which fields from <strong>Profile</strong> show up here.</p>
+        </div>`;
     }
 
-    el.innerHTML = `${actionBar}${metaHtml}${sectionsHtml}<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">${assignRecruiter}${notes}`;
+    // Subtle affordance: configure-overview link (only when fields exist)
+    const customizeLink = sectionsHtml.includes('No Overview fields configured') ? '' : `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--text-muted);padding:3px 8px" onclick="openSfFieldSettings()">⚙ Customize Overview Fields</button>
+      </div>`;
+
+    el.innerHTML = `${actionBar}${customizeLink}${sectionsHtml}<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">${assignRecruiter}${notes}`;
     return;
   }
 
-  // ── Fallback: hardcoded grid (non-SEA or still loading) ───────────────────
+  // ── Fallback: minimal Overview (non-SEA pipelines + Sea-Based still loading) ─
+  // Profile data lives in the Profile tab; Overview shows at-a-glance status only.
   const loading = c.pipeline === 'SEA_BASED'
     ? `<p style="color:var(--text-muted);font-size:13px;margin-bottom:16px">Loading profile data…</p>`
-    : '';
+    : `<p style="color:var(--text-muted);font-size:12px;margin-bottom:12px">Profile data lives under the <strong style="color:var(--text)">Profile</strong> tab. Customizable Overview fields are coming for this pipeline.</p>`;
   el.innerHTML = `${actionBar}
     ${loading}
     <div class="info-grid" style="margin-bottom:16px">
-      <div class="info-item"><label>Phone</label><span>${esc(c.phone || '—')}</span></div>
-      <div class="info-item"><label>Nationality</label><span>${esc(c.nationality || '—')}</span></div>
-      <div class="info-item"><label>Gender</label><span>${esc(c.gender || '—')}</span></div>
-      <div class="info-item"><label>Date of Birth</label><span>${esc(c.date_of_birth || '—')}</span></div>
-      <div class="info-item"><label>CTI Office</label><span>${esc(c.cti_office || '—')}</span></div>
-      <div class="info-item"><label>Employment Status</label><span>${esc(c.employment_status || '—')}</span></div>
-      <div class="info-item"><label>Origin</label><span>${esc(c.origin || '—')}</span></div>
       <div class="info-item"><label>Portal</label><span>${c.portal_activated_at ? '<span style="color:var(--success)">Active</span>' : '<span style="color:var(--text-muted)">Not activated</span>'}</span></div>
-      <div class="info-item"><label>Recruiter</label><span>${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</span></div>
       <div class="info-item"><label>Created</label><span>${relTime(c.created_at)}</span></div>
     </div>
     ${assignRecruiter}${notes}`;
