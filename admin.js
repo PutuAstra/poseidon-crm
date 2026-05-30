@@ -141,6 +141,26 @@ const DEFAULT_SF_SECTIONS = [
 
 let _sfCurrentSection = 'personal';
 
+// Pipeline stages a Profile section can opt into. If a section's visibleStages
+// array is empty or absent, the section is shown at every stage (back-compat).
+const SF_STAGE_CHOICES = [
+  { id: 'NEW_SUBMISSION',  label: 'New Sub.' },
+  { id: 'CANDIDATES',      label: 'Candidates' },
+  { id: 'FINAL_INTERVIEW', label: 'Final Int.' },
+  { id: 'OFFER_LETTER',    label: 'Offer' },
+  { id: 'ONBOARDING',      label: 'Onboarding' },
+  { id: 'READY_TO_DEPLOY', label: 'Ready' },
+  { id: 'DEPLOYED',        label: 'Deployed' },
+  { id: 'ARCHIVED',        label: 'Archived' },
+];
+
+function _sfSectionVisibleAt(sec, status) {
+  if (!sec) return true;
+  const list = sec.visibleStages;
+  if (!Array.isArray(list) || list.length === 0) return true;   // default: show everywhere
+  return list.includes(status);
+}
+
 function getMergedSfConfig() {
   const saved = STATE.sfFieldConfig || {};
   const fields = SEAFARER_FIELD_REGISTRY.map((r, i) => ({
@@ -1759,6 +1779,7 @@ function renderDetailOverview(c) {
 
     let sectionsHtml = '';
     config.sections.forEach(sec => {
+      if (!_sfSectionVisibleAt(sec, c.status)) return;
       const items = fieldsBySec[sec.id];
       if (!items || !items.length) return;
       sectionsHtml += `<div style="margin-bottom:20px"><div style="${SL}">${esc(sec.label)}</div><div class="info-grid">`;
@@ -4812,6 +4833,7 @@ function renderDetailProfile(c) {
       </div>`;
 
     config.sections.forEach(section => {
+      if (!_sfSectionVisibleAt(section, c.status)) return;
       const fields = fieldsBySec[section.id];
       if (!fields || !fields.length) return;
       html += `<div style="margin-bottom:20px"><div style="${SL}">${esc(section.label)}</div><div class="info-grid">`;
@@ -5129,6 +5151,10 @@ function _renderSfSettingsModal() {
             <button class="btn btn-primary btn-sm" onclick="sfShowAddFieldRow()" style="font-size:12px">+ Add Field</button>
           </div>
         </div>
+        <!-- Per-section stage visibility -->
+        <div id="sf-stage-row" style="padding:8px 0 10px;border-bottom:1px solid var(--border);margin-bottom:8px;flex-shrink:0">
+          ${_buildSfStageChips(curSec)}
+        </div>
         <!-- Scrollable fields table -->
         <div style="flex:1;overflow-y:auto;min-height:0" id="sf-fields-content">${_buildSfSectionRows(_sfCurrentSection)}</div>
         <!-- Add field form (hidden, fixed below table) -->
@@ -5167,6 +5193,54 @@ function _renderSfSettingsModal() {
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveSfFieldConfig()">Save Changes</button>
     </div>`, 'modal-xl');
+}
+
+// Renders the per-section stage-visibility chip row in the field-config modal.
+// Each stage is a click-to-toggle pill. When a section has NO stages flagged
+// it's treated as "show in all stages" (the default).
+function _buildSfStageChips(sec) {
+  if (!sec) return '';
+  const list = Array.isArray(sec.visibleStages) ? sec.visibleStages : [];
+  const allOn = list.length === 0; // empty = show at every stage
+  const chips = SF_STAGE_CHOICES.map(s => {
+    const on = allOn || list.includes(s.id);
+    const bg = on ? '#1e3a5f' : 'transparent';
+    const color = on ? '#93c5fd' : 'var(--text-muted)';
+    const border = on ? '1px solid var(--blue)' : '1px solid var(--border)';
+    return `<button type="button" onclick="sfSecToggleStage('${esc(s.id)}')"
+      style="background:${bg};color:${color};border:${border};border-radius:14px;padding:3px 10px;font-size:11px;cursor:pointer;line-height:1.4">${esc(s.label)}</button>`;
+  }).join('');
+  return `
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+      <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-right:4px">Visible at stages</span>
+      ${chips}
+      <button type="button" onclick="sfSecToggleStage('__all__')"
+        style="background:transparent;color:var(--text-muted);border:none;font-size:11px;cursor:pointer;text-decoration:underline;margin-left:auto">All</button>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);margin-top:6px">${allOn ? 'Shown at every stage. Click a chip to limit this section to specific stages.' : `Hidden at: ${SF_STAGE_CHOICES.filter(s => !list.includes(s.id)).map(s => s.label).join(', ') || '(none)'}`}</div>`;
+}
+
+// Toggle a stage on/off for the active section. The special '__all__' resets
+// back to the default "show at every stage" (empty visibleStages).
+function sfSecToggleStage(stageId) {
+  const sec = STATE._sfEditConfig.sections.find(s => s.id === _sfCurrentSection);
+  if (!sec) return;
+  if (stageId === '__all__') {
+    sec.visibleStages = [];
+  } else {
+    const list = Array.isArray(sec.visibleStages) ? [...sec.visibleStages] : [];
+    // If list was empty (= show in all), starting to constrain means we start
+    // with everything ON, then this click turns this one OFF.
+    if (list.length === 0) {
+      sec.visibleStages = SF_STAGE_CHOICES.filter(s => s.id !== stageId).map(s => s.id);
+    } else {
+      const i = list.indexOf(stageId);
+      if (i >= 0) list.splice(i, 1); else list.push(stageId);
+      // If now all stages are in the list, normalize back to empty array (= all).
+      sec.visibleStages = list.length === SF_STAGE_CHOICES.length ? [] : list;
+    }
+  }
+  document.getElementById('sf-stage-row').innerHTML = _buildSfStageChips(sec);
 }
 
 function _buildSfSidebar() {
