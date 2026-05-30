@@ -804,7 +804,7 @@ async function loadStagePane() {
     const rows = d.candidates || [];
     tbody.innerHTML = rows.map(c => getStagePaneRow(c, prog, stage)).join('')
       || `<tr><td colspan="5" class="table-empty">No candidates in ${sm?.label || stage}</td></tr>`;
-    renderPagination('stage-pane-pagination', d.page, d.totalPages,
+    renderPagination('stage-pane-pagination', d.total, d.limit || 25, d.page || _stagePanePage,
       p => { _stagePanePage = p; loadStagePane(); });
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1602,6 +1602,10 @@ async function loadArchive() {
     renderPagination('arc-pagination', d.total, 25, page, p => { STATE.arcPage = p; loadArchive(); });
   } catch (e) { toast(e.message, 'error'); }
 }
+
+// Short alias used by stage-pane row click handlers (inline onclick= needs a
+// global function reference; const at script top-level isn't always reachable).
+function openDetail(id) { return openCandidateDetail(id); }
 
 async function openCandidateDetail(id) {
   try {
