@@ -348,7 +348,7 @@ const PIPELINE_STAGES = {
     { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
     { id: 'ONBOARDING',        label: 'Onboarding',      icon: '🏨' },
     { id: 'READY_TO_DEPLOY',   label: 'Ready to Go',     icon: '✅' },
-    { id: 'DEPLOYMENTS',       label: 'Deployments',     icon: '🏢' },
+    { id: 'DEPLOYMENTS',       label: 'Placements',      icon: '🏢' },
     { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
   ],
