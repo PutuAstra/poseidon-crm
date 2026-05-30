@@ -1781,17 +1781,10 @@ function renderDetailOverview(c) {
       <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit</button>
     </div>`;
 
-  const assignRecruiter = `
-    <div style="margin-bottom:12px">
-      <label style="margin-bottom:6px">Assign Recruiter</label>
-      <div style="display:flex;gap:8px">
-        <select id="assign-recruiter-sel" style="flex:1">
-          <option value="">— Select Recruiter —</option>
-          ${STATE.recruiters.map(r => `<option value="${r.id}" ${r.id === c.assigned_recruiter_id ? 'selected' : ''}>${esc(r.first_name)} ${esc(r.last_name)}</option>`).join('')}
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="assignRecruiter('${c.id}')">Assign</button>
-      </div>
-    </div>`;
+  // Assign-Recruiter control now lives on the Interviews tab (the recruiter
+  // dispatches interviews + manages outreach). Overview stays focused on
+  // status + profile fields.
+  const assignRecruiter = '';
 
   const notes = c.internal_notes
     ? `<div style="margin-bottom:12px"><label>Internal Notes</label><p class="text-sm text-muted" style="margin-top:4px">${esc(c.internal_notes)}</p></div>`
@@ -2165,7 +2158,24 @@ async function assignRecruiter(candidateId) {
 function renderDetailInterviews(c) {
   const el = document.getElementById('dp-tab-interviews');
   const interviews = c.interviews || [];
-  el.innerHTML = `
+  const currentRec = c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : null;
+
+  const recruiterBlock = `
+    <div style="background:var(--navy-mid);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Assigned Recruiter</div>
+        <div style="font-size:13px;color:${currentRec ? 'var(--text)' : 'var(--text-muted)'};font-weight:${currentRec ? '600' : '400'}">${currentRec || 'Unassigned'}</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <select id="assign-recruiter-sel" style="flex:1">
+          <option value="">— Select Recruiter —</option>
+          ${STATE.recruiters.map(r => `<option value="${r.id}" ${r.id === c.assigned_recruiter_id ? 'selected' : ''}>${esc(r.first_name)} ${esc(r.last_name)}</option>`).join('')}
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="assignRecruiter('${c.id}')">${currentRec ? 'Reassign' : 'Assign'}</button>
+      </div>
+    </div>`;
+
+  el.innerHTML = recruiterBlock + `
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button class="btn btn-primary btn-sm" onclick="openSendInterviewModal('${c.id}')">Send Interview</button>
     </div>` +
