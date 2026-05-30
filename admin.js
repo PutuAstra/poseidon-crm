@@ -1706,26 +1706,7 @@ function renderDetailOverview(c) {
     return '';
   })();
 
-  // Status info as a flat caption line — clearly read-only, not interactive.
-  const PROG_LABEL = { J1_PROGRAM: '🎓 J1 Program', SEA_BASED: '🚢 Sea-Based', LAND_BASED: '🏨 Land-Based' };
-  const marlinsText = (() => {
-    if (c.pipeline !== 'SEA_BASED') return null;
-    const m = c.marlins;
-    if (!m || (!m.marlinsPassedAt && !m.attempts)) return { txt: '🎓 Marlins: not taken', color: 'var(--text-muted)' };
-    if (m.marlinsPassedAt) return { txt: `🎓 Marlins: ✓ Passed (${m.attempts} attempt${m.attempts === 1 ? '' : 's'})`, color: 'var(--success)' };
-    return { txt: `🎓 Marlins: ${m.attempts} attempt${m.attempts === 1 ? '' : 's'}, not passed`, color: 'var(--danger)' };
-  })();
-  const infoBits = [
-    `<span style="color:var(--text-muted)">${PROG_LABEL[c.pipeline] || c.pipeline}</span>`,
-    `<span style="color:var(--text)">${statusLabel(c.status)}</span>`,
-    marlinsText ? `<span style="color:${marlinsText.color}">${marlinsText.txt}</span>` : '',
-    c.endorsed_client_name ? `<span style="color:var(--blue)">🏢 ${esc(c.endorsed_client_name)}</span>` : '',
-  ].filter(Boolean).join('<span style="color:var(--border);margin:0 2px">·</span>');
-
   const actionBar = `
-    <div style="font-size:12px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px;line-height:1.6">
-      ${infoBits}
-    </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
       ${stateActions}
       ${(!c.portal_activated_at && ['ONBOARDING','READY_TO_DEPLOY','DEPLOYED'].includes(c.status)) ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="sendPortalInvite('${esc(c.id)}')">Portal Invite</button>` : ''}
