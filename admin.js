@@ -1626,6 +1626,7 @@ async function openCandidateDetail(id) {
     document.querySelectorAll('.detail-body .tab').forEach((t, i) => { t.classList.toggle('active', i === 0); });
     document.querySelectorAll('[id^="dp-tab-"]').forEach((t, i) => { t.classList.toggle('hidden', i !== 0); });
     document.getElementById('detail-panel').classList.add('open');
+    document.getElementById('detail-backdrop')?.classList.add('open');
     // Eagerly fetch profile data so Overview can show dynamic fields
     if (c.pipeline === 'SEA_BASED') {
       const fetches = [];
@@ -1644,7 +1645,10 @@ async function openCandidateDetail(id) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-function closeDetail() { document.getElementById('detail-panel').classList.remove('open'); }
+function closeDetail() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('detail-backdrop')?.classList.remove('open');
+}
 
 function renderDetailOverview(c) {
   const el = document.getElementById('dp-tab-overview');
