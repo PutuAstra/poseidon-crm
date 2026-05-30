@@ -456,9 +456,14 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
 
 R.post('/api/v1/candidates/:id/transitions/move-forward', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const c = await env.DB.prepare('SELECT id,status,assigned_recruiter_id FROM candidates WHERE id=?').bind(p.id).first();
+  const c = await env.DB.prepare('SELECT id,status,pipeline,assigned_recruiter_id FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   if (c.status !== 'NEW_SUBMISSION') return err(`Guard failed: expected NEW_SUBMISSION, got ${c.status}`, 422);
+  // SEA_BASED: a completed ZeusHire one-way interview is mandatory before Move Forward.
+  if (c.pipeline === 'SEA_BASED') {
+    const ow = await env.DB.prepare("SELECT id FROM candidate_interviews WHERE candidate_id=? AND type='ONE_WAY' AND status='COMPLETED' LIMIT 1").bind(p.id).first();
+    if (!ow) return err('A completed one-way interview is required before moving a Sea-Based candidate forward', 422);
+  }
   const now = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare("UPDATE candidates SET status='CANDIDATES',updated_at=? WHERE id=?").bind(now, p.id),
@@ -910,7 +915,17 @@ R.post('/api/v1/candidates/:id/interviews/invite', async (req, env, ctx, p) => {
 
 R.get('/api/v1/candidates/:id/interviews', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { results } = await env.DB.prepare('SELECT ci.*,i.title,i.type FROM candidate_interviews ci JOIN interviews i ON ci.interview_id=i.id WHERE ci.candidate_id=? ORDER BY ci.invited_at DESC').bind(p.id).all();
+  // LEFT JOIN so external-provider rows (ZeusHire ONE_WAY/TWO_WAY) with NULL interview_id
+  // are included. ci.type holds the session type for external rows; fall back to i.type.
+  const { results } = await env.DB.prepare(
+    `SELECT ci.*,
+            COALESCE(i.title, ci.external_provider || ' ' || COALESCE(ci.type, 'Interview')) AS title,
+            COALESCE(i.type,  ci.type) AS type
+       FROM candidate_interviews ci
+       LEFT JOIN interviews i ON ci.interview_id = i.id
+      WHERE ci.candidate_id = ?
+      ORDER BY ci.invited_at DESC`
+  ).bind(p.id).all();
   return json({ interviews: results });
 });
 
@@ -981,6 +996,194 @@ R.delete('/api/v1/interviews/:id/slots/:slotId', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
   await env.DB.prepare('DELETE FROM booking_slots WHERE id=? AND interview_id=? AND is_booked=0').bind(p.slotId, p.id).run();
   return json({ success: true });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SEA-BASED — ZEUSHIRE ONE-WAY INTERVIEW INTEGRATION
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Default ZeusHire one-way interview ID falls back to env.ZEUSHIRE_DEFAULT_ONE_WAY_INTERVIEW
+// if program_settings has no SEA_BASED:zeushire_one_way_interview_id row.
+async function _resolveZeushireInterviewId(env, override) {
+  if (override) return override;
+  const row = await env.DB.prepare(
+    "SELECT setting_value FROM program_settings WHERE pipeline='SEA_BASED' AND setting_key='zeushire_one_way_interview_id'"
+  ).first();
+  return row?.setting_value || env.ZEUSHIRE_DEFAULT_ONE_WAY_INTERVIEW || null;
+}
+
+R.post('/api/v1/sea/interviews/one-way', async (req, env) => {
+  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
+  const b = await req.json().catch(() => ({}));
+  const { candidateId, expiresInHours = 168 } = b;
+  if (!candidateId) return err('candidateId required');
+  if (!env.ZEUSHIRE_API_URL || !env.ZEUSHIRE_API_KEY) return err('ZeusHire integration not configured (set ZEUSHIRE_API_URL + ZEUSHIRE_API_KEY)', 503);
+
+  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId);
+  if (!zhInterviewId) return err('No ZeusHire one-way interview configured. Set one in Sea-Based Local Settings.', 422);
+
+  const c = await env.DB.prepare('SELECT id,first_name,last_name,email,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
+  if (!c) return err('Candidate not found', 404);
+  if (c.archived_at) return err('Candidate is archived', 422);
+  if (c.pipeline !== 'SEA_BASED') return err('One-way interviews are only for Sea-Based pipeline', 422);
+  if (c.status !== 'NEW_SUBMISSION') return err(`Candidate must be in NEW_SUBMISSION (is ${c.status})`, 422);
+  if (!c.first_name || !c.last_name || !c.email) return err('Candidate must have first/last name and email', 422);
+
+  // 1) Create the session in ZeusHire (token bound to identity)
+  const zhUrl = `${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/interview/${encodeURIComponent(zhInterviewId)}/sessions`;
+  let zhRes;
+  try {
+    zhRes = await fetch(zhUrl, {
+      method: 'POST',
+      headers: { 'X-Admin-Key': env.ZEUSHIRE_API_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        candidateFirstName: c.first_name,
+        candidateLastName:  c.last_name,
+        candidateEmail:     c.email,
+        expiresInHours
+      })
+    });
+  } catch (e) {
+    return err(`ZeusHire request failed: ${e.message || 'network error'}`, 502);
+  }
+  if (!zhRes.ok) {
+    const text = await zhRes.text().catch(() => '');
+    return err(`ZeusHire returned ${zhRes.status}: ${text.slice(0, 200)}`, 502);
+  }
+  let zhData;
+  try { zhData = await zhRes.json(); } catch { return err('ZeusHire returned non-JSON', 502); }
+  const sessionId = zhData.sessionId || zhData.id;
+  const token     = zhData.token || zhData.sessionToken;
+  const takeUrl   = zhData.takeUrl || zhData.url || (token ? `${env.ZEUSHIRE_TAKE_BASE_URL || 'https://zeushire.app'}/take/${token}` : null);
+  if (!sessionId) return err('ZeusHire response missing sessionId', 502);
+
+  // 2) Persist locally — candidate_interviews row + KV token map for webhook recovery
+  const ciId      = cuid();
+  const expiresAt = new Date(Date.now() + expiresInHours * 3600000).toISOString();
+  const tokenHash = token ? await hashTok(token) : null;
+  const meta      = JSON.stringify({ event: 'one_way_invited', sessionId, zeushireInterviewId: zhInterviewId });
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO candidate_interviews
+           (id, candidate_id, interview_id, type, status, invited_at, expires_at,
+            external_provider, external_session_id, external_token_hash)
+         VALUES (?, ?, NULL, 'ONE_WAY', 'INVITED', datetime('now'), ?, 'ZEUSHIRE', ?, ?)`
+      ).bind(ciId, candidateId, expiresAt, sessionId, tokenHash),
+      env.DB.prepare(
+        `INSERT INTO pipeline_stage_history
+           (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
+         VALUES (?, ?, 'NEW_SUBMISSION', 'NEW_SUBMISSION', ?, 'One-way interview dispatched', json(?))`
+      ).bind(cuid(), candidateId, u.id, meta),
+    ]);
+  } catch (e) {
+    // Best-effort compensation: try to invalidate the ZeusHire session we just created.
+    try {
+      await fetch(`${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-Key': env.ZEUSHIRE_API_KEY }
+      });
+    } catch {}
+    return err(`Failed to record interview: ${e.message}`, 500);
+  }
+
+  // 3) KV: tokenHash → row pointer (webhook fallback path if external_session_id is missed)
+  if (tokenHash) {
+    try {
+      await env.KV.put(
+        `zh:ow:${tokenHash}`,
+        JSON.stringify({ candidateId, candidateInterviewId: ciId, sessionId }),
+        { expirationTtl: expiresInHours * 3600 }
+      );
+    } catch {}
+  }
+
+  return json({ ok: true, candidateInterviewId: ciId, sessionId, takeUrl }, 201);
+});
+
+
+// ── Webhook: ZeusHire completion (HMAC-verified, idempotent) ───────────────────
+//
+// Expected payload: { event:'one_way.completed'|'two_way.completed', sessionId,
+//                     tokenHash?, score?, passed?, completedAt?, recordingUrl? }
+// Signature header: X-ZeusHire-Signature: sha256=<hex-hmac-sha256 of raw body>
+// Configure env.ZEUSHIRE_WEBHOOK_SECRET in Cloudflare Worker secrets.
+R.post('/api/v1/webhooks/zeushire', async (req, env) => {
+  const secret = env.ZEUSHIRE_WEBHOOK_SECRET;
+  if (!secret) return err('Webhook secret not configured', 503);
+
+  const sigHeader = req.headers.get('x-zeushire-signature') || req.headers.get('x-signature') || '';
+  const m = /^sha256=([a-f0-9]+)$/i.exec(sigHeader);
+  if (!m) return err('Missing or malformed signature', 401);
+  const raw = await req.text();
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const macBuf = await crypto.subtle.sign('HMAC', key, enc.encode(raw));
+  const expected = Array.from(new Uint8Array(macBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  const given = m[1].toLowerCase();
+  // constant-time compare
+  if (expected.length !== given.length) return err('Invalid signature', 401);
+  let diff = 0; for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
+  if (diff !== 0) return err('Invalid signature', 401);
+
+  let body;
+  try { body = JSON.parse(raw); } catch { return err('Invalid JSON', 400); }
+  const { event, sessionId, tokenHash } = body || {};
+  if (!event || !sessionId) return err('event and sessionId required', 400);
+
+  const score        = body.score ?? null;
+  const passedNum    = body.passed === undefined || body.passed === null ? null : (body.passed ? 1 : 0);
+  const completedAt  = body.completedAt || new Date().toISOString();
+  const recordingUrl = body.recordingUrl ?? null;
+
+  // Resolve the candidate_interviews row by external_session_id; fall back to KV by tokenHash.
+  let ci = await env.DB.prepare(
+    `SELECT ci.id, ci.candidate_id, ci.type, ci.status, c.archived_at
+       FROM candidate_interviews ci JOIN candidates c ON c.id = ci.candidate_id
+      WHERE ci.external_session_id = ?`
+  ).bind(sessionId).first();
+
+  // Orphan-recovery path: row never persisted (POSEIDON crashed between ZeusHire create and DB insert)
+  if (!ci && event === 'one_way.completed' && tokenHash) {
+    const stored = await env.KV.get(`zh:ow:${tokenHash}`, { type: 'json' });
+    if (stored?.candidateId) {
+      const c = await env.DB.prepare('SELECT id, archived_at FROM candidates WHERE id=?').bind(stored.candidateId).first();
+      if (c && !c.archived_at) {
+        const recoveredId = stored.candidateInterviewId || cuid();
+        await env.DB.prepare(
+          `INSERT INTO candidate_interviews
+             (id, candidate_id, interview_id, type, status, invited_at, completed_at,
+              external_provider, external_session_id, external_token_hash, score, passed, recording_url)
+           VALUES (?, ?, NULL, 'ONE_WAY', 'COMPLETED', datetime('now'), ?, 'ZEUSHIRE', ?, ?, ?, ?, ?)`
+        ).bind(recoveredId, stored.candidateId, completedAt, sessionId, tokenHash, score, passedNum, recordingUrl).run();
+        try { await env.KV.delete(`zh:ow:${tokenHash}`); } catch {}
+        return json({ ok: true, recovered: true });
+      }
+    }
+  }
+
+  if (!ci) return json({ ok: true, dropped: 'unknown_session' });
+  if (ci.archived_at) return json({ ok: true, dropped: 'candidate_archived' });
+  if (ci.status === 'COMPLETED') return json({ ok: true, already: true });
+
+  const histMeta = JSON.stringify({ event, type: ci.type, score, passed: passedNum, session_id: sessionId });
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE candidate_interviews
+          SET status='COMPLETED', score=?, passed=?, completed_at=?, recording_url=?, updated_at=datetime('now')
+        WHERE id=?`
+    ).bind(score, passedNum, completedAt, recordingUrl, ci.id),
+    env.DB.prepare(
+      `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
+       SELECT ?, ?, status, status, NULL, 'ZeusHire interview completed', json(?)
+         FROM candidates WHERE id = ?`
+    ).bind(cuid(), ci.candidate_id, histMeta, ci.candidate_id),
+  ]);
+
+  if (tokenHash) { try { await env.KV.delete(`zh:ow:${tokenHash}`); } catch {} }
+  return json({ ok: true });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════

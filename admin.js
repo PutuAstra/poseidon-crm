@@ -367,11 +367,12 @@ const LOCAL_SETTINGS_FIELDS = {
     { key: 'auto_assign_recruiter',   label: 'Auto-assign Recruiter',             type: 'checkbox', checkLabel: 'Automatically assign recruiter on new submission' },
   ],
   SEA_BASED: [
-    { key: 'default_vessel_type',     label: 'Default Vessel Type',               placeholder: 'Cruise' },
-    { key: 'c1d_appointment_cost',    label: 'C1/D Visa Appointment Cost (USD)',  type: 'number', placeholder: '160' },
-    { key: 'medical_validity_months', label: 'Medical Cert Validity (months)',    type: 'number', placeholder: '24' },
-    { key: 'stcw_reminder_days',      label: 'STCW Expiry Reminder (days)',       type: 'number', placeholder: '60' },
-    { key: 'require_seaman_book',     label: "Require Seaman's Book",             type: 'checkbox', checkLabel: "Mark Seaman's Book as required at Candidates stage" },
+    { key: 'default_vessel_type',             label: 'Default Vessel Type',                placeholder: 'Cruise' },
+    { key: 'c1d_appointment_cost',            label: 'C1/D Visa Appointment Cost (USD)',   type: 'number', placeholder: '160' },
+    { key: 'medical_validity_months',         label: 'Medical Cert Validity (months)',     type: 'number', placeholder: '24' },
+    { key: 'stcw_reminder_days',              label: 'STCW Expiry Reminder (days)',        type: 'number', placeholder: '60' },
+    { key: 'require_seaman_book',             label: "Require Seaman's Book",              type: 'checkbox', checkLabel: "Mark Seaman's Book as required at Candidates stage" },
+    { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default interview template dispatched from a Sea-Based candidate at the New Submission stage' },
   ],
   LAND_BASED: [
     { key: 'default_contract_type',   label: 'Default Contract Type',             placeholder: 'Fixed-Term' },
@@ -1536,9 +1537,15 @@ function renderDetailOverview(c) {
 
   const stateActions = (() => {
     const s = c.status;
-    if (s === 'NEW_SUBMISSION') return `
+    if (s === 'NEW_SUBMISSION') {
+      const owBtn = c.pipeline === 'SEA_BASED'
+        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendSeaOneWayInterview('${esc(c.id)}')">🎬 Send One-Way Interview</button>`
+        : '';
+      return `
+      ${owBtn}
       <button class="btn btn-primary btn-sm" onclick="transitionMoveForward('${esc(c.id)}')">✓ Move Forward</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionNotMovingForward('${esc(c.id)}')">✗ Not Moving Forward</button>`;
+    }
     if (s === 'CANDIDATES') return `
       <button class="btn btn-primary btn-sm" onclick="transitionEndorse('${esc(c.id)}')">→ Endorse to Client</button>
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
@@ -1675,6 +1682,28 @@ async function transitionMoveForward(candidateId) {
     loadNewSubmissions();
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
+}
+
+async function sendSeaOneWayInterview(candidateId) {
+  // Optional override; blank → server uses the workspace's default from program_settings
+  const override = (prompt(
+    'Send a one-way ZeusHire interview to this candidate.\n\n' +
+    '(Leave blank to use the default configured in Sea-Based → Local Settings.)\n\n' +
+    'Override ZeusHire interview ID:'
+  ) || '').trim();
+  try {
+    const body = override ? { candidateId, zeushireInterviewId: override } : { candidateId };
+    const r = await api('POST', '/sea/interviews/one-way', body);
+    toast('One-way interview dispatched ✓', 'success');
+    if (r?.takeUrl) {
+      // Surface the URL so the recruiter can manually share it if needed
+      try { await navigator.clipboard.writeText(r.takeUrl); toast('Take URL copied to clipboard', 'success'); } catch {}
+      console.log('ZeusHire take URL:', r.takeUrl);
+    }
+    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 async function transitionNotMovingForward(candidateId) {
