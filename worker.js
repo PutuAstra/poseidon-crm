@@ -466,10 +466,10 @@ R.post('/api/v1/candidates/:id/transitions/move-forward', async (req, env, ctx, 
   const c = await env.DB.prepare('SELECT id,status,pipeline,assigned_recruiter_id FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   if (c.status !== 'NEW_SUBMISSION') return err(`Guard failed: expected NEW_SUBMISSION, got ${c.status}`, 422);
-  // SEA_BASED: a completed ZeusHire one-way interview is mandatory before Move Forward.
-  if (c.pipeline === 'SEA_BASED') {
+  // Sea-Based AND Land-Based both require a completed one-way interview before Move Forward.
+  if (['SEA_BASED', 'LAND_BASED'].includes(c.pipeline)) {
     const ow = await env.DB.prepare("SELECT id FROM candidate_interviews WHERE candidate_id=? AND type='ONE_WAY' AND status='COMPLETED' LIMIT 1").bind(p.id).first();
-    if (!ow) return err('A completed one-way interview is required before moving a Sea-Based candidate forward', 422);
+    if (!ow) return err('A completed one-way interview is required before moving this candidate forward', 422);
   }
   const now = new Date().toISOString();
   await env.DB.batch([
@@ -509,15 +509,15 @@ R.post('/api/v1/candidates/:id/transitions/endorse', async (req, env, ctx, p) =>
   if (!c) return err('Candidate not found', 404);
   if (c.status !== 'CANDIDATES') return err(`Guard failed: expected CANDIDATES, got ${c.status}`, 422);
 
-  // SEA_BASED: a completed and passed two-way interview is required before endorsement.
-  if (c.pipeline === 'SEA_BASED') {
+  // Sea-Based AND Land-Based both require a passed two-way interview before endorsement.
+  if (['SEA_BASED', 'LAND_BASED'].includes(c.pipeline)) {
     const tw = await env.DB.prepare(
       `SELECT status, passed FROM candidate_interviews
         WHERE candidate_id=? AND type='TWO_WAY'
         ORDER BY COALESCE(completed_at, scheduled_at, invited_at) DESC LIMIT 1`
     ).bind(p.id).first();
     if (!tw || tw.status !== 'COMPLETED' || tw.passed !== 1) {
-      return err('A passed two-way interview is required before endorsing a Sea-Based candidate', 422);
+      return err('A passed two-way interview is required before endorsing this candidate', 422);
     }
   }
 
@@ -1071,11 +1071,15 @@ R.delete('/api/v1/interviews/:id/slots/:slotId', async (req, env, ctx, p) => {
 // SEA-BASED — ZEUSHIRE INTERVIEW INTEGRATION (one-way + two-way)
 // ═════════════════════════════════════════════════════════════════════════════
 
-async function _resolveZeushireInterviewId(env, override, key, envFallback) {
+// Pipelines that use the deployment-style flow (one-way → two-way → endorse →
+// offer → onboarding → ready → deployed). Sea-Based and Land-Based share this.
+const DEPLOYMENT_PIPELINES = ['SEA_BASED', 'LAND_BASED'];
+
+async function _resolveZeushireInterviewId(env, override, key, envFallback, pipeline = 'SEA_BASED') {
   if (override) return override;
   const row = await env.DB.prepare(
-    "SELECT setting_value FROM program_settings WHERE pipeline='SEA_BASED' AND setting_key=?"
-  ).bind(key).first();
+    "SELECT setting_value FROM program_settings WHERE pipeline=? AND setting_key=?"
+  ).bind(pipeline, key).first();
   return row?.setting_value || envFallback || null;
 }
 
@@ -1086,15 +1090,15 @@ R.post('/api/v1/sea/interviews/one-way', async (req, env) => {
   if (!candidateId) return err('candidateId required');
   if (!env.ZEUSHIRE_API_URL || !env.ZEUSHIRE_API_KEY) return err('ZeusHire integration not configured (set ZEUSHIRE_API_URL + ZEUSHIRE_API_KEY)', 503);
 
-  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId, 'zeushire_one_way_interview_id', env.ZEUSHIRE_DEFAULT_ONE_WAY_INTERVIEW);
-  if (!zhInterviewId) return err('No ZeusHire one-way interview configured. Set one in Sea-Based Local Settings.', 422);
-
   const c = await env.DB.prepare('SELECT id,first_name,last_name,email,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
   if (!c) return err('Candidate not found', 404);
   if (c.archived_at) return err('Candidate is archived', 422);
-  if (c.pipeline !== 'SEA_BASED') return err('One-way interviews are only for Sea-Based pipeline', 422);
+  if (!DEPLOYMENT_PIPELINES.includes(c.pipeline)) return err('One-way interviews are only for Sea-Based / Land-Based pipelines', 422);
   if (c.status !== 'NEW_SUBMISSION') return err(`Candidate must be in NEW_SUBMISSION (is ${c.status})`, 422);
   if (!c.first_name || !c.last_name || !c.email) return err('Candidate must have first/last name and email', 422);
+
+  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId, 'zeushire_one_way_interview_id', env.ZEUSHIRE_DEFAULT_ONE_WAY_INTERVIEW, c.pipeline);
+  if (!zhInterviewId) return err(`No ZeusHire one-way interview configured. Set one in the ${c.pipeline === 'SEA_BASED' ? 'Sea-Based' : 'Land-Based'} Local Settings.`, 422);
 
   // 1) Create the session in ZeusHire (token bound to identity)
   const zhUrl = `${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/interview/${encodeURIComponent(zhInterviewId)}/sessions`;
@@ -1263,15 +1267,15 @@ R.post('/api/v1/sea/interviews/two-way', async (req, env) => {
   if (!env.ZEUSHIRE_API_URL || !env.ZEUSHIRE_API_KEY) return err('ZeusHire integration not configured', 503);
   if (new Date(scheduledAt).getTime() <= Date.now()) return err('scheduledAt must be in the future', 422);
 
-  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId, 'zeushire_two_way_interview_id', env.ZEUSHIRE_DEFAULT_TWO_WAY_INTERVIEW);
-  if (!zhInterviewId) return err('No ZeusHire two-way interview configured. Set one in Sea-Based Local Settings.', 422);
-
   const c = await env.DB.prepare('SELECT id,first_name,last_name,email,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
   if (!c) return err('Candidate not found', 404);
   if (c.archived_at) return err('Candidate is archived', 422);
-  if (c.pipeline !== 'SEA_BASED') return err('Two-way interviews are only for Sea-Based pipeline', 422);
+  if (!DEPLOYMENT_PIPELINES.includes(c.pipeline)) return err('Two-way interviews are only for Sea-Based / Land-Based pipelines', 422);
   if (c.status !== 'CANDIDATES') return err(`Candidate must be in CANDIDATES (is ${c.status})`, 422);
   if (!c.first_name || !c.last_name || !c.email) return err('Candidate must have first/last name and email', 422);
+
+  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId, 'zeushire_two_way_interview_id', env.ZEUSHIRE_DEFAULT_TWO_WAY_INTERVIEW, c.pipeline);
+  if (!zhInterviewId) return err(`No ZeusHire two-way interview configured. Set one in the ${c.pipeline === 'SEA_BASED' ? 'Sea-Based' : 'Land-Based'} Local Settings.`, 422);
 
   const zhUrl = `${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/interview/${encodeURIComponent(zhInterviewId)}/tw-sessions`;
   let zhRes;
@@ -1450,10 +1454,11 @@ R.get('/api/v1/candidates/:id/marlins', async (req, env, ctx, p) => {
 
 // ── Onboarding: verify-docs-and-mark-ready ────────────────────────────────────
 //
-// Default required document types for SEA_BASED. The actual list is fetched
-// from program_settings(SEA_BASED, onboarding_required_docs) — a comma-separated
-// override. Falls back to this constant when no setting is configured.
-const SEA_BASED_REQUIRED_DOC_TYPES_DEFAULT = ['PASSPORT', 'SEAMAN_BOOK', 'STCW_BASIC', 'MEDICAL_CERT', 'YELLOW_FEVER', 'C1D_VISA'];
+// Default required document types per pipeline. The actual list is fetched
+// from program_settings(<pipeline>, onboarding_required_docs) — a comma-separated
+// override. Falls back to these constants when no setting is configured.
+const SEA_BASED_REQUIRED_DOC_TYPES_DEFAULT  = ['PASSPORT', 'SEAMAN_BOOK', 'STCW_BASIC', 'MEDICAL_CERT', 'YELLOW_FEVER', 'C1D_VISA'];
+const LAND_BASED_REQUIRED_DOC_TYPES_DEFAULT = ['PASSPORT', 'WORK_VISA', 'MEDICAL_CERT', 'BG_CHECK', 'EMPLOYMENT_CONTRACT'];
 
 async function _resolveRequiredDocs(env, pipeline) {
   const row = await env.DB.prepare(
@@ -1463,7 +1468,9 @@ async function _resolveRequiredDocs(env, pipeline) {
     const list = row.setting_value.split(',').map(s => s.trim().toUpperCase().replace(/-/g, '_')).filter(Boolean);
     if (list.length) return list;
   }
-  return pipeline === 'SEA_BASED' ? SEA_BASED_REQUIRED_DOC_TYPES_DEFAULT : [];
+  if (pipeline === 'SEA_BASED')  return SEA_BASED_REQUIRED_DOC_TYPES_DEFAULT;
+  if (pipeline === 'LAND_BASED') return LAND_BASED_REQUIRED_DOC_TYPES_DEFAULT;
+  return [];
 }
 
 R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => {
@@ -1472,10 +1479,10 @@ R.post('/api/v1/sea/onboarding/:candidateId/ready', async (req, env, ctx, p) => 
   const c = await env.DB.prepare('SELECT id,status,pipeline,archived_at FROM candidates WHERE id=?').bind(p.candidateId).first();
   if (!c) return err('Candidate not found', 404);
   if (c.archived_at) return err('Candidate is archived', 422);
-  if (c.pipeline !== 'SEA_BASED') return err('Only Sea-Based candidates have this step', 422);
+  if (!DEPLOYMENT_PIPELINES.includes(c.pipeline)) return err('This step is only for Sea-Based / Land-Based pipelines', 422);
   if (c.status !== 'ONBOARDING') return err(`Candidate must be in ONBOARDING (is ${c.status})`, 422);
 
-  const required = await _resolveRequiredDocs(env, 'SEA_BASED');
+  const required = await _resolveRequiredDocs(env, c.pipeline);
 
   // Inspect documents (type normalized to UPPER_SNAKE via migration_v6 backfill).
   const { results: docs } = await env.DB.prepare(
@@ -1544,7 +1551,7 @@ R.post('/api/v1/sea/deployments', async (req, env) => {
       WHERE c.id = ?`
   ).bind(candidateId).first();
   if (!c) return err('Candidate not found', 404);
-  if (c.pipeline !== 'SEA_BASED') return err('Not a Sea-Based candidate', 422);
+  if (!DEPLOYMENT_PIPELINES.includes(c.pipeline)) return err('Not a Sea-Based / Land-Based candidate', 422);
   if (c.status !== 'READY_TO_DEPLOY') return err(`Candidate must be READY_TO_DEPLOY (is ${c.status})`, 422);
   if (!c.endorsed_client_id) return err('No active client on candidate — re-endorse first', 422);
   if (c.active_deployment_id) return json({ error: 'Candidate already has an ACTIVE deployment', deploymentId: c.active_deployment_id }, 409);
@@ -1627,11 +1634,13 @@ R.get('/api/v1/sea/deployments', async (req, env, ctx, p, url) => {
   const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM', 'CLIENT_CONTACT'); if (re) return re;
   const status = url.searchParams.get('status');
   const search = url.searchParams.get('search');
+  const pipeline = url.searchParams.get('pipeline');
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
   const limit = Math.min(100, parseInt(url.searchParams.get('limit') || '50'));
   const offset = (page - 1) * limit;
   const where = []; const binds = [];
   if (status) { where.push('d.status=?'); binds.push(status); }
+  if (pipeline) { where.push('c.pipeline=?'); binds.push(pipeline); }
   if (search) { where.push('(d.candidate_full_name LIKE ? OR d.vessel_name LIKE ? OR d.client_name LIKE ?)'); binds.push(`%${search}%`, `%${search}%`, `%${search}%`); }
   if (u.role === 'RECRUITER') { where.push('c.assigned_recruiter_id=?'); binds.push(u.id); }
   if (u.role === 'CLIENT_CONTACT') {

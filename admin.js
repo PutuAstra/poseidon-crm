@@ -347,7 +347,8 @@ const PIPELINE_STAGES = {
     { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
     { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
     { id: 'ONBOARDING',        label: 'Onboarding',      icon: '🏨' },
-    { id: 'LB_VISA',           label: 'Visa',            icon: '🛂' },
+    { id: 'READY_TO_DEPLOY',   label: 'Ready to Go',     icon: '✅' },
+    { id: 'DEPLOYMENTS',       label: 'Deployments',     icon: '🏢' },
     { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
   ],
@@ -379,10 +380,13 @@ const LOCAL_SETTINGS_FIELDS = {
     { key: 'onboarding_required_docs',        label: 'Onboarding Required Documents',      placeholder: 'PASSPORT,SEAMAN_BOOK,STCW_BASIC,MEDICAL_CERT,YELLOW_FEVER,C1D_VISA', help: 'Comma-separated doc types required + unexpired before Ready to Go' },
   ],
   LAND_BASED: [
-    { key: 'default_contract_type',   label: 'Default Contract Type',             placeholder: 'Fixed-Term' },
-    { key: 'visa_reminder_days',      label: 'Visa Expiry Reminder (days)',       type: 'number', placeholder: '45' },
-    { key: 'bg_check_provider',       label: 'Background Check Provider',         placeholder: 'Sterling' },
-    { key: 'require_bg_check',        label: 'Require Background Check',          type: 'checkbox', checkLabel: 'Required before Offer Letter stage' },
+    { key: 'default_contract_type',           label: 'Default Contract Type',              placeholder: 'Fixed-Term' },
+    { key: 'visa_reminder_days',              label: 'Visa Expiry Reminder (days)',        type: 'number', placeholder: '45' },
+    { key: 'bg_check_provider',               label: 'Background Check Provider',          placeholder: 'Sterling' },
+    { key: 'require_bg_check',                label: 'Require Background Check',           type: 'checkbox', checkLabel: 'Required before Offer Letter stage' },
+    { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default template dispatched at New Submission' },
+    { key: 'zeushire_two_way_interview_id',   label: 'ZeusHire Two-Way Interview ID',      placeholder: 'e.g. iv-xyz789', help: 'Default template scheduled at Candidates stage' },
+    { key: 'onboarding_required_docs',        label: 'Onboarding Required Documents',      placeholder: 'PASSPORT,WORK_VISA,MEDICAL_CERT,BG_CHECK,EMPLOYMENT_CONTRACT', help: 'Comma-separated doc types required + unexpired before Ready to Go' },
   ],
 };
 
@@ -814,14 +818,17 @@ async function loadStagePane() {
 // Deployments ledger pane: rows from the deployments table, NOT a candidate-status
 // filter. The master profile stays in the candidates table at status='DEPLOYED'.
 async function loadDeploymentsLedger(prog) {
+  const isLand = prog === 'LAND_BASED';
+  const colVessel = isLand ? 'Work Location' : 'Vessel';
+  const colDate   = isLand ? 'Start Date'    : 'Sign-On';
   const thead = document.getElementById('stage-pane-thead');
   const tbody = document.getElementById('stage-pane-tbody');
-  thead.innerHTML = '<th>Candidate</th><th>Client</th><th>Vessel</th><th>Sign-On</th><th>Duration</th><th>Status</th><th></th>';
+  thead.innerHTML = `<th>Candidate</th><th>Client</th><th>${colVessel}</th><th>${colDate}</th><th>Duration</th><th>Status</th><th></th>`;
   tbody.innerHTML = `<tr><td colspan="7" class="table-empty"><span class="spinner"></span></td></tr>`;
   document.getElementById('stage-pane-pagination').innerHTML = '';
 
   const search = document.getElementById('stage-pane-search')?.value?.trim() || '';
-  const params = new URLSearchParams({ limit: 50 });
+  const params = new URLSearchParams({ limit: 50, pipeline: prog });
   if (search) params.set('search', search);
 
   try {
@@ -1659,7 +1666,7 @@ function renderDetailOverview(c) {
   const stateActions = (() => {
     const s = c.status;
     if (s === 'NEW_SUBMISSION') {
-      const owBtn = c.pipeline === 'SEA_BASED'
+      const owBtn = ['SEA_BASED','LAND_BASED'].includes(c.pipeline)
         ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendSeaOneWayInterview('${esc(c.id)}')">🎬 Send One-Way Interview</button>`
         : '';
       return `
@@ -1668,7 +1675,7 @@ function renderDetailOverview(c) {
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionNotMovingForward('${esc(c.id)}')">✗ Not Moving Forward</button>`;
     }
     if (s === 'CANDIDATES') {
-      const twBtn = c.pipeline === 'SEA_BASED'
+      const twBtn = ['SEA_BASED','LAND_BASED'].includes(c.pipeline)
         ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendSeaTwoWayInterview('${esc(c.id)}')">🎥 Schedule Two-Way Interview</button>`
         : '';
       return `
@@ -1690,7 +1697,7 @@ function renderDetailOverview(c) {
       <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
     }
     if (s === 'ONBOARDING') {
-      const readyBtn = c.pipeline === 'SEA_BASED'
+      const readyBtn = ['SEA_BASED','LAND_BASED'].includes(c.pipeline)
         ? `<button class="btn btn-primary btn-sm" onclick="markSeaReadyToDeploy('${esc(c.id)}')">✅ Verify Documents & Mark Ready</button>`
         : '';
       return `
@@ -1964,19 +1971,24 @@ async function markSeaReadyToDeploy(candidateId) {
 }
 
 async function createSeaDeployment(candidateId) {
-  const vesselName = (prompt('Vessel name:') || '').trim();
+  const isLand = STATE.currentCandidate?.pipeline === 'LAND_BASED';
+  const L = isLand
+    ? { name: 'Work location / employer site', date: 'Start date (YYYY-MM-DD)', port: 'Work address (optional)', pos: 'Position / role (optional)', success: name => `Assigned to ${name} ✓` }
+    : { name: 'Vessel name',                   date: 'Sign-on date (YYYY-MM-DD)', port: 'Sign-on port (optional)', pos: 'Position / rank (optional)', success: name => `Deployed to ${name} ✓` };
+
+  const vesselName = (prompt(L.name + ':') || '').trim();
   if (!vesselName) return;
-  const signOnDate = (prompt('Sign-on date (YYYY-MM-DD):') || '').trim();
-  if (!signOnDate || isNaN(Date.parse(signOnDate))) { toast('Invalid sign-on date', 'error'); return; }
+  const signOnDate = (prompt(L.date + ':') || '').trim();
+  if (!signOnDate || isNaN(Date.parse(signOnDate))) { toast(`Invalid ${isLand ? 'start' : 'sign-on'} date`, 'error'); return; }
   const months = parseInt(prompt('Contract duration in months (1–24):') || '', 10);
   if (isNaN(months) || months < 1 || months > 24) { toast('Duration must be 1–24 months', 'error'); return; }
-  const signOnPort = (prompt('Sign-on port (optional):') || '').trim() || undefined;
-  const position   = (prompt('Position / rank (optional):') || '').trim() || undefined;
+  const signOnPort = (prompt(L.port + ':') || '').trim() || undefined;
+  const position   = (prompt(L.pos + ':') || '').trim() || undefined;
   try {
-    const r = await api('POST', '/sea/deployments', {
+    await api('POST', '/sea/deployments', {
       candidateId, vesselName, signOnDate, contractDurationMonths: months, signOnPort, position
     });
-    toast(`Deployed to ${vesselName} ✓`, 'success');
+    toast(L.success(vesselName), 'success');
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }
