@@ -161,34 +161,47 @@ function _sfSectionVisibleAt(sec, status) {
   return list.includes(status);
 }
 
-// Strict ordering used for the per-field cumulative "appears at" rule. A field
-// is visible when the candidate's status is at-or-after the field's appearsAt
-// (so 'NEW_SUBMISSION' means visible everywhere — the default). ARCHIVED is
-// treated as past every stage so recruiters reviewing archived candidates see
-// the full field set.
+// Per-field stage visibility. Each field carries `appearsStages` — an array
+// of pipeline stages it shows in. An undefined/empty array means "all stages"
+// (back-compat default). ARCHIVED candidates always see every field so
+// recruiters reviewing history have the full picture.
 const SF_STAGE_ORDER = {
-  NEW_SUBMISSION:  0,
-  CANDIDATES:      1,
-  FINAL_INTERVIEW: 2,
-  OFFER_LETTER:    3,
-  ONBOARDING:      4,
-  READY_TO_DEPLOY: 5,
-  DEPLOYED:        6,
-  ARCHIVED:        99,
+  NEW_SUBMISSION:  0, CANDIDATES: 1, FINAL_INTERVIEW: 2, OFFER_LETTER: 3,
+  ONBOARDING: 4, READY_TO_DEPLOY: 5, DEPLOYED: 6, ARCHIVED: 99,
 };
+// Stages selectable in the per-field chip strip (ARCHIVED excluded — always visible).
+const SF_FIELD_STAGES = SF_STAGE_CHOICES.filter(s => s.id !== 'ARCHIVED');
+// Ultra-short labels for the per-row chip strip.
+const SF_STAGE_SHORT = {
+  NEW_SUBMISSION: 'New', CANDIDATES: 'Cand', FINAL_INTERVIEW: 'Final',
+  OFFER_LETTER: 'Offer', ONBOARDING: 'Onb', READY_TO_DEPLOY: 'Ready', DEPLOYED: 'Dep',
+};
+
+// Resolve the effective array of stages for a field, migrating legacy values
+// (single-stage `appearsAt` strings) into cumulative arrays on the fly.
+function _sfFieldEffectiveStages(field) {
+  if (Array.isArray(field.appearsStages)) return field.appearsStages;
+  if (field.appearsAt) {
+    const start = SF_STAGE_ORDER[field.appearsAt];
+    if (start !== undefined) return SF_FIELD_STAGES.filter(s => SF_STAGE_ORDER[s.id] >= start).map(s => s.id);
+  }
+  return null; // null = "all stages" default
+}
 
 function _sfFieldVisibleAt(field, status) {
   if (!field) return false;
-  const fAt = SF_STAGE_ORDER[field.appearsAt] ?? 0;
-  const cAt = SF_STAGE_ORDER[status] ?? 0;
-  return cAt >= fAt;
+  if (status === 'ARCHIVED') return true;
+  const stages = _sfFieldEffectiveStages(field);
+  if (!stages || stages.length === 0) return true;
+  return stages.includes(status);
 }
 
 function getMergedSfConfig() {
   const saved = STATE.sfFieldConfig || {};
   const fields = SEAFARER_FIELD_REGISTRY.map((r, i) => ({
     key: r.key, label: r.label, type: r.type, section: r.section, source: r.source,
-    order: i, visible: true, showInOverview: true, appearsAt: 'NEW_SUBMISSION',
+    order: i, visible: true, showInOverview: true,
+    appearsStages: null,   // null = visible at all stages (default)
     options: r.options ? [...r.options] : undefined,
   }));
   if (saved.fields) {
@@ -200,15 +213,18 @@ function getMergedSfConfig() {
         if (sf.order          !== undefined) f.order          = sf.order;
         if (sf.visible        !== undefined) f.visible        = sf.visible;
         if (sf.showInOverview !== undefined) f.showInOverview = sf.showInOverview;
-        if (sf.appearsAt      !== undefined) f.appearsAt      = sf.appearsAt;
         if (sf.options        !== undefined) f.options        = sf.options;
+        // Migration: prefer new appearsStages array; convert legacy appearsAt string
+        if (Array.isArray(sf.appearsStages)) f.appearsStages = sf.appearsStages;
+        else if (sf.appearsAt) f.appearsStages = _sfFieldEffectiveStages({ appearsAt: sf.appearsAt });
       } else if (sf.custom) {
         fields.push({
           key: sf.key, label: sf.label, type: sf.type || 'text',
           section: sf.section, source: 'custom', order: sf.order ?? 999,
           visible: sf.visible !== false,
           showInOverview: sf.showInOverview !== false,
-          appearsAt: sf.appearsAt || 'NEW_SUBMISSION',
+          appearsStages: Array.isArray(sf.appearsStages) ? sf.appearsStages
+                       : (sf.appearsAt ? _sfFieldEffectiveStages({ appearsAt: sf.appearsAt }) : null),
           options: sf.options ? [...sf.options] : undefined,
           custom: true
         });
@@ -5340,14 +5356,7 @@ function _buildSfSectionRows(sectionId) {
         <select onchange="sfFieldMoveToSection('${esc(f.key)}',this.value)"
           style="font-size:11px;background:var(--navy-mid);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;width:100%">${sectionOpts}</select>
       </td>
-      <td style="padding:7px 6px;width:110px">
-        <select onchange="sfFieldSetAppearsAt('${esc(f.key)}',this.value)" title="Field first becomes visible at this stage and stays visible through later stages"
-          style="font-size:11px;background:var(--navy-mid);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 6px;width:100%">
-          ${SF_STAGE_CHOICES.filter(s => s.id !== 'ARCHIVED').map(s =>
-            `<option value="${esc(s.id)}" ${ (f.appearsAt||'NEW_SUBMISSION') === s.id ? 'selected' : '' }>${esc(s.label)}</option>`
-          ).join('')}
-        </select>
-      </td>
+      <td style="padding:7px 6px;width:230px" id="sf-stg-${esc(f.key)}">${_buildSfFieldStageChips(f)}</td>
       <td style="padding:7px 4px;white-space:nowrap;width:56px">
         ${i>0?`<button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:11px" onclick="sfFieldMoveUp('${esc(f.key)}')">↑</button>`:'<span style="display:inline-block;width:24px"></span>'}
         ${i<fields.length-1?`<button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:11px" onclick="sfFieldMoveDown('${esc(f.key)}')">↓</button>`:''}
@@ -5382,7 +5391,7 @@ function _buildSfSectionRows(sectionId) {
       <th style="font-size:10px;color:var(--text-muted);padding:6px 8px;text-align:left">Label</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Type</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Move to Section</th>
-      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left" title="Field first becomes visible at this stage (cumulative through later stages)">Appears At</th>
+      <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left" title="Stages where this field is visible. Click chips to toggle; empty = visible at every stage.">Visible Stages</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Order</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:left">Options</th>
       <th style="font-size:10px;color:var(--text-muted);padding:6px;text-align:center">Visible</th>
@@ -5562,12 +5571,41 @@ function sfFieldToggleOverview(key, checked) {
   if (f) f.showInOverview = checked;
 }
 
-function sfFieldSetAppearsAt(key, stageId) {
+// Build the per-field stage chip strip (multi-select). Empty/null = visible at
+// all stages, rendered with all chips lit + an "All" tag.
+function _buildSfFieldStageChips(f) {
+  const stages = _sfFieldEffectiveStages(f);
+  const all = !stages || stages.length === 0;
+  const chips = SF_FIELD_STAGES.map(s => {
+    const on = all || stages.includes(s.id);
+    const bg = on ? '#1e3a5f' : 'transparent';
+    const fg = on ? '#93c5fd' : 'var(--text-muted)';
+    const br = on ? '1px solid var(--blue)' : '1px solid var(--border)';
+    return `<button type="button" onclick="sfFieldToggleStage('${esc(f.key)}','${esc(s.id)}')"
+      title="${esc(s.label)}"
+      style="background:${bg};color:${fg};border:${br};border-radius:10px;padding:1px 7px;font-size:10px;cursor:pointer;line-height:1.4">${esc(SF_STAGE_SHORT[s.id])}</button>`;
+  }).join(' ');
+  return `<div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center">${chips}</div>`;
+}
+
+// Toggle a single stage for a field. Promotes the null/empty default into an
+// explicit array on first click. If toggling fills every stage back, normalizes
+// to null so the field saves as "all stages" again.
+function sfFieldToggleStage(key, stageId) {
   const f = STATE._sfEditConfig.fields.find(x => x.key === key);
   if (!f) return;
-  // 'NEW_SUBMISSION' is the cumulative default (visible everywhere) — stored
-  // explicitly anyway so a downgrade to default is obvious in the saved JSON.
-  f.appearsAt = stageId || 'NEW_SUBMISSION';
+  let stages = _sfFieldEffectiveStages(f);
+  if (!stages || stages.length === 0) {
+    stages = SF_FIELD_STAGES.map(s => s.id);    // first click: start from "all selected"
+  } else {
+    stages = [...stages];
+  }
+  const i = stages.indexOf(stageId);
+  if (i >= 0) stages.splice(i, 1); else stages.push(stageId);
+  f.appearsStages = stages.length === SF_FIELD_STAGES.length ? null : stages;
+  delete f.appearsAt;   // legacy key always cleared on edit
+  const cell = document.getElementById(`sf-stg-${key}`);
+  if (cell) cell.innerHTML = _buildSfFieldStageChips(f);
 }
 
 function openSfFieldOpts(key) {
