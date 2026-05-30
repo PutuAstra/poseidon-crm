@@ -1706,29 +1706,30 @@ function renderDetailOverview(c) {
     return '';
   })();
 
-  // Marlins chip (SEA_BASED only, visible from OFFER_LETTER onward when we have data)
-  const marlinsChip = (() => {
-    if (c.pipeline !== 'SEA_BASED') return '';
+  // Status info as a flat caption line — clearly read-only, not interactive.
+  const PROG_LABEL = { J1_PROGRAM: '🎓 J1 Program', SEA_BASED: '🚢 Sea-Based', LAND_BASED: '🏨 Land-Based' };
+  const marlinsText = (() => {
+    if (c.pipeline !== 'SEA_BASED') return null;
     const m = c.marlins;
-    if (!m || (!m.marlinsPassedAt && !m.attempts)) {
-      return `<span style="background:#3b3a0d;color:#fde68a;border-radius:6px;padding:3px 10px;font-size:11px">🎓 Marlins: not taken</span>`;
-    }
-    if (m.marlinsPassedAt) {
-      return `<span style="background:#0f3a1c;color:#86efac;border-radius:6px;padding:3px 10px;font-size:11px" title="Passed ${new Date(m.marlinsPassedAt).toLocaleDateString()}">🎓 Marlins: ✓ Passed (${m.attempts} attempt${m.attempts === 1 ? '' : 's'})</span>`;
-    }
-    return `<span style="background:#3a0d0d;color:#fca5a5;border-radius:6px;padding:3px 10px;font-size:11px">🎓 Marlins: ${m.attempts} attempt${m.attempts === 1 ? '' : 's'}, not passed</span>`;
+    if (!m || (!m.marlinsPassedAt && !m.attempts)) return { txt: '🎓 Marlins: not taken', color: 'var(--text-muted)' };
+    if (m.marlinsPassedAt) return { txt: `🎓 Marlins: ✓ Passed (${m.attempts} attempt${m.attempts === 1 ? '' : 's'})`, color: 'var(--success)' };
+    return { txt: `🎓 Marlins: ${m.attempts} attempt${m.attempts === 1 ? '' : 's'}, not passed`, color: 'var(--danger)' };
   })();
+  const infoBits = [
+    `<span style="color:var(--text-muted)">${PROG_LABEL[c.pipeline] || c.pipeline}</span>`,
+    `<span style="color:var(--text)">${statusLabel(c.status)}</span>`,
+    marlinsText ? `<span style="color:${marlinsText.color}">${marlinsText.txt}</span>` : '',
+    c.endorsed_client_name ? `<span style="color:var(--blue)">🏢 ${esc(c.endorsed_client_name)}</span>` : '',
+  ].filter(Boolean).join('<span style="color:var(--border);margin:0 2px">·</span>');
 
   const actionBar = `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-      ${pipelineBadge(c.pipeline)} ${statusBadge(c.status)}
-      ${marlinsChip}
-      ${c.endorsed_client_name ? `<span style="background:var(--navy-mid);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--blue)">🏢 ${esc(c.endorsed_client_name)}</span>` : ''}
-      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
-        ${stateActions}
-        ${(!c.portal_activated_at && ['ONBOARDING','READY_TO_DEPLOY','DEPLOYED'].includes(c.status)) ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="sendPortalInvite('${esc(c.id)}')">Portal Invite</button>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit</button>
-      </div>
+    <div style="font-size:12px;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px;line-height:1.6">
+      ${infoBits}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+      ${stateActions}
+      ${(!c.portal_activated_at && ['ONBOARDING','READY_TO_DEPLOY','DEPLOYED'].includes(c.status)) ? `<button class="btn btn-ghost btn-sm" style="color:var(--text-muted)" onclick="sendPortalInvite('${esc(c.id)}')">Portal Invite</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit</button>
     </div>`;
 
   const assignRecruiter = `
