@@ -336,7 +336,7 @@ const PIPELINE_STAGES = {
     { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
     { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
     { id: 'ONBOARDING',        label: 'Onboarding',      icon: '⚓' },
-    { id: 'READY_TO_DEPLOY',   label: 'Ready to Deploy', icon: '✅' },
+    { id: 'READY_TO_DEPLOY',   label: 'Ready to Go',     icon: '✅' },
     { id: 'DEPLOYMENTS',       label: 'Deployments',     icon: '🚢' },
     { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
@@ -1949,10 +1949,10 @@ async function recordMarlinsTest(candidateId) {
 }
 
 async function markSeaReadyToDeploy(candidateId) {
-  if (!confirm('Verify required documents and mark candidate Ready to Deploy?\n\n(Required: Passport, Seaman Book, STCW Basic, Medical Cert, Yellow Fever, C1/D Visa — all present and unexpired.)')) return;
+  if (!confirm('Verify required documents and mark candidate Ready to Go?\n\n(Required: Passport, Seaman Book, STCW Basic, Medical Cert, Yellow Fever, C1/D Visa — all present and unexpired.)')) return;
   try {
     await api('POST', `/sea/onboarding/${candidateId}/ready`, {});
-    toast('Documents verified → Ready to Deploy ✓', 'success');
+    toast('Documents verified → Ready to Go ✓', 'success');
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) {
     // Surface the missing/expired lists if the worker returned them.
@@ -5958,7 +5958,7 @@ function statusLabel(s) {
     FINAL_INTERVIEW:      'Final Interview',
     OFFER_LETTER:         'Offer Letter',
     ONBOARDING:           'Onboarding',
-    READY_TO_DEPLOY:      'Ready to Deploy',
+    READY_TO_DEPLOY:      'Ready to Go',
     DEPLOYED:             'Deployed',
     ARCHIVED:             'Archived',
     // Legacy labels (still used in history timeline)
