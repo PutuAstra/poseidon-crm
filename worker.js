@@ -2277,11 +2277,10 @@ R.put('/api/v1/candidates/:id/j1-profile', async (req, env, ctx, p) => {
     program_start_date:             b.programStartDate,
     program_end_date:               b.programEndDate,
     processing_sponsor:             b.processingSponsor,
-    total_paid_investment:          b.totalPaidInvestment !== undefined ? Number(b.totalPaidInvestment) : undefined,
-    stage1_investment:              b.stage1Investment !== undefined ? Number(b.stage1Investment) : undefined,
-    stage2_investment:              b.stage2Investment !== undefined ? Number(b.stage2Investment) : undefined,
-    stage3_investment:              b.stage3Investment !== undefined ? Number(b.stage3Investment) : undefined,
-    stage4_investment:              b.stage4Investment !== undefined ? Number(b.stage4Investment) : undefined,
+    // Legacy *_investment columns were dropped in migration_v7b. Stage payments now
+    // live in the j1_payments append-only ledger (Phase 2). Bodies still sending these
+    // values are silently dropped so older clients don't 4xx — the canonical totals
+    // come from GET /api/v1/candidates/:id/j1/payments/rollup once Phase 2 ships.
     housing_landlord:               b.housingLandlord,
     housing_address:                b.housingAddress,
     program_sponsor_invoice_status: b.programSponsorInvoiceStatus,

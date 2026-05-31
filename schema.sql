@@ -178,7 +178,7 @@ CREATE INDEX IF NOT EXISTS idx_slots_availability ON booking_slots(is_booked, is
 CREATE TABLE IF NOT EXISTS clients (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
-  type          TEXT NOT NULL CHECK(type IN ('CRUISE_LINE','LAND_BASED','J1_SPONSOR')),
+  type          TEXT NOT NULL CHECK(type IN ('CRUISE_LINE','LAND_BASED','J1_SPONSOR','J1_HOST_COMPANY')),
   country       TEXT,
   website       TEXT,
   logo_url      TEXT,
@@ -201,21 +201,28 @@ CREATE TABLE IF NOT EXISTS client_contacts (
 );
 
 CREATE TABLE IF NOT EXISTS client_endorsements (
-  id             TEXT PRIMARY KEY,
-  candidate_id   TEXT NOT NULL REFERENCES candidates(id),
-  client_id      TEXT NOT NULL REFERENCES clients(id),
-  status         TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','SCHEDULED','COMPLETED','REJECTED','APPROVED','WITHDRAWN')),
-  endorsed_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  scheduled_at   TEXT,
-  decided_at     TEXT,
-  decision_notes TEXT,
-  interview_url  TEXT,
-  updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(candidate_id, client_id)
+  id               TEXT PRIMARY KEY,
+  candidate_id     TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
+  client_id        TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  endorsement_role TEXT NOT NULL CHECK(endorsement_role IN
+                    ('CRUISE_LINE','LAND_BASED','SPONSOR_MATCH','HOST_PLACEMENT')),
+  status           TEXT NOT NULL CHECK(status IN
+                    ('PENDING','SCHEDULED','COMPLETED','REJECTED','APPROVED','WITHDRAWN')),
+  endorsed_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  scheduled_at     TEXT,
+  decided_at       TEXT,
+  decision_notes   TEXT,
+  interview_url    TEXT,
+  endorsed_by_id   TEXT REFERENCES users(id),
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_endorsement_active
+  ON client_endorsements(candidate_id, client_id, endorsement_role)
+  WHERE status IN ('PENDING','SCHEDULED');
 CREATE INDEX IF NOT EXISTS idx_endorsements_client    ON client_endorsements(client_id, status);
 CREATE INDEX IF NOT EXISTS idx_endorsements_candidate ON client_endorsements(candidate_id, status);
+CREATE INDEX IF NOT EXISTS idx_endorsements_role      ON client_endorsements(candidate_id, endorsement_role, status);
 
 -- ── DOCUMENTS ───────────────────────────────────────────────────────────────
 
@@ -306,28 +313,67 @@ CREATE INDEX IF NOT EXISTS idx_notifications_candidate ON notifications(candidat
 
 -- ── J1 PROGRAM EXTENSION TABLE ───────────────────────────────────────────────
 
+-- v7b rebuild — id is PK, candidate_id is UNIQUE; legacy stageN_investment +
+-- sevis_id/fee_paid columns moved to j1_payments and document_issuance ledgers.
 CREATE TABLE IF NOT EXISTS j1_profiles (
-  candidate_id                TEXT PRIMARY KEY REFERENCES candidates(id) ON DELETE CASCADE,
-  sponsor_name                TEXT,
-  sponsor_ein                 TEXT,
-  exchange_visitor_category   TEXT,
-  program_start_date          TEXT,
-  program_end_date            TEXT,
-  training_plan_url           TEXT,
-  ds2019_number               TEXT UNIQUE,
-  ds2019_issued_date          TEXT,
-  ds2019_expiry_date          TEXT,
-  ds2019_onedrive_id          TEXT,
-  j1_visa_number              TEXT,
-  j1_visa_issued_date         TEXT,
-  j1_visa_expiry_date         TEXT,
-  j1_visa_consulate           TEXT,
-  sevis_id                    TEXT,
-  sevis_fee_paid              INTEGER NOT NULL DEFAULT 0,
-  sevis_fee_paid_date         TEXT,
-  stage_data                  TEXT,
-  updated_at                  TEXT NOT NULL DEFAULT (datetime('now'))
+  id                                TEXT PRIMARY KEY,
+  candidate_id                      TEXT NOT NULL UNIQUE REFERENCES candidates(id) ON DELETE CASCADE,
+  partner_batch_id                  TEXT REFERENCES partner_batches(id),
+  j1_application_status             TEXT,
+  j1_program_sources                TEXT,
+  cti_usa_review                    TEXT,
+  eligible_programs                 TEXT,
+  sponsor_name                      TEXT,
+  sponsor_client_id                 TEXT REFERENCES clients(id),
+  processing_sponsor                TEXT,
+  exchange_visitor_category         TEXT,
+  program_start_date                TEXT,
+  program_end_date                  TEXT,
+  ds2019_number                     TEXT,
+  ds2019_expiry_date                TEXT,
+  hosting_company                   TEXT,
+  host_company_id                   TEXT REFERENCES clients(id),
+  selected_job                      TEXT,
+  occupational_fields               TEXT,
+  consultation_call_date            TEXT,
+  consultation_call_by              TEXT,
+  consultation_call_notes           TEXT,
+  consultation_call_status          TEXT,
+  english_assessment                TEXT,
+  participant_rating                TEXT,
+  attendance                        TEXT,
+  ticket_pricing                    REAL,
+  housing_landlord                  TEXT,
+  housing_address                   TEXT,
+  program_sponsor_invoice_status    TEXT,
+  application_withdrawal_reason     TEXT,
+  withdrawal_date                   TEXT,
+  archive_reason                    TEXT CHECK(archive_reason IS NULL OR archive_reason IN
+                                       ('ELIGIBILITY_FAIL','CONSULTATION_REJECT','VISA_DENIED',
+                                        'HOST_REJECTED','WITHDRAWN','OTHER')),
+  medical_exam_date                 TEXT,
+  medical_exam_cleared              INTEGER DEFAULT 0,
+  visa_interview_date               TEXT,
+  visa_interview_consulate          TEXT,
+  visa_interview_result             TEXT,
+  visa_briefing_done                INTEGER DEFAULT 0,
+  departure_briefing_done           INTEGER DEFAULT 0,
+  flight_ticket_ref                 TEXT,
+  flight_departure_date             TEXT,
+  arrival_date_usa                  TEXT,
+  sevis_validated_date              TEXT,
+  program_completion_date           TEXT,
+  home_residency_required           INTEGER DEFAULT 0,
+  updated_at                        TEXT NOT NULL DEFAULT (datetime('now')),
+  version                           INTEGER NOT NULL DEFAULT 1,
+  created_at                        TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_j1_profiles_status  ON j1_profiles(j1_application_status);
+CREATE INDEX IF NOT EXISTS idx_j1_profiles_sponsor ON j1_profiles(sponsor_client_id);
+CREATE INDEX IF NOT EXISTS idx_j1_profiles_host    ON j1_profiles(host_company_id);
+CREATE INDEX IF NOT EXISTS idx_j1_profiles_window  ON j1_profiles(program_start_date, program_end_date);
+CREATE INDEX IF NOT EXISTS idx_j1_profiles_ds2019  ON j1_profiles(ds2019_expiry_date);
+CREATE INDEX IF NOT EXISTS idx_j1_profiles_batch   ON j1_profiles(partner_batch_id);
 
 -- ── SEA-BASED EXTENSION TABLE ─────────────────────────────────────────────────
 
