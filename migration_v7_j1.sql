@@ -202,8 +202,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_member_active
   ON whatsapp_group_members(group_id, candidate_id, member_role) WHERE removed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_wa_member_candidate ON whatsapp_group_members(candidate_id);
 
--- ── Block 10: notifications (DS-2019 / visa / payment / SLA alerts) ─────────
-CREATE TABLE IF NOT EXISTS notifications (
+-- ── Block 10: program_alerts (DS-2019 / visa / payment / SLA triggers) ──────
+-- NOTE: the existing `notifications` table is for outbound email/in-app messages.
+-- This table is for scheduled-trigger alerts (SLA, expiry, overdue payment).
+-- Different concept, different name.
+CREATE TABLE IF NOT EXISTS program_alerts (
   id              TEXT PRIMARY KEY,
   kind            TEXT NOT NULL CHECK(kind IN
                     ('DS2019_EXPIRY_30','DS2019_EXPIRY_7','VISA_INTERVIEW_DUE',
@@ -217,8 +220,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   payload         TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_notif_due ON notifications(due_at, fired_at);
-CREATE INDEX IF NOT EXISTS idx_notif_cand ON notifications(candidate_id, kind);
+CREATE INDEX IF NOT EXISTS idx_program_alerts_due  ON program_alerts(due_at, fired_at);
+CREATE INDEX IF NOT EXISTS idx_program_alerts_cand ON program_alerts(candidate_id, kind);
 
 -- ── Block 11: candidates ADD COLUMN (skip if 'duplicate column name' fires) ──
 ALTER TABLE candidates ADD COLUMN partner_batch_id TEXT REFERENCES partner_batches(id);

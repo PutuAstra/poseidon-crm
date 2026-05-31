@@ -750,7 +750,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_wa_member_active
   ON whatsapp_group_members(group_id, candidate_id, member_role) WHERE removed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_wa_member_candidate ON whatsapp_group_members(candidate_id);
 
-CREATE TABLE IF NOT EXISTS notifications (
+-- v7: scheduled-trigger alerts (DS-2019 expiry, SLA, etc.). Separate from the
+-- pre-existing `notifications` table (which handles outbound email/in-app).
+CREATE TABLE IF NOT EXISTS program_alerts (
   id              TEXT PRIMARY KEY,
   kind            TEXT NOT NULL CHECK(kind IN
                     ('DS2019_EXPIRY_30','DS2019_EXPIRY_7','VISA_INTERVIEW_DUE',
@@ -764,8 +766,8 @@ CREATE TABLE IF NOT EXISTS notifications (
   payload         TEXT,
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_notif_due  ON notifications(due_at, fired_at);
-CREATE INDEX IF NOT EXISTS idx_notif_cand ON notifications(candidate_id, kind);
+CREATE INDEX IF NOT EXISTS idx_program_alerts_due  ON program_alerts(due_at, fired_at);
+CREATE INDEX IF NOT EXISTS idx_program_alerts_cand ON program_alerts(candidate_id, kind);
 
 -- candidates v7 columns (declared via ALTER in migration_v7_j1 for live DBs)
 -- ALTER TABLE candidates ADD COLUMN partner_batch_id        TEXT REFERENCES partner_batches(id);
