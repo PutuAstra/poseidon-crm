@@ -3,6 +3,10 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 :root {
+  /* Tell the browser to render all native form controls (date/time pickers,
+     scrollbars, calendar icon, etc.) in dark mode so they don't clash. */
+  color-scheme: dark;
+
   --navy:       #0f172a;
   --navy-light: #1e293b;
   --navy-mid:   #334155;
