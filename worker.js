@@ -442,7 +442,13 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
   const { toStatus, reason, metadata, force } = await req.json();
   if (force !== true) return err('Force-override requires { force: true } in the body — use the transition endpoints for the guarded flow', 422);
   if (!toStatus) return err('toStatus required');
-  const VALID_STATES = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING','READY_TO_DEPLOY','DEPLOYED','ARCHIVED'];
+  const VALID_STATES = [
+    'NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING',
+    'READY_TO_DEPLOY','DEPLOYED','ARCHIVED',
+    // J1 Program statuses (v7 Phase 1 — guarded transitions land in Phase 2)
+    'ELIGIBILITY_REVIEW','CONSULTATION_CALL',
+    'J1_STAGE_1','J1_STAGE_2','J1_STAGE_3','J1_STAGE_4','J1_VISA'
+  ];
   if (!VALID_STATES.includes(toStatus)) return err(`Invalid state: ${toStatus}`, 422);
   const c = await env.DB.prepare('SELECT id,status,pipeline FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
@@ -633,7 +639,12 @@ R.post('/api/v1/candidates/:id/transitions/archive', async (req, env, ctx, p) =>
 R.post('/api/v1/candidates/:id/transitions/restore', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN'); if (re) return re;
   const { restoreToStatus } = await req.json().catch(() => ({}));
-  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING'];
+  const VALID = [
+    'NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING',
+    // J1 Program restorable states (DEPLOYED intentionally excluded — re-enroll instead)
+    'ELIGIBILITY_REVIEW','CONSULTATION_CALL',
+    'J1_STAGE_1','J1_STAGE_2','J1_STAGE_3','J1_STAGE_4','J1_VISA'
+  ];
   if (!restoreToStatus || !VALID.includes(restoreToStatus)) return err('Valid restoreToStatus required', 422);
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
