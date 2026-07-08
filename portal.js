@@ -116,9 +116,10 @@ async function bootPortal() {
   const res = await api('GET', '/portal/me');
   if (!res || !res.ok) { doLogout(); return; }
   const d = await res.json();
-  STATE.user      = d.user;
-  STATE.candidate = d.candidate;
-  document.getElementById('topbar-name').textContent = fullName(d.candidate) || d.user?.email || '';
+  // /api/v1/portal/me returns the candidate row flat (spread), not nested
+  // under { user, candidate } — there is no separate "user" object.
+  STATE.candidate = d;
+  document.getElementById('topbar-name').textContent = fullName(d) || d.email || '';
   renderStatusBanner();
   renderProfileView();
   loadDocuments();
@@ -193,12 +194,11 @@ function renderStatusBanner() {
 
 function renderProfileView() {
   const c = STATE.candidate || {};
-  const u = STATE.user || {};
   document.getElementById('profile-view').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;">
       ${[
         ['Full Name',         fullName(c)],
-        ['Email',             u.email],
+        ['Email',             c.email],
         ['Phone',             c.phone],
         ['Nationality',       c.nationality],
         ['Date of Birth',     fmtDate(c.date_of_birth)],

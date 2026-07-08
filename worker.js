@@ -261,7 +261,7 @@ R.post('/api/v1/auth/refresh', async (req, env) => {
   await env.KV.delete(`refresh:${await hashTok(refreshToken)}`);
   const rt = genToken();
   await env.KV.put(`refresh:${await hashTok(rt)}`, JSON.stringify({ uid }), { expirationTtl: 604800 });
-  return json({ accessToken: await jwtSign({ sub: uid, role: u.role }, env.JWT_SECRET, 900), refreshToken: rt });
+  return json({ accessToken: await jwtSign({ sub: uid, role: u.role }, env.JWT_SECRET, 900), refreshToken: rt, user: { id: u.id, role: u.role } });
 });
 
 R.post('/api/v1/auth/logout', async (req, env) => {
