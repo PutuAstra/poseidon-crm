@@ -194,10 +194,10 @@ class Router {
       if (!m) continue;
       try {
         const res = await route.h(req, env, ctx, m.pathname.groups, url);
-        // Signal the master roll-up to refresh after any successful candidate/
-        // submission mutation (keeps the cached executive view near-real-time).
+        // Signal the master roll-up to refresh after any successful candidate
+        // mutation (keeps the cached executive view near-real-time).
         if (req.method !== 'GET' && res.status < 300 &&
-            /\/api\/v1\/(candidates|submissions)/.test(url.pathname)) {
+            /\/api\/v1\/candidates/.test(url.pathname)) {
           ctx.waitUntil(refreshMasterDashboard(env).catch(() => {}));
         }
         const h2 = new Headers(res.headers);
@@ -346,23 +346,8 @@ R.post('/api/v1/auth/reset-password', async (req, env) => {
 // CANDIDATES
 // ═════════════════════════════════════════════════════════════════════════════
 
-R.post('/api/v1/candidates', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { firstName, lastName, email, phone, pipeline, positionApplied, nationality, gender, ctiOffice, employmentStatus, origin, internalNotes } = await req.json();
-  if (!firstName || !lastName || !email || !pipeline) return err('firstName, lastName, email, pipeline required');
-  const VALID_PIPELINES = ['SEA_BASED', 'LAND_BASED', 'J1_PROGRAM'];
-  if (!VALID_PIPELINES.includes(pipeline)) return err('Invalid pipeline');
-  const existing = await env.DB.prepare('SELECT id FROM candidates WHERE email=? COLLATE NOCASE').bind(email).first();
-  if (existing) return err('A candidate with this email already exists', 409);
-  const id = cuid();
-  await env.DB.batch([
-    env.DB.prepare('INSERT INTO candidates(id,first_name,last_name,email,phone,pipeline,status,position_applied,nationality,gender,cti_office,employment_status,origin,assigned_recruiter_id,internal_notes)VALUES(?,?,?,?,?,?,\'NEW_SUBMISSION\',?,?,?,?,?,?,?,?)')
-      .bind(id, firstName, lastName, email, phone || null, pipeline, positionApplied || null, nationality || null, gender || null, ctiOffice || null, employmentStatus || 'New', origin || 'Applied', u.id, internalNotes || null),
-    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,NULL,'NEW_SUBMISSION',?,'Manually created')")
-      .bind(cuid(), id, u.id)
-  ]);
-  return json({ candidateId: id }, 201);
-});
+// Manual candidate creation was removed in v8 — every candidate now arrives
+// exclusively via the ZeusHire "hired" push (see /api/v1/webhooks/zeushire-hired).
 
 R.get('/api/v1/candidates', async (req, env, ctx, p, url) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
@@ -409,15 +394,17 @@ R.get('/api/v1/candidates/:id', async (req, env, ctx, p) => {
   const c = await env.DB.prepare('SELECT*FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
   if (u.role === 'RECRUITER' && c.assigned_recruiter_id !== u.id) return err('Forbidden', 403);
-  const [ci, ce, docs, hist, seaProf, j1Prof] = await Promise.all([
-    env.DB.prepare('SELECT ci.*,i.title,i.type FROM candidate_interviews ci JOIN interviews i ON ci.interview_id=i.id WHERE ci.candidate_id=? ORDER BY ci.invited_at DESC').bind(p.id).all(),
-    env.DB.prepare('SELECT ce.*,cl.name client_name,cl.type client_type FROM client_endorsements ce JOIN clients cl ON ce.client_id=cl.id WHERE ce.candidate_id=?').bind(p.id).all(),
+  const [docs, hist, seaProf, j1Prof] = await Promise.all([
     env.DB.prepare('SELECT*FROM documents WHERE candidate_id=? ORDER BY created_at DESC').bind(p.id).all(),
     env.DB.prepare('SELECT h.*,u2.first_name fn,u2.last_name ln FROM pipeline_stage_history h LEFT JOIN users u2 ON h.triggered_by_id=u2.id WHERE h.candidate_id=? ORDER BY h.created_at DESC LIMIT 30').bind(p.id).all(),
     env.DB.prepare('SELECT*FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first().catch(() => null),
     env.DB.prepare('SELECT*FROM j1_profiles WHERE candidate_id=?').bind(p.id).first().catch(() => null)
   ]);
-  return json({ ...c, interviews: ci.results, endorsements: ce.results, documents: docs.results, stageHistory: hist.results, seafarerProfile: seaProf || null, j1Profile: j1Prof || null });
+  // Interview history is no longer Poseidon-native — it arrives read-only as a
+  // JSON snapshot from ZeusHire's hired-push (see the Interview tab in admin.js).
+  let zeushireSnapshot = null;
+  try { zeushireSnapshot = c.zeushire_snapshot ? JSON.parse(c.zeushire_snapshot) : null; } catch { zeushireSnapshot = null; }
+  return json({ ...c, zeushireSnapshot, documents: docs.results, stageHistory: hist.results, seafarerProfile: seaProf || null, j1Profile: j1Prof || null });
 });
 
 R.patch('/api/v1/candidates/:id', async (req, env, ctx, p) => {
@@ -442,13 +429,9 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
   const { toStatus, reason, metadata, force } = await req.json();
   if (force !== true) return err('Force-override requires { force: true } in the body — use the transition endpoints for the guarded flow', 422);
   if (!toStatus) return err('toStatus required');
-  const VALID_STATES = [
-    'NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING',
-    'READY_TO_DEPLOY','DEPLOYED','ARCHIVED',
-    // J1 Program statuses (v7 Phase 1 — guarded transitions land in Phase 2)
-    'ELIGIBILITY_REVIEW','CONSULTATION_CALL',
-    'J1_STAGE_1','J1_STAGE_2','J1_STAGE_3','J1_STAGE_4','J1_VISA'
-  ];
+  // Pure CRM (v8): candidates only ever occupy the post-hire onboarding
+  // statuses — everything upstream of ONBOARDING is ZeusHire's job now.
+  const VALID_STATES = ['ONBOARDING', 'READY_TO_DEPLOY', 'DEPLOYED', 'ARCHIVED'];
   if (!VALID_STATES.includes(toStatus)) return err(`Invalid state: ${toStatus}`, 422);
   const c = await env.DB.prepare('SELECT id,status,pipeline FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
@@ -466,160 +449,10 @@ R.post('/api/v1/candidates/:id/stage', async (req, env, ctx, p) => {
 });
 
 // ── Transitions ───────────────────────────────────────────────────────────────
-
-R.post('/api/v1/candidates/:id/transitions/move-forward', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const c = await env.DB.prepare('SELECT id,status,pipeline,assigned_recruiter_id FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Not found', 404);
-  if (c.status !== 'NEW_SUBMISSION') return err(`Guard failed: expected NEW_SUBMISSION, got ${c.status}`, 422);
-  // Sea-Based AND Land-Based both require a completed one-way interview before Move Forward.
-  if (['SEA_BASED', 'LAND_BASED'].includes(c.pipeline)) {
-    const ow = await env.DB.prepare("SELECT id FROM candidate_interviews WHERE candidate_id=? AND type='ONE_WAY' AND status='COMPLETED' LIMIT 1").bind(p.id).first();
-    if (!ow) return err('A completed one-way interview is required before moving this candidate forward', 422);
-  }
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='CANDIDATES',updated_at=? WHERE id=?").bind(now, p.id),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'NEW_SUBMISSION', 'CANDIDATES', u.id, 'Moved forward from intake')
-  ]);
-  return json({ success: true, toStatus: 'CANDIDATES' });
-});
-
-R.post('/api/v1/candidates/:id/transitions/not-moving-forward', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { reason } = await req.json().catch(() => ({}));
-  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Not found', 404);
-  if (c.status !== 'NEW_SUBMISSION') return err(`Guard failed: expected NEW_SUBMISSION, got ${c.status}`, 422);
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='ARCHIVED',archive_reason=?,archived_at=?,archived_by_id=?,updated_at=? WHERE id=?").bind(reason||'Not moving forward', now, u.id, now, p.id),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'NEW_SUBMISSION', 'ARCHIVED', u.id, reason||'Not moving forward')
-  ]);
-  return json({ success: true, toStatus: 'ARCHIVED' });
-});
-
-// Multi-client endorse. Accepts `{ clientIds: [..] }` (preferred) or `{ clientId }`
-// for backward compatibility. Candidate enters FINAL_INTERVIEW with
-// endorsed_client_id = NULL — only the winning client (set by /endorsements/:id/decision
-// APPROVED) populates that pointer.
-R.post('/api/v1/candidates/:id/transitions/endorse', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const b = await req.json().catch(() => ({}));
-  const rawIds = Array.isArray(b.clientIds) ? b.clientIds : (b.clientId ? [b.clientId] : []);
-  const clientIds = [...new Set(rawIds.map(s => String(s).trim()).filter(Boolean))];
-  if (!clientIds.length) return err('clientIds required');
-  if (clientIds.length > 10) return err('At most 10 clients per endorsement', 422);
-
-  const c = await env.DB.prepare('SELECT id,status,pipeline FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Candidate not found', 404);
-  if (c.status !== 'CANDIDATES') return err(`Guard failed: expected CANDIDATES, got ${c.status}`, 422);
-
-  // Sea-Based AND Land-Based both require a passed two-way interview before endorsement.
-  if (['SEA_BASED', 'LAND_BASED'].includes(c.pipeline)) {
-    const tw = await env.DB.prepare(
-      `SELECT status, passed FROM candidate_interviews
-        WHERE candidate_id=? AND type='TWO_WAY'
-        ORDER BY COALESCE(completed_at, scheduled_at, invited_at) DESC LIMIT 1`
-    ).bind(p.id).first();
-    if (!tw || tw.status !== 'COMPLETED' || tw.passed !== 1) {
-      return err('A passed two-way interview is required before endorsing this candidate', 422);
-    }
-  }
-
-  const placeholders = clientIds.map(() => '?').join(',');
-  const { results: clients } = await env.DB.prepare(
-    `SELECT id, name FROM clients WHERE is_active=1 AND id IN (${placeholders})`
-  ).bind(...clientIds).all();
-  if (clients.length !== clientIds.length) return err('One or more clients not found or inactive', 404);
-
-  const now = new Date().toISOString();
-  const meta = JSON.stringify({ clientIds, clientNames: clients.map(cl => cl.name) });
-
-  // Upsert N endorsements; reset candidate's cached endorsed_client_* (multi-client model
-  // means no single winning client until one decides APPROVED).
-  const stmts = [];
-  for (const cl of clients) {
-    const ex = await env.DB.prepare('SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=?').bind(p.id, cl.id).first();
-    if (ex) {
-      stmts.push(env.DB.prepare(
-        "UPDATE client_endorsements SET status='PENDING', endorsed_by_id=?, endorsed_at=?, decided_at=NULL, decision_notes=NULL, updated_at=? WHERE id=?"
-      ).bind(u.id, now, now, ex.id));
-    } else {
-      stmts.push(env.DB.prepare(
-        "INSERT INTO client_endorsements(id, candidate_id, client_id, status, endorsed_by_id, endorsed_at, updated_at) VALUES (?,?,?,'PENDING',?,?,?)"
-      ).bind(cuid(), p.id, cl.id, u.id, now, now));
-    }
-  }
-  // CAS guard: only flip the candidate if still in CANDIDATES (prevents racing endorsements).
-  stmts.push(env.DB.prepare(
-    "UPDATE candidates SET status='FINAL_INTERVIEW', endorsed_client_id=NULL, endorsed_client_name=NULL, updated_at=? WHERE id=? AND status='CANDIDATES'"
-  ).bind(now, p.id));
-  stmts.push(env.DB.prepare(
-    "INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata) VALUES (?,?,?,?,?,?,?)"
-  ).bind(cuid(), p.id, 'CANDIDATES', 'FINAL_INTERVIEW', u.id, `Endorsed to ${clients.map(cl => cl.name).join(', ')}`, meta));
-
-  const results = await env.DB.batch(stmts);
-  // The candidate UPDATE is the second-to-last statement
-  const candResult = results[results.length - 2];
-  if (!candResult || candResult.meta.changes !== 1) {
-    return err('Candidate state changed during endorsement', 409);
-  }
-
-  return json({
-    success: true,
-    toStatus: 'FINAL_INTERVIEW',
-    clientNames: clients.map(cl => cl.name),
-    clientIds: clients.map(cl => cl.id)
-  });
-});
-
-R.post('/api/v1/candidates/:id/transitions/client-approved', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
-  const { notes } = await req.json().catch(() => ({}));
-  const c = await env.DB.prepare('SELECT id,status,endorsed_client_id FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Not found', 404);
-  if (c.status !== 'FINAL_INTERVIEW') return err(`Guard failed: expected FINAL_INTERVIEW, got ${c.status}`, 422);
-  if (u.role === 'CLIENT_CONTACT') {
-    // Forward-compatible scope: a CLIENT_CONTACT user may approve only if their
-    // client has an active endorsement on this candidate. Avoids relying on
-    // candidates.endorsed_client_id which is intended to be NULL during
-    // FINAL_INTERVIEW once multi-client endorsement lands.
-    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc) return err('Forbidden', 403);
-    const endo = await env.DB.prepare("SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=? AND status IN ('PENDING','SCHEDULED','APPROVED')").bind(p.id, cc.client_id).first();
-    if (!endo) return err('Forbidden', 403);
-  }
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER',updated_at=? WHERE id=?").bind(now, p.id),
-    env.DB.prepare("UPDATE client_endorsements SET status='APPROVED',decided_at=?,decision_notes=?,updated_at=? WHERE candidate_id=? AND client_id=?").bind(now, notes||null, now, p.id, c.endorsed_client_id||''),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'FINAL_INTERVIEW', 'OFFER_LETTER', u.id, notes||'Client approved')
-  ]);
-  return json({ success: true, toStatus: 'OFFER_LETTER' });
-});
-
-R.post('/api/v1/candidates/:id/transitions/client-rejected', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
-  const { reason } = await req.json().catch(() => ({}));
-  const c = await env.DB.prepare('SELECT id,status,endorsed_client_id FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Not found', 404);
-  if (c.status !== 'FINAL_INTERVIEW') return err(`Guard failed: expected FINAL_INTERVIEW, got ${c.status}`, 422);
-  if (u.role === 'CLIENT_CONTACT') {
-    // Forward-compatible scope (see client-approved handler above for rationale).
-    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc) return err('Forbidden', 403);
-    const endo = await env.DB.prepare("SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=? AND status IN ('PENDING','SCHEDULED','APPROVED')").bind(p.id, cc.client_id).first();
-    if (!endo) return err('Forbidden', 403);
-  }
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='ARCHIVED',archive_reason=?,archived_at=?,archived_by_id=?,updated_at=? WHERE id=?").bind(reason||'Client rejected', now, u.id, now, p.id),
-    env.DB.prepare("UPDATE client_endorsements SET status='REJECTED',decided_at=?,decision_notes=?,updated_at=? WHERE candidate_id=? AND client_id=?").bind(now, reason||null, now, p.id, c.endorsed_client_id||''),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), p.id, 'FINAL_INTERVIEW', 'ARCHIVED', u.id, reason||'Client rejected')
-  ]);
-  return json({ success: true, toStatus: 'ARCHIVED' });
-});
+// move-forward / not-moving-forward / endorse / client-approved / client-rejected
+// (the pre-hire NEW_SUBMISSION → CANDIDATES → FINAL_INTERVIEW → OFFER_LETTER
+// flow) were removed in v8 — ZeusHire owns that pipeline now. Only the
+// post-hire archive/restore transitions remain.
 
 R.post('/api/v1/candidates/:id/transitions/archive', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
@@ -639,12 +472,9 @@ R.post('/api/v1/candidates/:id/transitions/archive', async (req, env, ctx, p) =>
 R.post('/api/v1/candidates/:id/transitions/restore', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN'); if (re) return re;
   const { restoreToStatus } = await req.json().catch(() => ({}));
-  const VALID = [
-    'NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING',
-    // J1 Program restorable states (DEPLOYED intentionally excluded — re-enroll instead)
-    'ELIGIBILITY_REVIEW','CONSULTATION_CALL',
-    'J1_STAGE_1','J1_STAGE_2','J1_STAGE_3','J1_STAGE_4','J1_VISA'
-  ];
+  // Pure CRM (v8): only the post-hire onboarding statuses are restorable
+  // (DEPLOYED intentionally excluded — re-enroll instead).
+  const VALID = ['ONBOARDING', 'READY_TO_DEPLOY'];
   if (!restoreToStatus || !VALID.includes(restoreToStatus)) return err('Valid restoreToStatus required', 422);
   const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
   if (!c) return err('Not found', 404);
@@ -657,112 +487,10 @@ R.post('/api/v1/candidates/:id/transitions/restore', async (req, env, ctx, p) =>
   return json({ success: true, toStatus: restoreToStatus });
 });
 
-// ── Offer Letters ─────────────────────────────────────────────────────────────
-
-R.get('/api/v1/candidates/:id/offer-letters', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
-  const { results } = await env.DB.prepare('SELECT ol.*,u.first_name gen_fn,u.last_name gen_ln FROM offer_letters ol JOIN users u ON ol.generated_by_id=u.id WHERE ol.candidate_id=? ORDER BY ol.created_at DESC').bind(p.id).all();
-  return json({ offerLetters: results });
-});
-
-R.post('/api/v1/candidates/:id/offer-letters', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const { documentUrl, notes, signingPlatform } = await req.json().catch(() => ({}));
-  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Not found', 404);
-  if (!['FINAL_INTERVIEW','OFFER_LETTER'].includes(c.status)) return err(`Guard failed: candidate must be in FINAL_INTERVIEW or OFFER_LETTER stage`, 422);
-  const now = new Date().toISOString();
-  const id = cuid();
-  await env.DB.prepare('INSERT INTO offer_letters(id,candidate_id,generated_by_id,document_url,notes,signing_platform,generated_at,created_at,updated_at)VALUES(?,?,?,?,?,?,?,?,?)')
-    .bind(id, p.id, u.id, documentUrl||null, notes||null, signingPlatform||'MANUAL', now, now, now).run();
-  return json({ id, success: true }, 201);
-});
-
-R.patch('/api/v1/offer-letters/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const b = await req.json().catch(() => ({}));
-  const map = {
-    document_url: b.documentUrl,
-    notes: b.notes,
-    signing_session_id: b.signingSessionId,
-    signing_url: b.signingUrl,
-    signing_expires_at: b.signingExpiresAt,
-    sent_for_signing_at: b.sentForSigningAt,
-  };
-  const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
-  if (!Object.keys(upd).length) return err('No valid fields');
-  upd.updated_at = new Date().toISOString();
-  await env.DB.prepare(`UPDATE offer_letters SET ${Object.keys(upd).map(k=>`${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
-  return json({ success: true });
-});
-
-R.post('/api/v1/offer-letters/:id/send', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE id=?').bind(p.id).first();
-  if (!ol) return err('Offer letter not found', 404);
-  if (!ol.document_url) return err('Guard failed: document_url must be set before sending', 422);
-  // Preflight: include pipeline + the SEA_BASED Marlins gate.
-  const c = await env.DB.prepare(
-    `SELECT c.id, c.status, c.pipeline, sp.marlins_passed_at
-       FROM candidates c
-       LEFT JOIN seafarer_profiles sp ON sp.candidate_id = c.id
-      WHERE c.id = ?`
-  ).bind(ol.candidate_id).first();
-  if (!c) return err('Candidate not found', 404);
-  if (c.pipeline === 'SEA_BASED' && !c.marlins_passed_at) {
-    return err('Marlins English Test must be passed before sending the offer for a Sea-Based candidate', 422);
-  }
-  const now = new Date().toISOString();
-  const batchOps = [
-    env.DB.prepare("UPDATE offer_letters SET sent_for_signing_at=?,updated_at=? WHERE id=?").bind(now, now, p.id)
-  ];
-  if (c.status === 'FINAL_INTERVIEW') {
-    batchOps.push(
-      env.DB.prepare("UPDATE candidates SET status='OFFER_LETTER',updated_at=? WHERE id=?").bind(now, c.id),
-      env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,?,?,?,?)').bind(cuid(), c.id, 'FINAL_INTERVIEW', 'OFFER_LETTER', u.id, 'Offer letter sent for signing')
-    );
-  }
-  await env.DB.batch(batchOps);
-  return json({ success: true });
-});
-
-// ── Signature Webhook ─────────────────────────────────────────────────────────
-
-R.post('/api/v1/webhooks/signature-confirmed', async (req, env) => {
-  const sigHeader = req.headers.get('X-Poseidon-Sig');
-  const bodyText = await req.text();
-  let body;
-  try { body = JSON.parse(bodyText); } catch { return err('Invalid JSON', 400); }
-  if (env.SIGNING_WEBHOOK_SECRET && sigHeader) {
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey('raw', enc.encode(env.SIGNING_WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const expectedBuf = await crypto.subtle.sign('HMAC', key, enc.encode(bodyText));
-    const expected = Array.from(new Uint8Array(expectedBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-    if (sigHeader !== expected) return err('Invalid webhook signature', 401);
-  }
-  const { signingSessionId, candidateId, signedBlob } = body;
-  if (!signingSessionId && !candidateId) return err('signingSessionId or candidateId required', 400);
-  let ol;
-  if (signingSessionId) {
-    ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE signing_session_id=?').bind(signingSessionId).first();
-  } else {
-    ol = await env.DB.prepare('SELECT*FROM offer_letters WHERE candidate_id=? ORDER BY created_at DESC LIMIT 1').bind(candidateId).first();
-  }
-  if (!ol) return err('Offer letter not found', 404);
-  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(ol.candidate_id).first();
-  if (!c) return err('Candidate not found', 404);
-  if (!['OFFER_LETTER','FINAL_INTERVIEW'].includes(c.status)) return json({ ignored: true, reason: 'Candidate not in signable state' });
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE offer_letters SET signed_at=?,signed_blob=?,webhook_verified=1,webhook_received_at=?,updated_at=? WHERE id=?").bind(now, signedBlob||'confirmed', now, now, ol.id),
-    env.DB.prepare("UPDATE candidates SET status='ONBOARDING',updated_at=? WHERE id=?").bind(now, ol.candidate_id),
-    env.DB.prepare('INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason,metadata)VALUES(?,?,?,?,?,?,?)').bind(cuid(), ol.candidate_id, c.status, 'ONBOARDING', null, 'Offer letter signed — auto-advanced to Onboarding', JSON.stringify({ offerId: ol.id, signingSessionId: signingSessionId||null }))
-  ]);
-  // Portal access is unlocked at ONBOARDING (and only here). Best-effort — failure to
-  // send the activation email must not roll back the status advance.
-  try { await provisionPortal(env, ol.candidate_id); } catch (e) { console.error('Portal provision failed:', e?.message); }
-  return json({ success: true, candidateId: ol.candidate_id, toStatus: 'ONBOARDING' });
-});
+// Offer letters + the e-signature webhook were removed in v8 — offer
+// generation/signing is ZeusHire's job now. A candidate lands directly in
+// ONBOARDING via the ZeusHire hired-push (which also calls provisionPortal()
+// to unlock portal access, same as this webhook used to do on signing).
 
 R.post('/api/v1/candidates/:id/assign-recruiter', async (req, env, ctx, p) => {
   const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
@@ -787,681 +515,146 @@ R.post('/api/v1/candidates/:id/portal-invite', async (req, env, ctx, p) => {
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
-// PUBLIC FORM & SUBMISSIONS
+// ZEUSHIRE HAND-OFF (pure-CRM v8) — the only way a candidate enters Poseidon
 // ═════════════════════════════════════════════════════════════════════════════
+//
+// Triggered by a Super Admin clicking "Push to Poseidon" on a Hired candidate
+// in ZeusHire — never automatic. multipart/form-data body:
+//   payload       — JSON string, see shape below
+//   document_0..N — file blobs, one per entry in payload.documents[]
+//
+// payload shape:
+//   { zeushireCandidateId, office, placementType, pushedBy, pushedAt,
+//     candidate: { firstName, lastName, fullName, email, phone, gender, dob,
+//                  placeOfBirth, address, city, state, country, department,
+//                  position, client },
+//     documents: [{ label, filename, mimeType }, ...],
+//     snapshot: { ...everything else from the ATS record, stored verbatim } }
+//
+// Auth: HMAC-SHA256 over the raw request body, header
+// X-ZeusHire-Signature: sha256=<hex>, shared secret env.ZEUSHIRE_POSEIDON_SECRET.
+// Idempotent: re-pushing the same zeushireCandidateId updates the existing
+// candidate (refreshes snapshot + adds any new documents) instead of
+// duplicating — a double-click or retry can't create two rows.
 
-R.get('/api/v1/public/forms/:pipeline', async (req, env, ctx, p) => {
-  const form = await env.DB.prepare("SELECT*FROM submission_forms WHERE(pipeline=? OR pipeline IS NULL)AND is_active=1 AND is_default=1 ORDER BY pipeline DESC LIMIT 1").bind(p.pipeline).first();
-  if (!form) return err('No active form', 404);
-  const { results: fields } = await env.DB.prepare('SELECT*FROM form_fields WHERE form_id=? AND is_active=1 ORDER BY sort_order').bind(form.id).all();
-  return json({ ...form, fields });
-});
+const PLACEMENT_TO_PIPELINE = { seabased: 'SEA_BASED', landbased: 'LAND_BASED', j1: 'J1_PROGRAM' };
 
-R.post('/api/v1/public/submissions', async (req, env) => {
-  const b = await req.json();
-  const { formId, pipeline, data } = b;
-  if (!formId || !pipeline || !data) return err('formId, pipeline, data required');
-  if (!['SEA_BASED', 'LAND_BASED', 'J1_PROGRAM'].includes(pipeline)) return err('Invalid pipeline');
-  const form = await env.DB.prepare('SELECT id FROM submission_forms WHERE id=? AND is_active=1').bind(formId).first();
-  if (!form) return err('Form not found', 404);
-  const id = cuid();
-  // Generate human-readable reference: CTI-YYYYMM-NNNNN
-  const now = new Date();
-  const ym = now.getFullYear().toString() + String(now.getMonth() + 1).padStart(2, '0');
-  const countRow = await env.DB.prepare('SELECT COUNT(*) as n FROM submissions').first();
-  const seq = String((countRow?.n ?? 0) + 1).padStart(5, '0');
-  const referenceId = `CTI-${ym}-${seq}`;
-  await env.DB.prepare('INSERT INTO submissions(id,form_id,pipeline,data,ip_address,user_agent)VALUES(?,?,?,?,?,?)')
-    .bind(id, formId, pipeline, JSON.stringify({ ...data, referenceId }), req.headers.get('CF-Connecting-IP'), req.headers.get('User-Agent')).run();
-  return json({ submissionId: id, referenceId, message: 'Application received successfully' }, 201);
-});
-
-R.get('/api/v1/submissions', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const pipeline = url.searchParams.get('pipeline');
-  const reviewed = url.searchParams.get('reviewed');
-  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-  const limit = Math.min(100, parseInt(url.searchParams.get('limit') || '50'));
-  const where = []; const binds = [];
-  if (pipeline) { where.push('s.pipeline=?'); binds.push(pipeline); }
-  if (reviewed === 'false') where.push('s.reviewed_at IS NULL');
-  const wc = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const { results } = await env.DB.prepare(`SELECT s.*,f.name form_name FROM submissions s JOIN submission_forms f ON s.form_id=f.id ${wc} ORDER BY s.created_at DESC LIMIT? OFFSET?`).bind(...binds, limit, (page - 1) * limit).all();
-  const tot = await env.DB.prepare(`SELECT COUNT(*)cnt FROM submissions s ${wc}`).bind(...binds).first();
-  return json({ submissions: results, total: tot.cnt, page, limit });
-});
-
-R.get('/api/v1/submissions/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const s = await env.DB.prepare('SELECT s.*,f.name form_name FROM submissions s JOIN submission_forms f ON s.form_id=f.id WHERE s.id=?').bind(p.id).first();
-  if (!s) return err('Not found', 404);
-  return json(s);
-});
-
-R.post('/api/v1/submissions/:id/convert', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const sub = await env.DB.prepare('SELECT*FROM submissions WHERE id=?').bind(p.id).first();
-  if (!sub) return err('Not found', 404);
-  const b = await req.json().catch(() => ({}));
-  const d = JSON.parse(sub.data || '{}');
-  const cid = cuid();
-  await env.DB.batch([
-    env.DB.prepare("INSERT INTO candidates(id,first_name,last_name,email,phone,pipeline,status,submission_id,assigned_recruiter_id)VALUES(?,?,?,?,?,'"+sub.pipeline+"','NEW_SUBMISSION',?,?)")
-      .bind(cid, d.firstName || d.first_name || 'Unknown', d.lastName || d.last_name || '', d.email || '', d.phone || null, p.id, b.assignRecruiterId || null),
-    env.DB.prepare("UPDATE submissions SET reviewed_by_id=?,reviewed_at=datetime('now')WHERE id=?").bind(u.id, p.id),
-    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,NULL,'NEW_SUBMISSION',?,'Converted from submission')").bind(cuid(), cid, u.id)
-  ]);
-  return json({ candidateId: cid }, 201);
-});
-
-R.post('/api/v1/submissions/:id/flag-duplicate', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { duplicateOfCandidateId } = await req.json();
-  await env.DB.prepare("UPDATE submissions SET is_duplicate=1,duplicate_of_candidate_id=?,reviewed_by_id=?,reviewed_at=datetime('now')WHERE id=?").bind(duplicateOfCandidateId || null, u.id, p.id).run();
-  return json({ success: true });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// FORM BUILDER
-// ═════════════════════════════════════════════════════════════════════════════
-
-R.get('/api/v1/forms', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const { results } = await env.DB.prepare('SELECT*FROM submission_forms ORDER BY created_at DESC').all();
-  return json({ forms: results });
-});
-
-R.post('/api/v1/forms', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const { name, description, pipeline, isActive, isDefault, fields = [] } = await req.json();
-  if (!name) return err('Name required');
-  const fid = cuid();
-  await env.DB.prepare('INSERT INTO submission_forms(id,name,description,pipeline,is_active,is_default)VALUES(?,?,?,?,?,?)')
-    .bind(fid, name, description || null, pipeline || null, isActive ? 1 : 0, isDefault ? 1 : 0).run();
-  for (let i = 0; i < fields.length; i++) {
-    const f = fields[i];
-    await env.DB.prepare('INSERT INTO form_fields(id,form_id,label,field_key,field_type,placeholder,help_text,is_required,options,file_types,max_file_size_mb,sort_order)VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-      .bind(cuid(), fid, f.label, f.fieldKey, f.fieldType, f.placeholder || null, f.helpText || null, f.isRequired ? 1 : 0, f.options ? JSON.stringify(f.options) : null, f.fileTypes ? JSON.stringify(f.fileTypes) : null, f.maxFileSizeMb || null, f.sortOrder ?? i).run();
-  }
-  return json({ formId: fid }, 201);
-});
-
-R.get('/api/v1/forms/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const form = await env.DB.prepare('SELECT*FROM submission_forms WHERE id=?').bind(p.id).first();
-  if (!form) return err('Not found', 404);
-  const { results: fields } = await env.DB.prepare('SELECT*FROM form_fields WHERE form_id=? AND is_active=1 ORDER BY sort_order').bind(p.id).all();
-  return json({ ...form, fields });
-});
-
-R.patch('/api/v1/forms/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const b = await req.json();
-  const upd = {}; if (b.name) upd.name = b.name; if (b.description !== undefined) upd.description = b.description;
-  if (b.isActive !== undefined) upd.is_active = b.isActive ? 1 : 0;
-  if (b.isDefault !== undefined) upd.is_default = b.isDefault ? 1 : 0;
-  if (!Object.keys(upd).length) return err('No valid fields');
-  upd.updated_at = new Date().toISOString();
-  await env.DB.prepare(`UPDATE submission_forms SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
-  return json({ success: true });
-});
-
-R.post('/api/v1/forms/:id/fields', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const f = await req.json();
-  if (!f.label || !f.fieldKey || !f.fieldType) return err('label, fieldKey, fieldType required');
-  const fid = cuid();
-  await env.DB.prepare('INSERT INTO form_fields(id,form_id,label,field_key,field_type,placeholder,help_text,is_required,options,file_types,sort_order)VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-    .bind(fid, p.id, f.label, f.fieldKey, f.fieldType, f.placeholder || null, f.helpText || null, f.isRequired ? 1 : 0, f.options ? JSON.stringify(f.options) : null, f.fileTypes ? JSON.stringify(f.fileTypes) : null, f.sortOrder || 0).run();
-  return json({ fieldId: fid }, 201);
-});
-
-R.patch('/api/v1/forms/:formId/fields/:fieldId', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  const b = await req.json();
-  const map = { label: b.label, placeholder: b.placeholder, help_text: b.helpText, is_required: b.isRequired !== undefined ? (b.isRequired ? 1 : 0) : undefined, sort_order: b.sortOrder, is_active: b.isActive !== undefined ? (b.isActive ? 1 : 0) : undefined };
-  const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
-  if (!Object.keys(upd).length) return err('No valid fields');
-  await env.DB.prepare(`UPDATE form_fields SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=? AND form_id=?`).bind(...Object.values(upd), p.fieldId, p.formId).run();
-  return json({ success: true });
-});
-
-R.delete('/api/v1/forms/:formId/fields/:fieldId', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN'); if (re) return re;
-  await env.DB.prepare('DELETE FROM form_fields WHERE id=? AND form_id=?').bind(p.fieldId, p.formId).run();
-  return json({ success: true });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// INTERVIEWS & BOOKING
-// ═════════════════════════════════════════════════════════════════════════════
-
-R.get('/api/v1/interviews', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { results } = await env.DB.prepare('SELECT i.*,u2.first_name fn,u2.last_name ln FROM interviews i JOIN users u2 ON i.created_by_id=u2.id WHERE i.is_active=1 ORDER BY i.created_at DESC').all();
-  return json({ interviews: results });
-});
-
-R.post('/api/v1/interviews', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { type, title, description, questions, bookingConfig } = await req.json();
-  if (!type || !title) return err('type and title required');
-  const id = cuid();
-  await env.DB.prepare('INSERT INTO interviews(id,type,title,description,created_by_id,questions,booking_config)VALUES(?,?,?,?,?,?,?)')
-    .bind(id, type, title, description || null, u.id, questions ? JSON.stringify(questions) : null, bookingConfig ? JSON.stringify(bookingConfig) : null).run();
-  return json({ interviewId: id }, 201);
-});
-
-R.get('/api/v1/interviews/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const i = await env.DB.prepare('SELECT*FROM interviews WHERE id=?').bind(p.id).first();
-  if (!i) return err('Not found', 404);
-  return json(i);
-});
-
-R.patch('/api/v1/interviews/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const b = await req.json();
-  const map = { title: b.title, description: b.description !== undefined ? b.description : undefined, questions: b.questions !== undefined ? JSON.stringify(b.questions) : undefined, is_active: b.isActive !== undefined ? (b.isActive ? 1 : 0) : undefined };
-  const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
-  if (!Object.keys(upd).length) return err('No valid fields');
-  upd.updated_at = new Date().toISOString();
-  await env.DB.prepare(`UPDATE interviews SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
-  return json({ success: true });
-});
-
-R.post('/api/v1/candidates/:id/interviews/invite', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { interviewId, expiresInHours = 72 } = await req.json();
-  const [c, iview] = await Promise.all([
-    env.DB.prepare('SELECT id,email,first_name FROM candidates WHERE id=?').bind(p.id).first(),
-    env.DB.prepare('SELECT id,type,title FROM interviews WHERE id=? AND is_active=1').bind(interviewId).first()
-  ]);
-  if (!c) return err('Candidate not found', 404);
-  if (!iview) return err('Interview not found', 404);
-  const ciId = cuid();
-  const expiresAt = new Date(Date.now() + expiresInHours * 3600000).toISOString();
-  await env.DB.prepare("INSERT INTO candidate_interviews(id,candidate_id,interview_id,status,expires_at)VALUES(?,?,?,'INVITED',?)").bind(ciId, p.id, interviewId, expiresAt).run();
-  const raw = genToken();
-  const kvKey = iview.type === 'BOOKING' ? `booking:${await hashTok(raw)}` : `interview:${await hashTok(raw)}`;
-  await env.KV.put(kvKey, JSON.stringify({ candidateId: p.id, candidateInterviewId: ciId, interviewId, expiresAt }), { expirationTtl: expiresInHours * 3600 });
-  const base = 'https://putuastra.github.io/poseidon-crm';
-  const link = iview.type === 'BOOKING' ? `${base}/booking.html?t=${raw}` : `${base}/interview.html?t=${raw}`;
-  await sendMail(env, c.email, `POSEIDON — ${iview.title}`,
-    `<div style="font-family:sans-serif;max-width:580px;margin:auto;padding:20px"><h2 style="color:#1a56db">Interview Invitation</h2><p>Dear ${c.first_name},</p><p>You have been invited to: <strong>${iview.title}</strong></p><p style="margin:24px 0"><a href="${link}" style="background:#1a56db;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;font-weight:bold">Open Now</a></p><p style="color:#6b7280;font-size:13px">Expires in ${expiresInHours} hours. — CTI Group POSEIDON</p></div>`
-  );
-  return json({ candidateInterviewId: ciId, link });
-});
-
-R.get('/api/v1/candidates/:id/interviews', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  // LEFT JOIN so external-provider rows (ZeusHire ONE_WAY/TWO_WAY) with NULL interview_id
-  // are included. ci.type holds the session type for external rows; fall back to i.type.
-  const { results } = await env.DB.prepare(
-    `SELECT ci.*,
-            COALESCE(i.title, ci.external_provider || ' ' || COALESCE(ci.type, 'Interview')) AS title,
-            COALESCE(i.type,  ci.type) AS type
-       FROM candidate_interviews ci
-       LEFT JOIN interviews i ON ci.interview_id = i.id
-      WHERE ci.candidate_id = ?
-      ORDER BY ci.invited_at DESC`
-  ).bind(p.id).all();
-  return json({ interviews: results });
-});
-
-R.patch('/api/v1/candidates/:id/interviews/:ciId', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const b = await req.json();
-  const map = { score: b.score, passed: b.passed !== undefined ? (b.passed ? 1 : 0) : undefined, recruiter_notes: b.recruiterNotes, meeting_url: b.meetingUrl, status: b.status, scheduled_at: b.scheduledAt, completed_at: b.completedAt };
-  const upd = Object.fromEntries(Object.entries(map).filter(([, v]) => v !== undefined));
-  if (!Object.keys(upd).length) return err('No valid fields');
-  upd.updated_at = new Date().toISOString();
-  await env.DB.prepare(`UPDATE candidate_interviews SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=? AND candidate_id=?`).bind(...Object.values(upd), p.ciId, p.id).run();
-  return json({ success: true });
-});
-
-// Booking public routes
-R.get('/api/v1/booking/:token', async (req, env, ctx, p) => {
-  const h = await hashTok(p.token);
-  const stored = await env.KV.get(`booking:${h}`);
-  if (!stored) return err('Invalid or expired booking link', 401);
-  const { expiresAt, interviewId, candidateId } = JSON.parse(stored);
-  if (new Date(expiresAt) < new Date()) return err('Link expired', 401);
-  const [iview, slots, candidate] = await Promise.all([
-    env.DB.prepare('SELECT id,title,description,booking_config FROM interviews WHERE id=?').bind(interviewId).first(),
-    env.DB.prepare("SELECT id,start_time,end_time FROM booking_slots WHERE interview_id=? AND is_booked=0 AND is_blocked=0 AND start_time>datetime('now') ORDER BY start_time ASC LIMIT 60").bind(interviewId).all(),
-    candidateId ? env.DB.prepare('SELECT first_name,last_name,email,pipeline FROM candidates WHERE id=?').bind(candidateId).first() : Promise.resolve(null)
-  ]);
-  return json({ interview: iview, availableSlots: slots.results, candidate });
-});
-
-R.post('/api/v1/booking/:token/confirm', async (req, env, ctx, p) => {
-  const { slotId } = await req.json();
-  if (!slotId) return err('slotId required');
-  const h = await hashTok(p.token);
-  const stored = await env.KV.get(`booking:${h}`);
-  if (!stored) return err('Invalid link', 401);
-  const { expiresAt, candidateInterviewId, candidateId, interviewId } = JSON.parse(stored);
-  if (new Date(expiresAt) < new Date()) return err('Link expired', 401);
-  const slot = await env.DB.prepare('SELECT*FROM booking_slots WHERE id=? AND is_booked=0 AND is_blocked=0').bind(slotId).first();
-  if (!slot) return err('Slot no longer available', 409);
-  await env.DB.batch([
-    env.DB.prepare('UPDATE booking_slots SET is_booked=1 WHERE id=?').bind(slotId),
-    env.DB.prepare("UPDATE candidate_interviews SET status='BOOKING_CONFIRMED',booking_slot_id=?,scheduled_at=?,updated_at=datetime('now')WHERE id=?").bind(slotId, slot.start_time, candidateInterviewId),
-    env.DB.prepare("UPDATE candidates SET status='BOOKING_CONFIRMED',updated_at=datetime('now')WHERE id=?").bind(candidateId),
-    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,reason)VALUES(?,?,'BOOKING_INVITED','BOOKING_CONFIRMED','Candidate booked a slot')").bind(cuid(), candidateId),
-    env.DB.prepare("UPDATE booking_slots SET is_blocked=1,block_reason='Global calendar conflict' WHERE interview_id!=? AND is_booked=0 AND start_time<? AND end_time>?").bind(interviewId, slot.end_time, slot.start_time)
-  ]);
-  await env.KV.delete(`booking:${h}`);
-  return json({ success: true, scheduledAt: slot.start_time });
-});
-
-R.get('/api/v1/interviews/:id/slots', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const from = url.searchParams.get('from') || new Date().toISOString();
-  const to = url.searchParams.get('to') || new Date(Date.now() + 30 * 86400000).toISOString();
-  const { results } = await env.DB.prepare('SELECT bs.*,ci.candidate_id FROM booking_slots bs LEFT JOIN candidate_interviews ci ON ci.booking_slot_id=bs.id WHERE bs.interview_id=? AND bs.start_time>=? AND bs.start_time<=? ORDER BY bs.start_time').bind(p.id, from, to).all();
-  return json({ slots: results });
-});
-
-R.post('/api/v1/interviews/:id/slots/bulk', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { slots } = await req.json();
-  if (!Array.isArray(slots) || !slots.length) return err('slots array required');
-  await env.DB.batch(slots.map(s => env.DB.prepare('INSERT OR IGNORE INTO booking_slots(id,interview_id,start_time,end_time)VALUES(?,?,?,?)').bind(cuid(), p.id, s.startTime, s.endTime)));
-  return json({ created: slots.length });
-});
-
-R.delete('/api/v1/interviews/:id/slots/:slotId', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  await env.DB.prepare('DELETE FROM booking_slots WHERE id=? AND interview_id=? AND is_booked=0').bind(p.slotId, p.id).run();
-  return json({ success: true });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// SEA-BASED — ZEUSHIRE INTERVIEW INTEGRATION (one-way + two-way)
-// ═════════════════════════════════════════════════════════════════════════════
-
-// Pipelines that use the deployment-style flow (one-way → two-way → endorse →
-// offer → onboarding → ready → deployed). Sea-Based and Land-Based share this.
-const DEPLOYMENT_PIPELINES = ['SEA_BASED', 'LAND_BASED'];
-
-async function _resolveZeushireInterviewId(env, override, key, envFallback, pipeline = 'SEA_BASED') {
-  if (override) return override;
-  const row = await env.DB.prepare(
-    "SELECT setting_value FROM program_settings WHERE pipeline=? AND setting_key=?"
-  ).bind(pipeline, key).first();
-  return row?.setting_value || envFallback || null;
+async function _uploadZeushireDocument(env, accessToken, candidateId, meta, file) {
+  const docId = cuid();
+  const safeName = String(meta?.filename || file.name || 'document').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const odPath = `/POSEIDON/${candidateId}/ZEUSHIRE_IMPORT/${docId}_${safeName}`;
+  const bytes = await file.arrayBuffer();
+  const mimeType = meta?.mimeType || file.type || 'application/octet-stream';
+  const ur = await fetch(`https://graph.microsoft.com/v1.0/users/${env.ONEDRIVE_USER}/drive/root:${odPath}:/content`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': mimeType },
+    body: bytes,
+  });
+  if (!ur.ok) throw new Error(`OneDrive upload failed (${ur.status}) for ${safeName}`);
+  const ud = await ur.json();
+  await env.DB.prepare(
+    `INSERT INTO documents (id, candidate_id, type, label, file_name, file_size_bytes, mime_type, onedrive_file_id, onedrive_url, onedrive_path, uploaded_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ZEUSHIRE_IMPORT')`
+  ).bind(docId, candidateId, (meta?.label || safeName).toUpperCase().replace(/[^A-Z0-9]+/g, '_'), meta?.label || safeName, safeName, bytes.byteLength, mimeType, ud.id, ud.webUrl, odPath).run();
+  return { id: docId, label: meta?.label || safeName };
 }
 
-R.post('/api/v1/sea/interviews/one-way', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const b = await req.json().catch(() => ({}));
-  const { candidateId, expiresInHours = 168 } = b;
-  if (!candidateId) return err('candidateId required');
-  if (!env.ZEUSHIRE_API_URL || !env.ZEUSHIRE_API_KEY) return err('ZeusHire integration not configured (set ZEUSHIRE_API_URL + ZEUSHIRE_API_KEY)', 503);
-
-  const c = await env.DB.prepare('SELECT id,first_name,last_name,email,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
-  if (!c) return err('Candidate not found', 404);
-  if (c.archived_at) return err('Candidate is archived', 422);
-  if (!DEPLOYMENT_PIPELINES.includes(c.pipeline)) return err('One-way interviews are only for Sea-Based / Land-Based pipelines', 422);
-  if (c.status !== 'NEW_SUBMISSION') return err(`Candidate must be in NEW_SUBMISSION (is ${c.status})`, 422);
-  if (!c.first_name || !c.last_name || !c.email) return err('Candidate must have first/last name and email', 422);
-
-  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId, 'zeushire_one_way_interview_id', env.ZEUSHIRE_DEFAULT_ONE_WAY_INTERVIEW, c.pipeline);
-  if (!zhInterviewId) return err(`No ZeusHire one-way interview configured. Set one in the ${c.pipeline === 'SEA_BASED' ? 'Sea-Based' : 'Land-Based'} Local Settings.`, 422);
-
-  // 1) Create the session in ZeusHire (token bound to identity)
-  const zhUrl = `${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/interview/${encodeURIComponent(zhInterviewId)}/sessions`;
-  let zhRes;
-  try {
-    zhRes = await fetch(zhUrl, {
-      method: 'POST',
-      headers: { 'X-Admin-Key': env.ZEUSHIRE_API_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        candidateFirstName: c.first_name,
-        candidateLastName:  c.last_name,
-        candidateEmail:     c.email,
-        expiresInHours
-      })
-    });
-  } catch (e) {
-    return err(`ZeusHire request failed: ${e.message || 'network error'}`, 502);
-  }
-  if (!zhRes.ok) {
-    const text = await zhRes.text().catch(() => '');
-    return err(`ZeusHire returned ${zhRes.status}: ${text.slice(0, 200)}`, 502);
-  }
-  let zhData;
-  try { zhData = await zhRes.json(); } catch { return err('ZeusHire returned non-JSON', 502); }
-  const sessionId = zhData.sessionId || zhData.id;
-  const token     = zhData.token || zhData.sessionToken;
-  const takeUrl   = zhData.takeUrl || zhData.url || (token ? `${env.ZEUSHIRE_TAKE_BASE_URL || 'https://zeushire.app'}/take/${token}` : null);
-  if (!sessionId) return err('ZeusHire response missing sessionId', 502);
-
-  // 2) Persist locally — candidate_interviews row + KV token map for webhook recovery
-  const ciId      = cuid();
-  const expiresAt = new Date(Date.now() + expiresInHours * 3600000).toISOString();
-  const tokenHash = token ? await hashTok(token) : null;
-  const meta      = JSON.stringify({ event: 'one_way_invited', sessionId, zeushireInterviewId: zhInterviewId });
-
-  try {
-    await env.DB.batch([
-      env.DB.prepare(
-        `INSERT INTO candidate_interviews
-           (id, candidate_id, interview_id, type, status, invited_at, expires_at,
-            external_provider, external_session_id, external_token_hash)
-         VALUES (?, ?, NULL, 'ONE_WAY', 'INVITED', datetime('now'), ?, 'ZEUSHIRE', ?, ?)`
-      ).bind(ciId, candidateId, expiresAt, sessionId, tokenHash),
-      env.DB.prepare(
-        `INSERT INTO pipeline_stage_history
-           (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-         VALUES (?, ?, 'NEW_SUBMISSION', 'NEW_SUBMISSION', ?, 'One-way interview dispatched', json(?))`
-      ).bind(cuid(), candidateId, u.id, meta),
-    ]);
-  } catch (e) {
-    // Best-effort compensation: try to invalidate the ZeusHire session we just created.
-    try {
-      await fetch(`${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-        headers: { 'X-Admin-Key': env.ZEUSHIRE_API_KEY }
-      });
-    } catch {}
-    return err(`Failed to record interview: ${e.message}`, 500);
-  }
-
-  // 3) KV: tokenHash → row pointer (webhook fallback path if external_session_id is missed)
-  if (tokenHash) {
-    try {
-      await env.KV.put(
-        `zh:ow:${tokenHash}`,
-        JSON.stringify({ candidateId, candidateInterviewId: ciId, sessionId }),
-        { expirationTtl: expiresInHours * 3600 }
-      );
-    } catch {}
-  }
-
-  return json({ ok: true, candidateInterviewId: ciId, sessionId, takeUrl }, 201);
-});
-
-
-// ── Webhook: ZeusHire completion (HMAC-verified, idempotent) ───────────────────
-//
-// Expected payload: { event:'one_way.completed'|'two_way.completed', sessionId,
-//                     tokenHash?, score?, passed?, completedAt?, recordingUrl? }
-// Signature header: X-ZeusHire-Signature: sha256=<hex-hmac-sha256 of raw body>
-// Configure env.ZEUSHIRE_WEBHOOK_SECRET in Cloudflare Worker secrets.
-R.post('/api/v1/webhooks/zeushire', async (req, env) => {
-  const secret = env.ZEUSHIRE_WEBHOOK_SECRET;
+R.post('/api/v1/webhooks/zeushire-hired', async (req, env) => {
+  const secret = env.ZEUSHIRE_POSEIDON_SECRET;
   if (!secret) return err('Webhook secret not configured', 503);
 
-  const sigHeader = req.headers.get('x-zeushire-signature') || req.headers.get('x-signature') || '';
+  const sigHeader = req.headers.get('x-zeushire-signature') || '';
   const m = /^sha256=([a-f0-9]+)$/i.exec(sigHeader);
   if (!m) return err('Missing or malformed signature', 401);
-  const raw = await req.text();
+  const raw = await req.clone().arrayBuffer();
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  const macBuf = await crypto.subtle.sign('HMAC', key, enc.encode(raw));
+  const macBuf = await crypto.subtle.sign('HMAC', key, raw);
   const expected = Array.from(new Uint8Array(macBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
   const given = m[1].toLowerCase();
-  // constant-time compare
   if (expected.length !== given.length) return err('Invalid signature', 401);
   let diff = 0; for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
   if (diff !== 0) return err('Invalid signature', 401);
 
-  let body;
-  try { body = JSON.parse(raw); } catch { return err('Invalid JSON', 400); }
-  const { event, sessionId, tokenHash } = body || {};
-  if (!event || !sessionId) return err('event and sessionId required', 400);
+  let form;
+  try { form = await req.formData(); } catch { return err('Expected multipart/form-data', 400); }
+  let payload;
+  try { payload = JSON.parse(form.get('payload')); } catch { return err('payload field must be valid JSON', 400); }
 
-  const score        = body.score ?? null;
-  const passedNum    = body.passed === undefined || body.passed === null ? null : (body.passed ? 1 : 0);
-  const completedAt  = body.completedAt || new Date().toISOString();
-  const recordingUrl = body.recordingUrl ?? null;
+  const { zeushireCandidateId, placementType, candidate, documents, snapshot, pushedBy, pushedAt } = payload || {};
+  if (!zeushireCandidateId) return err('zeushireCandidateId required', 400);
+  if (!candidate?.email || !candidate?.firstName || !candidate?.lastName) return err('candidate.firstName, lastName, email required', 400);
+  const pipeline = PLACEMENT_TO_PIPELINE[placementType];
+  if (!pipeline) return err('Invalid or missing placementType', 400);
 
-  // Resolve the candidate_interviews row by external_session_id; fall back to KV by tokenHash.
-  let ci = await env.DB.prepare(
-    `SELECT ci.id, ci.candidate_id, ci.type, ci.status, c.archived_at
-       FROM candidate_interviews ci JOIN candidates c ON c.id = ci.candidate_id
-      WHERE ci.external_session_id = ?`
-  ).bind(sessionId).first();
+  const now = new Date().toISOString();
+  const addressJson = JSON.stringify({ city: candidate.city || '', province: candidate.state || '', country: candidate.country || '' });
+  const snapshotJson = JSON.stringify({ ...snapshot, department: candidate.department, position: candidate.position, client: candidate.client, placeOfBirth: candidate.placeOfBirth });
 
-  // Orphan-recovery path: row never persisted (POSEIDON crashed between ZeusHire create and DB insert)
-  if (!ci && event === 'one_way.completed' && tokenHash) {
-    const stored = await env.KV.get(`zh:ow:${tokenHash}`, { type: 'json' });
-    if (stored?.candidateId) {
-      const c = await env.DB.prepare('SELECT id, archived_at FROM candidates WHERE id=?').bind(stored.candidateId).first();
-      if (c && !c.archived_at) {
-        const recoveredId = stored.candidateInterviewId || cuid();
-        await env.DB.prepare(
-          `INSERT INTO candidate_interviews
-             (id, candidate_id, interview_id, type, status, invited_at, completed_at,
-              external_provider, external_session_id, external_token_hash, score, passed, recording_url)
-           VALUES (?, ?, NULL, 'ONE_WAY', 'COMPLETED', datetime('now'), ?, 'ZEUSHIRE', ?, ?, ?, ?, ?)`
-        ).bind(recoveredId, stored.candidateId, completedAt, sessionId, tokenHash, score, passedNum, recordingUrl).run();
-        try { await env.KV.delete(`zh:ow:${tokenHash}`); } catch {}
-        return json({ ok: true, recovered: true });
-      }
-    }
-  }
-
-  if (!ci) return json({ ok: true, dropped: 'unknown_session' });
-  if (ci.archived_at) return json({ ok: true, dropped: 'candidate_archived' });
-  if (ci.status === 'COMPLETED') return json({ ok: true, already: true });
-
-  const histMeta = JSON.stringify({ event, type: ci.type, score, passed: passedNum, session_id: sessionId });
-
-  await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE candidate_interviews
-          SET status='COMPLETED', score=?, passed=?, completed_at=?, recording_url=?, updated_at=datetime('now')
+  const existing = await env.DB.prepare('SELECT id FROM candidates WHERE zeushire_candidate_id=?').bind(zeushireCandidateId).first();
+  let candidateId;
+  if (existing) {
+    candidateId = existing.id;
+    await env.DB.prepare(
+      `UPDATE candidates SET first_name=?, last_name=?, email=?, phone=?, date_of_birth=?, nationality=?, address=?,
+              zeushire_snapshot=?, zeushire_pushed_by=?, zeushire_pushed_at=?, updated_at=?
         WHERE id=?`
-    ).bind(score, passedNum, completedAt, recordingUrl, ci.id),
-    env.DB.prepare(
-      `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-       SELECT ?, ?, status, status, NULL, 'ZeusHire interview completed', json(?)
-         FROM candidates WHERE id = ?`
-    ).bind(cuid(), ci.candidate_id, histMeta, ci.candidate_id),
-  ]);
-
-  if (tokenHash) { try { await env.KV.delete(`zh:ow:${tokenHash}`); } catch {} }
-  return json({ ok: true });
-});
-
-
-// ── Sea-Based two-way (live panel) ZeusHire interview ─────────────────────────
-R.post('/api/v1/sea/interviews/two-way', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const b = await req.json().catch(() => ({}));
-  const { candidateId, scheduledAt, durationMinutes = 45, position, autoMeeting = true } = b;
-  if (!candidateId || !scheduledAt) return err('candidateId and scheduledAt required');
-  if (!env.ZEUSHIRE_API_URL || !env.ZEUSHIRE_API_KEY) return err('ZeusHire integration not configured', 503);
-  if (new Date(scheduledAt).getTime() <= Date.now()) return err('scheduledAt must be in the future', 422);
-
-  const c = await env.DB.prepare('SELECT id,first_name,last_name,email,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
-  if (!c) return err('Candidate not found', 404);
-  if (c.archived_at) return err('Candidate is archived', 422);
-  if (!DEPLOYMENT_PIPELINES.includes(c.pipeline)) return err('Two-way interviews are only for Sea-Based / Land-Based pipelines', 422);
-  if (c.status !== 'CANDIDATES') return err(`Candidate must be in CANDIDATES (is ${c.status})`, 422);
-  if (!c.first_name || !c.last_name || !c.email) return err('Candidate must have first/last name and email', 422);
-
-  const zhInterviewId = await _resolveZeushireInterviewId(env, b.zeushireInterviewId, 'zeushire_two_way_interview_id', env.ZEUSHIRE_DEFAULT_TWO_WAY_INTERVIEW, c.pipeline);
-  if (!zhInterviewId) return err(`No ZeusHire two-way interview configured. Set one in the ${c.pipeline === 'SEA_BASED' ? 'Sea-Based' : 'Land-Based'} Local Settings.`, 422);
-
-  const zhUrl = `${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/interview/${encodeURIComponent(zhInterviewId)}/tw-sessions`;
-  let zhRes;
-  try {
-    zhRes = await fetch(zhUrl, {
-      method: 'POST',
-      headers: { 'X-Admin-Key': env.ZEUSHIRE_API_KEY, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        candidateFirstName: c.first_name,
-        candidateLastName:  c.last_name,
-        candidateEmail:     c.email,
-        scheduledAt,
-        durationMinutes,
-        position: position || null,
-        autoMeeting
-      })
-    });
-  } catch (e) { return err(`ZeusHire request failed: ${e.message || 'network error'}`, 502); }
-  if (!zhRes.ok) {
-    const text = await zhRes.text().catch(() => '');
-    return err(`ZeusHire returned ${zhRes.status}: ${text.slice(0, 200)}`, 502);
-  }
-  let zhData;
-  try { zhData = await zhRes.json(); } catch { return err('ZeusHire returned non-JSON', 502); }
-  const sessionId   = zhData.sessionId || zhData.id;
-  const meetingUrl  = zhData.meetingUrl || zhData.meetingLink || zhData.url || null;
-  if (!sessionId) return err('ZeusHire response missing sessionId', 502);
-
-  const ciId = cuid();
-  const meta = JSON.stringify({ event: 'two_way_invited', sessionId, scheduledAt, durationMinutes });
-
-  try {
+    ).bind(candidate.firstName, candidate.lastName, candidate.email, candidate.phone || null, candidate.dob || null,
+      candidate.country || null, addressJson, snapshotJson, pushedBy || null, pushedAt ? new Date(pushedAt).toISOString() : now, now, candidateId).run();
+  } else {
+    candidateId = cuid();
     await env.DB.batch([
       env.DB.prepare(
-        `INSERT INTO candidate_interviews
-           (id, candidate_id, interview_id, type, status, invited_at, scheduled_at, meeting_url,
-            external_provider, external_session_id)
-         VALUES (?, ?, NULL, 'TWO_WAY', 'SCHEDULED', datetime('now'), ?, ?, 'ZEUSHIRE', ?)`
-      ).bind(ciId, candidateId, scheduledAt, meetingUrl, sessionId),
+        `INSERT INTO candidates (id, first_name, last_name, email, phone, date_of_birth, nationality, address,
+                pipeline, status, zeushire_candidate_id, zeushire_snapshot, zeushire_pushed_by, zeushire_pushed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ONBOARDING', ?, ?, ?, ?, ?, ?)`
+      ).bind(candidateId, candidate.firstName, candidate.lastName, candidate.email, candidate.phone || null, candidate.dob || null,
+        candidate.country || null, addressJson, pipeline, zeushireCandidateId, snapshotJson, pushedBy || null,
+        pushedAt ? new Date(pushedAt).toISOString() : now, now, now),
       env.DB.prepare(
-        `INSERT INTO pipeline_stage_history
-           (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-         VALUES (?, ?, 'CANDIDATES', 'CANDIDATES', ?, 'Two-way interview scheduled', json(?))`
-      ).bind(cuid(), candidateId, u.id, meta),
+        `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
+         VALUES (?, ?, NULL, 'ONBOARDING', NULL, 'Pushed from ZeusHire (Hired)', ?)`
+      ).bind(cuid(), candidateId, JSON.stringify({ zeushireCandidateId, pushedBy: pushedBy || null })),
     ]);
-  } catch (e) {
-    try {
-      await fetch(`${env.ZEUSHIRE_API_URL.replace(/\/$/, '')}/api/tw-sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE', headers: { 'X-Admin-Key': env.ZEUSHIRE_API_KEY }
-      });
-    } catch {}
-    return err(`Failed to record interview: ${e.message}`, 500);
   }
 
-  return json({ ok: true, candidateInterviewId: ciId, sessionId, meetingUrl }, 201);
-});
-
-
-// ── Marlins English Test (gates offer-letter send for SEA_BASED) ──────────────
-//
-// Stores each attempt in marlins_tests; flips seafarer_profiles.marlins_passed_at
-// on the first PASS. The offer-send endpoint (§/api/v1/offer-letters/:id/send)
-// reads marlins_passed_at to gate Sea-Based contract dispatch.
-
-function _marlinsThreshold(env) {
-  const t = parseFloat(env.MARLINS_PASS_THRESHOLD || '70');
-  return isNaN(t) ? 70 : t;
-}
-
-R.post('/api/v1/sea/marlins', async (req, env) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const b = await req.json().catch(() => ({}));
-  const { candidateId, durationSeconds, code, takenAt } = b;
-  const scoreNum = parseFloat(b.score);
-  if (!candidateId || isNaN(scoreNum)) return err('candidateId and numeric score required');
-  if (scoreNum < 0 || scoreNum > 100) return err('score must be between 0 and 100', 422);
-
-  const c = await env.DB.prepare('SELECT id,first_name,last_name,pipeline,status,archived_at FROM candidates WHERE id=?').bind(candidateId).first();
-  if (!c) return err('Candidate not found', 404);
-  if (c.archived_at) return err('Candidate is archived', 422);
-  if (c.pipeline !== 'SEA_BASED') return err('Marlins tests are only recorded for Sea-Based candidates', 422);
-  if (c.status !== 'OFFER_LETTER') return err(`Candidate must be in OFFER_LETTER stage (is ${c.status})`, 422);
-
-  const threshold = _marlinsThreshold(env);
-  const passed    = scoreNum >= threshold;
-  const result    = passed ? 'PASS' : 'FAIL';
-  const now       = new Date().toISOString();
-  const takenAtFinal = takenAt || now;
-  const fullName  = [c.first_name, c.last_name].filter(Boolean).join(' ');
-
-  // Make sure a seafarer_profiles row exists so the UPDATE below moves a row.
-  await env.DB.prepare(
-    "INSERT INTO seafarer_profiles (id, candidate_id, marlins_attempts) VALUES (?, ?, 0) ON CONFLICT(candidate_id) DO NOTHING"
-  ).bind(cuid(), candidateId).run();
-
-  const meta = JSON.stringify({ event: 'marlins_attempt', result, score: scoreNum, threshold });
-
-  await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO marlins_tests
-         (id, candidate_id, score, duration_seconds, code, result, taken_at, recorded_by_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(cuid(), candidateId, scoreNum, durationSeconds || null, code || null, result, takenAtFinal, u.id),
-    env.DB.prepare(
-      `UPDATE seafarer_profiles
-          SET marlins_attempts = COALESCE(marlins_attempts, 0) + 1,
-              marlins_passed_at = CASE
-                WHEN ? = 1 AND marlins_passed_at IS NULL THEN ?
-                ELSE marlins_passed_at
-              END,
-              updated_at = ?
-        WHERE candidate_id = ?`
-    ).bind(passed ? 1 : 0, now, now, candidateId),
-    env.DB.prepare(
-      `INSERT INTO pipeline_stage_history
-         (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-       VALUES (?, ?, 'OFFER_LETTER', 'OFFER_LETTER', ?, ?, json(?))`
-    ).bind(cuid(), candidateId, u.id, `Marlins ${result} (${scoreNum})`, meta),
-  ]);
-
-  // Return the canonical post-attempt state so the UI can refresh without a re-fetch.
-  const sp = await env.DB.prepare('SELECT marlins_attempts, marlins_passed_at FROM seafarer_profiles WHERE candidate_id=?').bind(candidateId).first();
-
-  // Fail-cap policy: after N consecutive failures, auto-archive the candidate.
-  // Configurable via env.MARLINS_MAX_ATTEMPTS or program_settings.SEA_BASED.marlins_max_attempts.
-  // Default 3. Set to 0/empty to disable the cap (unlimited retakes).
-  let autoArchived = false;
-  if (!passed && !sp?.marlins_passed_at) {
-    const capSetting = await env.DB.prepare(
-      "SELECT setting_value FROM program_settings WHERE pipeline='SEA_BASED' AND setting_key='marlins_max_attempts'"
-    ).first();
-    const capRaw = (capSetting?.setting_value ?? env.MARLINS_MAX_ATTEMPTS ?? '3').toString().trim();
-    const cap = parseInt(capRaw, 10);
-    if (!isNaN(cap) && cap > 0 && (sp?.marlins_attempts || 0) >= cap) {
-      const archReason = `Marlins failed (${sp.marlins_attempts} attempts, max ${cap})`;
-      await env.DB.batch([
-        env.DB.prepare(
-          "UPDATE candidates SET status='ARCHIVED', archive_reason=?, archive_sub_stage=?, archived_at=?, archived_by_id=?, updated_at=? WHERE id=? AND status='OFFER_LETTER'"
-        ).bind(archReason, 'Offer Letter - Marlins Failed', now, u.id, now, candidateId),
-        env.DB.prepare(
-          `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-           VALUES (?, ?, 'OFFER_LETTER','ARCHIVED', ?, ?, json(?))`
-        ).bind(cuid(), candidateId, u.id, archReason, JSON.stringify({ event: 'marlins_fail_cap', attempts: sp.marlins_attempts, cap }))
-      ]);
-      autoArchived = true;
+  // Upload documents (best-effort per-file — one bad file shouldn't fail the whole push).
+  const docsMeta = Array.isArray(documents) ? documents : [];
+  let uploaded = 0;
+  if (docsMeta.length) {
+    const accessToken = await graphToken(env);
+    for (let i = 0; i < docsMeta.length; i++) {
+      const file = form.get(`document_${i}`);
+      if (!file || typeof file === 'string') continue;
+      try { await _uploadZeushireDocument(env, accessToken, candidateId, docsMeta[i], file); uploaded++; }
+      catch (e) { console.error('ZeusHire document upload failed:', docsMeta[i]?.filename, e?.message); }
     }
   }
 
-  return json({
-    success: true,
-    candidate: { id: candidateId, name: fullName },
-    result, score: scoreNum, threshold,
-    attempt: sp?.marlins_attempts || 1,
-    marlinsPassedAt: sp?.marlins_passed_at || null,
-    unlocked: passed,
-    autoArchived
-  }, 201);
+  // Portal access unlocks at ONBOARDING — same as it used to on offer-letter
+  // signing. Best-effort; failure to email must not fail the push.
+  if (!existing) { try { await provisionPortal(env, candidateId); } catch (e) { console.error('Portal provision failed:', e?.message); } }
+
+  return json({ ok: true, candidateId, updated: !!existing, documentsUploaded: uploaded }, existing ? 200 : 201);
 });
 
+// Public application form, submissions review/conversion, and the form
+// builder were removed in v8 — application intake is entirely ZeusHire's job.
 
-R.get('/api/v1/candidates/:id/marlins', async (req, env, ctx, p) => {
-  const u = await auth(req, env);
-  const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'ONBOARDING_TEAM'); if (re) return re;
-  const [profile, tests] = await Promise.all([
-    env.DB.prepare('SELECT marlins_attempts, marlins_passed_at FROM seafarer_profiles WHERE candidate_id=?').bind(p.id).first(),
-    env.DB.prepare('SELECT id, score, result, duration_seconds, code, taken_at FROM marlins_tests WHERE candidate_id=? ORDER BY taken_at DESC LIMIT 20').bind(p.id).all(),
-  ]);
-  return json({
-    attempts:        profile?.marlins_attempts || 0,
-    marlinsPassedAt: profile?.marlins_passed_at || null,
-    threshold:       _marlinsThreshold(env),
-    history:         tests.results || []
-  });
-});
+// Interview CRUD, candidate-interview invites/scoring, and the booking-slot
+// system were removed in v8 — interview scheduling is entirely ZeusHire's
+// job. A candidate's interview history now arrives read-only in
+// candidates.zeushire_snapshot (see the Interview tab in admin.js).
 
+// The ZeusHire one-way/two-way interview dispatch, the old completion
+// webhook, and the Marlins English Test were removed in v8 — interviewing
+// and screening are entirely ZeusHire's job now (Marlins results, if any,
+// arrive read-only in candidates.zeushire_snapshot).
+
+// Pipelines that use the deployment-style onboarding flow (documents →
+// ready-to-deploy → deployed). Sea-Based and Land-Based share this; J1 tracks
+// onboarding via j1_profiles instead.
+const DEPLOYMENT_PIPELINES = ['SEA_BASED', 'LAND_BASED'];
 
 // ── Onboarding: verify-docs-and-mark-ready ────────────────────────────────────
 //
@@ -1685,175 +878,12 @@ R.get('/api/v1/candidates/:id/deployments', async (req, env, ctx, p) => {
 });
 
 
-// ── Client decision on an endorsement (multi-client model) ────────────────────
-// Replaces the per-candidate /transitions/client-approved and /client-rejected
-// pattern: every decision is now scoped to a specific endorsement row.
-R.post('/api/v1/endorsements/:id/decision', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
-  const { decision, notes } = await req.json().catch(() => ({}));
-  if (!['APPROVED', 'REJECTED'].includes(decision)) return err("decision must be 'APPROVED' or 'REJECTED'", 422);
-
-  const e = await env.DB.prepare(
-    `SELECT e.id, e.candidate_id, e.client_id, e.status AS endorsement_status,
-            cl.name AS client_name, c.status AS candidate_status, c.archived_at
-       FROM client_endorsements e
-       JOIN candidates c ON c.id = e.candidate_id
-       LEFT JOIN clients cl ON cl.id = e.client_id
-      WHERE e.id = ?`
-  ).bind(p.id).first();
-  if (!e) return err('Endorsement not found', 404);
-  if (e.archived_at) return err('Candidate is archived', 422);
-  if (e.candidate_status !== 'FINAL_INTERVIEW') return err(`Candidate must be in FINAL_INTERVIEW (is ${e.candidate_status})`, 422);
-  if (['APPROVED', 'REJECTED', 'WITHDRAWN'].includes(e.endorsement_status)) {
-    return err(`Endorsement already ${e.endorsement_status}`, 409);
-  }
-
-  if (u.role === 'CLIENT_CONTACT') {
-    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc || cc.client_id !== e.client_id) return err('Forbidden', 403);
-  }
-
-  const now = new Date().toISOString();
-
-  if (decision === 'REJECTED') {
-    // Mark this endorsement REJECTED; if no other active endorsements remain,
-    // fall the candidate back to CANDIDATES.
-    const updRes = await env.DB.prepare(
-      `UPDATE client_endorsements
-          SET status='REJECTED', decided_at=?, decision_notes=?, updated_at=?
-        WHERE id=? AND status NOT IN ('APPROVED','REJECTED','WITHDRAWN')`
-    ).bind(now, notes || null, now, p.id).run();
-    if (!updRes.meta || updRes.meta.changes !== 1) return err('Endorsement state changed concurrently', 409);
-
-    const active = await env.DB.prepare(
-      "SELECT COUNT(*) AS n FROM client_endorsements WHERE candidate_id=? AND status IN ('PENDING','SCHEDULED')"
-    ).bind(e.candidate_id).first();
-
-    const stmts = [
-      env.DB.prepare(
-        `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-         VALUES (?, ?, 'FINAL_INTERVIEW', ?, ?, ?, json(?))`
-      ).bind(
-        cuid(), e.candidate_id,
-        active.n > 0 ? 'FINAL_INTERVIEW' : 'CANDIDATES',
-        u.id,
-        active.n > 0 ? `${e.client_name || 'Client'} rejected; other endorsements still active` : 'All endorsements declined; returned to Candidates',
-        JSON.stringify({ endorsement_id: p.id, client_id: e.client_id, remaining_active: active.n })
-      )
-    ];
-    if (active.n === 0) {
-      stmts.unshift(env.DB.prepare(
-        "UPDATE candidates SET status='CANDIDATES', updated_at=? WHERE id=? AND status='FINAL_INTERVIEW'"
-      ).bind(now, e.candidate_id));
-    }
-    await env.DB.batch(stmts);
-
-    return json({ success: true, decision: 'REJECTED', candidateStatus: active.n > 0 ? 'FINAL_INTERVIEW' : 'CANDIDATES', activeEndorsements: active.n });
-  }
-
-  // APPROVED — race-guard against another client already approving.
-  const winner = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM client_endorsements WHERE candidate_id=? AND status='APPROVED'"
-  ).bind(e.candidate_id).first();
-  if (winner.n > 0) return err('Candidate already approved by another client', 409);
-
-  const meta = JSON.stringify({ endorsement_id: p.id, client_id: e.client_id, client_name: e.client_name });
-  const results = await env.DB.batch([
-    env.DB.prepare(
-      `UPDATE client_endorsements
-          SET status='APPROVED', decided_at=?, decision_notes=?, updated_at=?
-        WHERE id=? AND status NOT IN ('APPROVED','REJECTED','WITHDRAWN')`
-    ).bind(now, notes || null, now, p.id),
-    env.DB.prepare(
-      `UPDATE client_endorsements
-          SET status='WITHDRAWN', decided_at=?, decision_notes='Auto-withdrawn: candidate approved by another client', updated_at=?
-        WHERE candidate_id=? AND id != ? AND status IN ('PENDING','SCHEDULED')`
-    ).bind(now, now, e.candidate_id, p.id),
-    env.DB.prepare(
-      `UPDATE candidates
-          SET status='OFFER_LETTER', endorsed_client_id=?, endorsed_client_name=?, updated_at=?
-        WHERE id=? AND status='FINAL_INTERVIEW'`
-    ).bind(e.client_id, e.client_name, now, e.candidate_id),
-    env.DB.prepare(
-      `INSERT INTO pipeline_stage_history (id, candidate_id, from_status, to_status, triggered_by_id, reason, metadata)
-       VALUES (?, ?, 'FINAL_INTERVIEW', 'OFFER_LETTER', ?, ?, json(?))`
-    ).bind(cuid(), e.candidate_id, u.id, `${e.client_name || 'Client'} approved`, meta)
-  ]);
-
-  // Compensation if the candidate UPDATE didn't move exactly one row.
-  const candResult = results[2];
-  if (!candResult || candResult.meta.changes !== 1) {
-    await env.DB.prepare(
-      "UPDATE client_endorsements SET status='PENDING', decided_at=NULL, updated_at=? WHERE id=?"
-    ).bind(now, p.id).run();
-    return err('Candidate state changed during decision', 409);
-  }
-
-  return json({ success: true, decision: 'APPROVED', candidateStatus: 'OFFER_LETTER', clientName: e.client_name });
-});
-
-
-// ── Grouped Final-Interview listing (UI consumes this to render by client) ────
-// Returns { groups: [{ client:{id,name}, endorsements:[{...,candidate:{...}}] }] }
-// Only clients with ≥1 active endorsement (PENDING/SCHEDULED) appear.
-R.get('/api/v1/endorsements/final-interview-grouped', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env);
-  const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER', 'CLIENT_CONTACT'); if (re) return re;
-
-  const pipeline = url.searchParams.get('pipeline');
-  const params = []; const where = ["c.status='FINAL_INTERVIEW'", "e.status IN ('PENDING','SCHEDULED')"];
-  if (pipeline) { where.push('c.pipeline=?'); params.push(pipeline); }
-
-  // CLIENT_CONTACT can only see endorsements for their client.
-  let scopedClientId = null;
-  if (u.role === 'CLIENT_CONTACT') {
-    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc) return err('Forbidden', 403);
-    scopedClientId = cc.client_id;
-    where.push('e.client_id=?'); params.push(scopedClientId);
-  } else if (u.role === 'RECRUITER') {
-    where.push('c.assigned_recruiter_id=?'); params.push(u.id);
-  }
-
-  const { results } = await env.DB.prepare(
-    `SELECT e.id AS endorsement_id, e.client_id, e.status AS endorsement_status,
-            e.endorsed_at, e.scheduled_at, e.decided_at, e.decision_notes, e.interview_url,
-            cl.name AS client_name,
-            c.id AS candidate_id, c.first_name, c.last_name, c.email, c.pipeline,
-            c.assigned_recruiter_id, c.updated_at AS candidate_updated_at
-       FROM client_endorsements e
-       JOIN candidates c ON c.id = e.candidate_id
-       LEFT JOIN clients cl ON cl.id = e.client_id
-      WHERE ${where.join(' AND ')}
-      ORDER BY cl.name ASC, e.endorsed_at DESC`
-  ).bind(...params).all();
-
-  const byClient = new Map();
-  for (const r of (results || [])) {
-    if (!byClient.has(r.client_id)) {
-      byClient.set(r.client_id, { client: { id: r.client_id, name: r.client_name }, endorsements: [] });
-    }
-    byClient.get(r.client_id).endorsements.push({
-      id: r.endorsement_id,
-      status: r.endorsement_status,
-      endorsedAt: r.endorsed_at,
-      scheduledAt: r.scheduled_at,
-      decidedAt: r.decided_at,
-      decisionNotes: r.decision_notes,
-      interviewUrl: r.interview_url,
-      candidate: {
-        id: r.candidate_id,
-        firstName: r.first_name, lastName: r.last_name, email: r.email,
-        pipeline: r.pipeline, updatedAt: r.candidate_updated_at,
-        assignedRecruiterId: r.assigned_recruiter_id
-      }
-    });
-  }
-  return json({ groups: [...byClient.values()] });
-});
+// Client endorsement decisions and the grouped final-interview listing were
+// removed in v8 along with the rest of the pre-hire pipeline — client
+// approval of a candidate is ZeusHire's job now.
 
 // ═════════════════════════════════════════════════════════════════════════════
-// CLIENTS & ENDORSEMENTS
+// CLIENTS
 // ═════════════════════════════════════════════════════════════════════════════
 
 R.get('/api/v1/clients', async (req, env, ctx, p, url) => {
@@ -1917,61 +947,9 @@ R.delete('/api/v1/clients/:id/contacts/:userId', async (req, env, ctx, p) => {
   return json({ success: true });
 });
 
-R.post('/api/v1/candidates/:id/endorse', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { clientIds } = await req.json();
-  if (!Array.isArray(clientIds) || !clientIds.length) return err('clientIds array required');
-  const c = await env.DB.prepare('SELECT id,status FROM candidates WHERE id=?').bind(p.id).first();
-  if (!c) return err('Not found', 404);
-  if (c.status !== 'CANDIDATES') return err('Candidate must be in CANDIDATES state', 422);
-  for (const cid of clientIds) {
-    const ex = await env.DB.prepare('SELECT id FROM client_endorsements WHERE candidate_id=? AND client_id=?').bind(p.id, cid).first();
-    if (!ex) await env.DB.prepare('INSERT INTO client_endorsements(id,candidate_id,client_id)VALUES(?,?,?)').bind(cuid(), p.id, cid).run();
-  }
-  await env.DB.batch([
-    env.DB.prepare("UPDATE candidates SET status='FINAL_INTERVIEW',updated_at=datetime('now')WHERE id=?").bind(p.id),
-    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,triggered_by_id,reason)VALUES(?,?,'CANDIDATES','FINAL_INTERVIEW',?,?)").bind(cuid(), p.id, u.id, `Endorsed to ${clientIds.length} client(s)`)
-  ]);
-  return json({ success: true, endorsedTo: clientIds.length });
-});
-
-R.get('/api/v1/candidates/:id/endorsements', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'RECRUITER'); if (re) return re;
-  const { results } = await env.DB.prepare('SELECT ce.*,cl.name client_name,cl.type client_type FROM client_endorsements ce JOIN clients cl ON ce.client_id=cl.id WHERE ce.candidate_id=?').bind(p.id).all();
-  return json({ endorsements: results });
-});
-
-R.patch('/api/v1/endorsements/:id', async (req, env, ctx, p) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
-  const { status, decisionNotes, scheduledAt, interviewUrl } = await req.json();
-  const VALID = ['PENDING', 'SCHEDULED', 'COMPLETED', 'REJECTED', 'APPROVED', 'WITHDRAWN'];
-  if (status && !VALID.includes(status)) return err('Invalid status');
-  const e = await env.DB.prepare('SELECT*FROM client_endorsements WHERE id=?').bind(p.id).first();
-  if (!e) return err('Not found', 404);
-  if (u.role === 'CLIENT_CONTACT') {
-    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc || cc.client_id !== e.client_id) return err('Forbidden', 403);
-  }
-  const upd = {}; if (status) { upd.status = status; upd.decided_at = new Date().toISOString(); }
-  if (decisionNotes) upd.decision_notes = decisionNotes; if (scheduledAt) upd.scheduled_at = scheduledAt; if (interviewUrl) upd.interview_url = interviewUrl;
-  upd.updated_at = new Date().toISOString();
-  await env.DB.prepare(`UPDATE client_endorsements SET ${Object.keys(upd).map(k => `${k}=?`).join()} WHERE id=?`).bind(...Object.values(upd), p.id).run();
-  // NOTE: legacy ENDORSED → CLIENT_APPROVED branch removed.
-  // Candidate-level approval flow now lives in /api/v1/candidates/:id/transitions/client-approved.
-  // Portal provisioning is gated to the ONBOARDING transition (signature-confirmed webhook
-  // and the /portal-invite endpoint) — never from the endorsement decision itself.
-  return json({ success: true });
-});
-
-R.get('/api/v1/clients/:id/endorsements', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'SUPER_ADMIN', 'ADMIN', 'CLIENT_CONTACT'); if (re) return re;
-  if (u.role === 'CLIENT_CONTACT') {
-    const cc = await env.DB.prepare('SELECT client_id FROM client_contacts WHERE user_id=?').bind(u.id).first();
-    if (!cc || cc.client_id !== p.id) return err('Forbidden', 403);
-  }
-  const { results } = await env.DB.prepare('SELECT ce.*,c.first_name,c.last_name,c.email,c.pipeline FROM client_endorsements ce JOIN candidates c ON ce.candidate_id=c.id WHERE ce.client_id=? ORDER BY ce.endorsed_at DESC').bind(p.id).all();
-  return json({ endorsements: results });
-});
+// Candidate endorsement (single-candidate variant), endorsement CRUD, and
+// per-client endorsement listing were removed in v8 along with the rest of
+// the endorsement workflow.
 
 // ═════════════════════════════════════════════════════════════════════════════
 // DOCUMENTS & ONEDRIVE
@@ -2488,63 +1466,10 @@ R.patch('/api/v1/program-settings/:pipeline', async (req, env, ctx, p) => {
   return json({ success: true });
 });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// ONE-WAY INTERVIEW (public token)
-// ═════════════════════════════════════════════════════════════════════════════
-
-R.get('/api/v1/interview/:token', async (req, env, ctx, p) => {
-  const h = await hashTok(p.token);
-  const stored = await env.KV.get(`interview:${h}`);
-  if (!stored) return err('Invalid or expired link', 401);
-  const { expiresAt, interviewId, candidateId, candidateInterviewId } = JSON.parse(stored);
-  if (new Date(expiresAt) < new Date()) return err('Link expired', 401);
-  const [iview, ci, candidate] = await Promise.all([
-    env.DB.prepare('SELECT id,title,description,type,questions FROM interviews WHERE id=?').bind(interviewId).first(),
-    env.DB.prepare('SELECT status FROM candidate_interviews WHERE id=?').bind(candidateInterviewId).first(),
-    candidateId ? env.DB.prepare('SELECT first_name,last_name,pipeline FROM candidates WHERE id=?').bind(candidateId).first() : Promise.resolve(null)
-  ]);
-  if (!iview) return err('Interview not found', 404);
-  if (ci?.status === 'SUBMITTED' || ci?.status === 'COMPLETED') return err('Already submitted', 409);
-  return json({ interview: { ...iview, questions: iview.questions ? JSON.parse(iview.questions) : [] }, candidate, expiresAt });
-});
-
-R.post('/api/v1/interview/:token/submit', async (req, env, ctx, p) => {
-  const h = await hashTok(p.token);
-  const stored = await env.KV.get(`interview:${h}`);
-  if (!stored) return err('Invalid or expired link', 401);
-  const { expiresAt, candidateId, candidateInterviewId } = JSON.parse(stored);
-  if (new Date(expiresAt) < new Date()) return err('Link expired', 401);
-  const { answers } = await req.json();
-  if (!answers || typeof answers !== 'object') return err('answers required');
-  const now = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare("UPDATE candidate_interviews SET status='SUBMITTED',submitted_at=?,answers=?,updated_at=? WHERE id=?")
-      .bind(now, JSON.stringify(answers), now, candidateInterviewId),
-    env.DB.prepare("UPDATE candidates SET status='OWI_SUBMITTED',updated_at=? WHERE id=? AND status='OWI_INVITED'")
-      .bind(now, candidateId),
-    env.DB.prepare("INSERT INTO pipeline_stage_history(id,candidate_id,from_status,to_status,reason)VALUES(?,?,'OWI_INVITED','OWI_SUBMITTED','Interview submitted by candidate')")
-      .bind(cuid(), candidateId)
-  ]);
-  await env.KV.delete(`interview:${h}`);
-  return json({ success: true });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// CLIENT PORTAL
-// ═════════════════════════════════════════════════════════════════════════════
-
-R.get('/api/v1/portal/client', async (req, env, ctx, p, url) => {
-  const u = await auth(req, env); const re = role(u, 'CLIENT_CONTACT'); if (re) return re;
-  const cc = await env.DB.prepare('SELECT cc.*,cl.name client_name,cl.type client_type,cl.country,cl.logo_url FROM client_contacts cc JOIN clients cl ON cc.client_id=cl.id WHERE cc.user_id=?').bind(u.id).first();
-  if (!cc) return err('Client contact record not found', 404);
-  const status = url.searchParams.get('status');
-  let q = 'SELECT ce.*,c.first_name,c.last_name,c.email,c.pipeline,c.nationality,c.date_of_birth FROM client_endorsements ce JOIN candidates c ON ce.candidate_id=c.id WHERE ce.client_id=?';
-  const binds = [cc.client_id];
-  if (status) { q += ' AND ce.status=?'; binds.push(status); }
-  q += ' ORDER BY ce.endorsed_at DESC';
-  const { results } = await env.DB.prepare(q).bind(...binds).all();
-  return json({ client: { id: cc.client_id, name: cc.client_name, type: cc.client_type, country: cc.country, logo_url: cc.logo_url }, user: { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName }, endorsements: results });
-});
+// The public one-way interview taking endpoints and the CLIENT_CONTACT
+// portal (which only ever showed client_endorsements) were removed in v8 —
+// interview taking is ZeusHire's job, and client-side endorsement review no
+// longer applies now that Poseidon starts at ONBOARDING.
 
 // ═════════════════════════════════════════════════════════════════════════════
 // DASHBOARD STATS
@@ -2561,12 +1486,10 @@ R.get('/api/v1/stats', async (req, env) => {
     env.DB.prepare(`SELECT COUNT(*)cnt FROM candidates WHERE created_at>=datetime('now','-30 days') ${recruiterFilter}`).bind(...rb).first(),
     env.DB.prepare(`SELECT COUNT(*)cnt FROM candidates WHERE status='ONBOARDING' ${recruiterFilter}`).bind(...rb).first()
   ]);
-  const pending = await env.DB.prepare("SELECT COUNT(*)cnt FROM submissions WHERE reviewed_at IS NULL").first();
   return json({
     total: total.cnt,
     deployed: deployed.cnt,
-    recentSubmissions: recent.cnt,
-    pendingSubmissions: pending.cnt,
+    pushedLast30Days: recent.cnt,
     byPipeline: Object.fromEntries((byPipeline.results || []).map(r => [r.pipeline, r.cnt])),
     byStatus: byStatus.results || []
   });
@@ -2577,28 +1500,6 @@ R.get('/api/v1/stats', async (req, env) => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 const TYPE_TO_PIPELINE = { J1: 'J1_PROGRAM', SEA: 'SEA_BASED', LAND: 'LAND_BASED' };
-
-// Status buckets — inclusive of BOTH the generic 6-state machine and the
-// per-pipeline stage ids, so funnel counts are correct whichever a row uses.
-const FUNNEL = {
-  evaluations: {
-    J1_PROGRAM: ['CONSULTATION_CALL', 'J1_STAGE_1', 'J1_STAGE_2', 'J1_STAGE_3', 'J1_STAGE_4', 'CANDIDATES'],
-    SEA_BASED:  ['CANDIDATES'],
-    LAND_BASED: ['CANDIDATES'],
-  },
-  finalInterview: {
-    J1_PROGRAM: ['FINAL_INTERVIEW'],
-    SEA_BASED:  ['FINAL_INTERVIEW'],
-    LAND_BASED: ['FINAL_INTERVIEW'],
-  },
-  placed: {
-    J1_PROGRAM: ['J1_VISA'],
-    SEA_BASED:  ['C1D_VISA'],
-    LAND_BASED: ['LB_VISA'],
-  },
-};
-// Offer-letter statuses (between final interview and onboarding) — same across pipelines
-const OFFER_STATUSES = ['OFFER_LETTER'];
 
 // ── Per-workspace dashboard (strictly scoped by pipeline; recruiters see own rows)
 R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
@@ -2631,26 +1532,16 @@ R.get('/api/v1/workspaces/:type/dashboard', async (req, env, ctx, p) => {
   ]);
 
   const byStatus = Object.fromEntries((funnel.results || []).map(r => [r.status, r.cnt]));
-  const sum = ids => (ids || []).reduce((n, s) => n + (byStatus[s] || 0), 0);
-  const entered = Object.entries(byStatus).reduce((n, [s, c]) => s === 'ARCHIVED' ? n : n + c, 0);
-  const onboarding = byStatus['ONBOARDING'] || 0;
-  const placedVisa = sum(FUNNEL.placed[pipeline]);
-  const placements = onboarding + placedVisa;   // "placement" = reached onboarding or beyond
+  const total = Object.values(byStatus).reduce((n, c) => n + c, 0);
+  const deployed = byStatus['DEPLOYED'] || 0;
 
   return json({
     pipeline,
     funnel: byStatus,
-    macroFunnel: {
-      newInputs:      byStatus['NEW_SUBMISSION'] || 0,
-      liveEvaluation: sum(FUNNEL.evaluations[pipeline]),
-      finalInterview: sum(FUNNEL.finalInterview[pipeline]),
-      offerLetter:    sum(OFFER_STATUSES),
-      onboarding,
-      placed:         placedVisa,
-    },
-    placements,
-    conversionRate: entered ? +(placements / entered * 100).toFixed(1) : 0,
-    intakeLast30Days: intake30.cnt,
+    total,
+    deployed,
+    deployRate: total ? +(deployed / total * 100).toFixed(1) : 0,
+    pushedLast30Days: intake30.cnt,
     compliance: { expired: compliance?.expired || 0, expiringSoon: compliance?.expiringSoon || 0 },
   });
 });
@@ -2660,34 +1551,30 @@ const MASTER_KEY = 'master_dashboard';
 const MASTER_TTL_MS = 15 * 60 * 1000;
 
 async function computeMasterDashboard(env) {
-  const [byPipeline, byStatusPipe, recruiterLoad, pending] = await Promise.all([
+  const [byPipeline, byStatusPipe, recruiterLoad] = await Promise.all([
     env.DB.prepare(`SELECT pipeline, COUNT(*) cnt FROM candidates GROUP BY pipeline`).all(),
     env.DB.prepare(`SELECT pipeline, status, COUNT(*) cnt FROM candidates GROUP BY pipeline, status`).all(),
     env.DB.prepare(
       `SELECT c.assigned_recruiter_id rid, u.first_name fn, u.last_name ln, COUNT(*) load
        FROM candidates c JOIN users u ON c.assigned_recruiter_id=u.id
-       WHERE c.status NOT IN ('ARCHIVED','J1_VISA','C1D_VISA','LB_VISA')
+       WHERE c.status NOT IN ('ARCHIVED')
        GROUP BY c.assigned_recruiter_id ORDER BY load DESC`
     ).all(),
-    env.DB.prepare(`SELECT COUNT(*) cnt FROM submissions WHERE reviewed_at IS NULL`).first(),
   ]);
 
-  const macro = { newInputs: 0, liveEvaluation: 0, finalInterview: 0, offerLetter: 0, onboarding: 0, placed: 0 };
+  const macro = { onboarding: 0, readyToDeploy: 0, deployed: 0, archived: 0 };
   for (const r of (byStatusPipe.results || [])) {
-    if (r.status === 'NEW_SUBMISSION') macro.newInputs += r.cnt;
-    if (r.status === 'ONBOARDING')     macro.onboarding += r.cnt;
-    if (OFFER_STATUSES.includes(r.status))                     macro.offerLetter += r.cnt;
-    if (FUNNEL.evaluations[r.pipeline]?.includes(r.status))    macro.liveEvaluation += r.cnt;
-    if (FUNNEL.finalInterview[r.pipeline]?.includes(r.status)) macro.finalInterview += r.cnt;
-    if (FUNNEL.placed[r.pipeline]?.includes(r.status))         macro.placed += r.cnt;
+    if (r.status === 'ONBOARDING')      macro.onboarding += r.cnt;
+    if (r.status === 'READY_TO_DEPLOY') macro.readyToDeploy += r.cnt;
+    if (r.status === 'DEPLOYED')        macro.deployed += r.cnt;
+    if (r.status === 'ARCHIVED')        macro.archived += r.cnt;
   }
 
   return {
     computedAt: Date.now(),
     byPipeline: Object.fromEntries((byPipeline.results || []).map(r => [r.pipeline, r.cnt])),
     globalFunnel: macro,
-    totalPlacements: macro.onboarding + macro.placed,   // reached onboarding or beyond
-    pendingSubmissions: pending.cnt,
+    totalPlacements: macro.deployed,
     recruiterLoad: recruiterLoad.results || [],
   };
 }

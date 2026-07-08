@@ -144,10 +144,6 @@ let _sfCurrentSection = 'personal';
 // Pipeline stages a Profile section can opt into. If a section's visibleStages
 // array is empty or absent, the section is shown at every stage (back-compat).
 const SF_STAGE_CHOICES = [
-  { id: 'NEW_SUBMISSION',  label: 'New Sub.' },
-  { id: 'CANDIDATES',      label: 'Candidates' },
-  { id: 'FINAL_INTERVIEW', label: 'Final Int.' },
-  { id: 'OFFER_LETTER',    label: 'Offer' },
   { id: 'ONBOARDING',      label: 'Onboarding' },
   { id: 'READY_TO_DEPLOY', label: 'Ready' },
   { id: 'DEPLOYED',        label: 'Deployed' },
@@ -159,15 +155,13 @@ const SF_STAGE_CHOICES = [
 // (back-compat default). ARCHIVED candidates always see every field so
 // recruiters reviewing history have the full picture.
 const SF_STAGE_ORDER = {
-  NEW_SUBMISSION:  0, CANDIDATES: 1, FINAL_INTERVIEW: 2, OFFER_LETTER: 3,
-  ONBOARDING: 4, READY_TO_DEPLOY: 5, DEPLOYED: 6, ARCHIVED: 99,
+  ONBOARDING: 0, READY_TO_DEPLOY: 1, DEPLOYED: 2, ARCHIVED: 99,
 };
 // Stages selectable in the per-field chip strip (ARCHIVED excluded — always visible).
 const SF_FIELD_STAGES = SF_STAGE_CHOICES.filter(s => s.id !== 'ARCHIVED');
 // Ultra-short labels for the per-row chip strip.
 const SF_STAGE_SHORT = {
-  NEW_SUBMISSION: 'New', CANDIDATES: 'Cand', FINAL_INTERVIEW: 'Final',
-  OFFER_LETTER: 'Offer', ONBOARDING: 'Onb', READY_TO_DEPLOY: 'Ready', DEPLOYED: 'Dep',
+  ONBOARDING: 'Onb', READY_TO_DEPLOY: 'Ready', DEPLOYED: 'Dep',
 };
 
 // Resolve the effective array of stages for a field, migrating legacy values
@@ -366,30 +360,24 @@ function bootApp() {
   } else {
     showGeneralView(VIEW_META[savedView] ? savedView : 'dashboard');
   }
-  pollSubmissionBadge();
   pollNotifications();
 }
 
 // ── Pipeline Stage Definitions ────────────────────────────────────────────────
 
+// Pure CRM (v8): candidates only ever arrive via ZeusHire's "Hired" push, so
+// every pre-hire stage (New Submission, Candidates, Final Interview, Offer
+// Letter, and J1's Consultation/Stage 1-4/Visa) is gone — that's ZeusHire's
+// pipeline now. Poseidon starts at Onboarding.
 const PIPELINE_STAGES = {
   J1_PROGRAM: [
-    { id: 'NEW_SUBMISSION',    label: 'New Submission',  icon: '📥' },
-    { id: 'CONSULTATION_CALL', label: 'Consultation',    icon: '📞' },
-    { id: 'J1_STAGE_1',        label: 'Stage 1',         icon: '①'  },
-    { id: 'J1_STAGE_2',        label: 'Stage 2',         icon: '②'  },
-    { id: 'J1_STAGE_3',        label: 'Stage 3',         icon: '③'  },
-    { id: 'J1_STAGE_4',        label: 'Stage 4',         icon: '④'  },
-    { id: 'J1_VISA',           label: 'J1-Visa',         icon: '🛂' },
+    { id: 'ONBOARDING',        label: 'Onboarding',      icon: '🎓' },
+    { id: 'READY_TO_DEPLOY',   label: 'Ready to Go',     icon: '✅' },
     { id: 'DEPLOYMENTS',       label: 'Placements',      icon: '🇺🇸' },
     { id: 'CLIENTS',           label: 'Clients',         icon: '👔' },
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
   ],
   SEA_BASED: [
-    { id: 'NEW_SUBMISSION',    label: 'New Submission',  icon: '📥' },
-    { id: 'CANDIDATES',        label: 'Candidates',      icon: '👥' },
-    { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
-    { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
     { id: 'ONBOARDING',        label: 'Onboarding',      icon: '⚓' },
     { id: 'READY_TO_DEPLOY',   label: 'Ready to Go',     icon: '✅' },
     { id: 'DEPLOYMENTS',       label: 'Deployments',     icon: '🚢' },
@@ -397,10 +385,6 @@ const PIPELINE_STAGES = {
     { id: 'ARCHIVED',          label: 'Archived',        icon: '📦' },
   ],
   LAND_BASED: [
-    { id: 'NEW_SUBMISSION',    label: 'New Submission',  icon: '📥' },
-    { id: 'CANDIDATES',        label: 'Candidates',      icon: '👥' },
-    { id: 'FINAL_INTERVIEW',   label: 'Final Interview', icon: '🎯' },
-    { id: 'OFFER_LETTER',      label: 'Offer Letter',    icon: '📄' },
     { id: 'ONBOARDING',        label: 'Onboarding',      icon: '🏨' },
     { id: 'READY_TO_DEPLOY',   label: 'Ready to Go',     icon: '✅' },
     { id: 'DEPLOYMENTS',       label: 'Placements',      icon: '🏢' },
@@ -421,26 +405,18 @@ const LOCAL_SETTINGS_FIELDS = {
     { key: 'sevis_fee_amount',        label: 'SEVIS Fee Amount (USD)',             type: 'number', placeholder: '220' },
     { key: 'default_program_months',  label: 'Default Program Duration (months)', type: 'number', placeholder: '12' },
     { key: 'ds2019_reminder_days',    label: 'DS-2019 Expiry Reminder (days)',    type: 'number', placeholder: '30' },
-    { key: 'auto_assign_recruiter',   label: 'Auto-assign Recruiter',             type: 'checkbox', checkLabel: 'Automatically assign recruiter on new submission' },
   ],
   SEA_BASED: [
     { key: 'default_vessel_type',             label: 'Default Vessel Type',                placeholder: 'Cruise' },
     { key: 'c1d_appointment_cost',            label: 'C1/D Visa Appointment Cost (USD)',   type: 'number', placeholder: '160' },
     { key: 'medical_validity_months',         label: 'Medical Cert Validity (months)',     type: 'number', placeholder: '24' },
     { key: 'stcw_reminder_days',              label: 'STCW Expiry Reminder (days)',        type: 'number', placeholder: '60' },
-    { key: 'require_seaman_book',             label: "Require Seaman's Book",              type: 'checkbox', checkLabel: "Mark Seaman's Book as required at Candidates stage" },
-    { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default template dispatched at New Submission' },
-    { key: 'zeushire_two_way_interview_id',   label: 'ZeusHire Two-Way Interview ID',      placeholder: 'e.g. iv-xyz789', help: 'Default template scheduled at Candidates stage' },
-    { key: 'marlins_max_attempts',            label: 'Marlins Fail Cap (attempts)',        type: 'number', placeholder: '3', help: 'Candidate is auto-archived after this many failed attempts. Leave blank or 0 for unlimited retakes.' },
     { key: 'onboarding_required_docs',        label: 'Onboarding Required Documents',      placeholder: 'PASSPORT,SEAMAN_BOOK,STCW_BASIC,MEDICAL_CERT,YELLOW_FEVER,C1D_VISA', help: 'Comma-separated doc types required + unexpired before Ready to Go' },
   ],
   LAND_BASED: [
     { key: 'default_contract_type',           label: 'Default Contract Type',              placeholder: 'Fixed-Term' },
     { key: 'visa_reminder_days',              label: 'Visa Expiry Reminder (days)',        type: 'number', placeholder: '45' },
     { key: 'bg_check_provider',               label: 'Background Check Provider',          placeholder: 'Sterling' },
-    { key: 'require_bg_check',                label: 'Require Background Check',           type: 'checkbox', checkLabel: 'Required before Offer Letter stage' },
-    { key: 'zeushire_one_way_interview_id',   label: 'ZeusHire One-Way Interview ID',      placeholder: 'e.g. iv-abc123', help: 'Default template dispatched at New Submission' },
-    { key: 'zeushire_two_way_interview_id',   label: 'ZeusHire Two-Way Interview ID',      placeholder: 'e.g. iv-xyz789', help: 'Default template scheduled at Candidates stage' },
     { key: 'onboarding_required_docs',        label: 'Onboarding Required Documents',      placeholder: 'PASSPORT,WORK_VISA,MEDICAL_CERT,BG_CHECK,EMPLOYMENT_CONTRACT', help: 'Comma-separated doc types required + unexpired before Ready to Go' },
   ],
 };
@@ -448,7 +424,7 @@ const LOCAL_SETTINGS_FIELDS = {
 // ── Nav State ─────────────────────────────────────────────────────────────────
 
 let _navProgram = null;   // 'J1_PROGRAM' | 'SEA_BASED' | 'LAND_BASED' | null
-let _navStage   = null;   // e.g. 'CANDIDATES' | 'J1_STAGE_1'
+let _navStage   = null;   // e.g. 'ONBOARDING' | 'READY_TO_DEPLOY'
 let _navTool    = null;   // 'local' | 'fields' | 'docs'
 let _stagePanePage = 1;
 
@@ -456,10 +432,8 @@ let _stagePanePage = 1;
 
 const VIEW_META = {
   dashboard:  { title: 'Dashboard',      action: null },
-  interviews: { title: 'Interview Setup', action: { label: '+ New Interview', fn: () => openNewInterviewModal() } },
   clients:    { title: 'Clients',         action: { label: '+ Add Client',    fn: () => openAddClientModal() } },
   compliance: { title: 'Document Filter', action: null },
-  forms:      { title: 'Form Builder',    action: null },
   users:      { title: 'Users',           action: null },
   settings:   { title: 'Settings',        action: null },
 };
@@ -527,14 +501,6 @@ function openProgSwitcher() {
       <svg class="popup-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-left:auto"><polyline points="9 18 15 12 9 6"/></svg>
     </div>
     <div class="popup-children open">
-      <div class="popup-general-item popup-child" data-view="interviews" onclick="showGeneralView('interviews')">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-        <span>Interview Setup</span>
-      </div>
-      <div class="popup-general-item popup-child" data-view="forms" onclick="showGeneralView('forms')">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        <span>Form Builder</span>
-      </div>
       ${isAdmin ? `
       <div class="popup-general-item popup-child" data-view="users" onclick="showGeneralView('users')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -654,9 +620,6 @@ function _renderSidebarStages(prog) {
     <div class="sidebar-stage-item" data-stage="${s.id}" onclick="showStage('${prog}','${s.id}')">
       <span class="stage-icon-sm">${s.icon}</span>
       <span>${s.label}</span>
-      ${s.id === 'NEW_SUBMISSION'
-        ? `<span class="nav-badge" id="nb-${prog}-NEW_SUBMISSION" style="display:none;margin-left:auto"></span>`
-        : ''}
     </div>`).join('');
   // Render tools (monochrome line icons for a clean, consistent look)
   const ico = svg => `<span class="stage-icon-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svg}</svg></span>`;
@@ -706,28 +669,25 @@ async function loadWorkspaceOverview(program) {
 function renderWorkspaceOverview(program, d) {
   const el = document.getElementById('workspace-overview-content');
   const pm = PROGRAM_META[program];
-  const mf = d.macroFunnel || {};
+  const funnel = d.funnel || {};
   const comp = d.compliance || {};
   const compTotal = (comp.expired || 0) + (comp.expiringSoon || 0);
   const accent = { J1_PROGRAM: 'purple', SEA_BASED: 'blue', LAND_BASED: 'green' }[program];
-  const totalActive = Object.entries(d.funnel || {}).reduce((n, [s, c]) => s === 'ARCHIVED' ? n : n + c, 0);
 
   const cards = [
-    { label: 'Active Candidates', value: totalActive,                  cls: accent },
-    { label: 'Conversion Rate',   value: (d.conversionRate ?? 0) + '%', cls: 'green' },
-    { label: 'New (30 days)',     value: d.intakeLast30Days ?? 0,        cls: 'amber' },
-    { label: 'Compliance Alerts', value: compTotal,                      cls: compTotal ? 'red' : 'green' },
+    { label: 'Total Candidates',  value: d.total ?? 0,                cls: accent },
+    { label: 'Deploy Rate',       value: (d.deployRate ?? 0) + '%',    cls: 'green' },
+    { label: 'Pushed (30 days)',  value: d.pushedLast30Days ?? 0,      cls: 'amber' },
+    { label: 'Compliance Alerts', value: compTotal,                    cls: compTotal ? 'red' : 'green' },
   ];
 
+  // Only Sea-Based / Land-Based use READY_TO_DEPLOY (J1 tracks onboarding via j1_profiles instead).
   const funnelStages = [
-    { key: 'newInputs',      label: 'New Submissions' },
-    { key: 'liveEvaluation', label: 'In Evaluation' },
-    { key: 'finalInterview', label: 'Final Interview' },
-    { key: 'offerLetter',    label: 'Offer Letter' },
-    { key: 'onboarding',     label: 'Onboarding' },
-    { key: 'placed',         label: 'Visa / Placed' },
+    { key: 'ONBOARDING',      label: 'Onboarding' },
+    { key: 'READY_TO_DEPLOY', label: 'Ready to Deploy' },
+    { key: 'DEPLOYED',        label: 'Deployed' },
   ];
-  const maxVal = Math.max(1, ...funnelStages.map(s => mf[s.key] || 0));
+  const maxVal = Math.max(1, ...funnelStages.map(s => funnel[s.key] || 0));
 
   el.innerHTML = `
     <div class="stat-grid">
@@ -739,10 +699,10 @@ function renderWorkspaceOverview(program, d) {
     </div>
 
     <div class="card" style="margin-top:20px">
-      <div class="card-header"><span class="card-title">Active Pipeline Funnel</span></div>
+      <div class="card-header"><span class="card-title">Onboarding Funnel</span></div>
       <div style="padding:8px 20px 18px">
         ${funnelStages.map(s => {
-          const v = mf[s.key] || 0;
+          const v = funnel[s.key] || 0;
           const pct = Math.round((v / maxVal) * 100);
           return `
           <div style="display:flex;align-items:center;gap:12px;padding:7px 0">
@@ -820,10 +780,8 @@ function showView(name, keepDrawer = false) {
   STATE.currentView = name;
   localStorage.setItem('poseidon_view', name);
   if (name === 'dashboard')  loadDashboard();
-  if (name === 'interviews') loadInterviews();
   if (name === 'clients')    loadClients();
   if (name === 'compliance') { /* loadCompliance called by comp filter button */ }
-  if (name === 'forms')      loadForms();
   if (name === 'users')      loadUsers();
   if (name === 'settings')   loadSettings();
 }
@@ -840,11 +798,6 @@ async function loadStagePane() {
   document.getElementById('stage-pane-sub').innerHTML =
     `<span class="prog-badge ${pm.badgeClass}">${pm.icon} ${pm.label}</span>`;
 
-  const addBtn = document.getElementById('stage-pane-add-btn');
-  addBtn.style.display = stage === 'ARCHIVED' ? 'none' : '';
-
-  // FINAL_INTERVIEW uses a custom grouped-by-client renderer (multi-client model).
-  if (stage === 'FINAL_INTERVIEW') return loadFinalInterviewGrouped(prog);
   // DEPLOYMENTS is a separate ledger, not a candidate-status filter.
   if (stage === 'DEPLOYMENTS') return loadDeploymentsLedger(prog);
 
@@ -916,62 +869,9 @@ async function loadDeploymentsLedger(prog) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// Grouped Final Interview pane: only clients with ≥1 active endorsement show up.
-async function loadFinalInterviewGrouped(prog) {
-  const thead = document.getElementById('stage-pane-thead');
-  const tbody = document.getElementById('stage-pane-tbody');
-  thead.innerHTML = '';
-  tbody.innerHTML = `<tr><td class="table-empty"><span class="spinner"></span></td></tr>`;
-  document.getElementById('stage-pane-pagination').innerHTML = '';
-
-  try {
-    const d = await api('GET', `/endorsements/final-interview-grouped?pipeline=${prog}`);
-    const groups = d.groups || [];
-    if (!groups.length) {
-      tbody.innerHTML = `<tr><td class="table-empty">No active endorsements in Final Interview</td></tr>`;
-      return;
-    }
-
-    const html = groups.map(g => {
-      const rows = g.endorsements.map(e => {
-        const c = e.candidate;
-        const fullName = `${esc(c.firstName || '')} ${esc(c.lastName || '')}`.trim();
-        const statusBadge = e.status === 'PENDING'
-          ? `<span class="badge" style="background:#1e3a5f;color:#93c5fd">Pending</span>`
-          : `<span class="badge" style="background:#3b3a0d;color:#fde68a">Scheduled</span>`;
-        return `
-          <tr style="border-top:1px solid var(--border)">
-            <td style="padding-left:24px" onclick="openDetail('${c.id}')">
-              <div style="font-weight:600">${fullName || '(unnamed)'}</div>
-              <div style="font-size:11px;color:var(--text-muted)">${esc(c.email || '')}</div>
-            </td>
-            <td>${statusBadge}</td>
-            <td class="text-muted text-sm">${e.scheduledAt ? new Date(e.scheduledAt).toLocaleString() : 'Not scheduled'}</td>
-            <td class="text-muted text-sm">${relTime(c.updatedAt)}</td>
-            <td style="text-align:right">
-              <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();decideEndorsement('${esc(e.id)}','APPROVED')">✓ Approve</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="event.stopPropagation();decideEndorsement('${esc(e.id)}','REJECTED')">✗ Reject</button>
-            </td>
-          </tr>`;
-      }).join('');
-      return `
-        <tr style="background:var(--navy-mid)">
-          <td colspan="5" style="padding:12px 16px;font-weight:700;letter-spacing:.02em">
-            🏢 ${esc(g.client.name || '(unnamed client)')}
-            <span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:8px">${g.endorsements.length} active</span>
-          </td>
-        </tr>
-        ${rows}`;
-    }).join('');
-    tbody.innerHTML = html;
-  } catch (e) { toast(e.message, 'error'); }
-}
-
 function getStagePaneHeaders(prog, stage) {
   if (stage === 'ARCHIVED')
     return '<th>Candidate</th><th>Recruiter</th><th>Archived At</th><th>Reason</th><th></th>';
-  if (stage === 'FINAL_INTERVIEW')
-    return '<th>Candidate</th><th>Endorsed To</th><th>Recruiter</th><th>Updated</th><th></th>';
   if (stage === 'CLIENTS')
     return '<th>Candidate</th><th>Client / Ship</th><th>Recruiter</th><th>Updated</th><th></th>';
   return '<th>Candidate</th><th>Recruiter</th><th>Status</th><th>Updated</th><th></th>';
@@ -989,15 +889,6 @@ function getStagePaneRow(c, prog, stage) {
       <td class="text-muted">${recruiter}</td>
       <td class="text-muted">${c.archived_at ? relTime(c.archived_at) : updated}</td>
       <td class="text-muted">${esc(c.archive_reason || '—')}</td>
-      <td>${viewBtn}</td>
-    </tr>`;
-
-  if (stage === 'FINAL_INTERVIEW') return `
-    <tr onclick="openDetail('${c.id}')">
-      <td><div style="font-weight:600">${name}</div><div style="font-size:11px;color:var(--text-muted)">${esc(c.email)}</div></td>
-      <td class="text-muted">${esc(c.endorsed_client_name || '—')}</td>
-      <td class="text-muted">${recruiter}</td>
-      <td class="text-muted">${updated}</td>
       <td>${viewBtn}</td>
     </tr>`;
 
@@ -1353,19 +1244,15 @@ function debounce(fn, ms) {
 
 async function loadDashboard() {
   try {
-    const [stats, subData] = await Promise.all([
-      api('GET', '/stats'),
-      api('GET', '/submissions?reviewed=false&limit=6')
-    ]);
+    const stats = await api('GET', '/stats');
     const bp = stats.byPipeline || {};
     const statCards = [
-      { label: 'Total Candidates',    value: stats.total,              cls: 'blue'   },
-      { label: 'Deployed',            value: stats.deployed,           cls: 'green'  },
-      { label: 'New (30 days)',        value: stats.recentSubmissions,  cls: 'amber'  },
-      { label: 'Pending Submissions', value: stats.pendingSubmissions,  cls: 'amber'  },
-      { label: '🚢 Sea-Based',        value: bp.SEA_BASED  || 0,       cls: 'blue'   },
-      { label: '🏢 Land-Based',       value: bp.LAND_BASED || 0,       cls: 'green'  },
-      { label: '🎓 J1 Program',       value: bp.J1_PROGRAM || 0,       cls: 'purple' },
+      { label: 'Total Candidates',   value: stats.total,             cls: 'blue'   },
+      { label: 'Deployed',           value: stats.deployed,          cls: 'green'  },
+      { label: 'Pushed (30 days)',   value: stats.pushedLast30Days,  cls: 'amber'  },
+      { label: '🚢 Sea-Based',       value: bp.SEA_BASED  || 0,      cls: 'blue'   },
+      { label: '🏢 Land-Based',      value: bp.LAND_BASED || 0,      cls: 'green'  },
+      { label: '🎓 J1 Program',      value: bp.J1_PROGRAM || 0,      cls: 'purple' },
     ];
     document.getElementById('dash-stats').innerHTML = statCards.map(s => `
       <div class="stat-card ${s.cls}">
@@ -1377,7 +1264,7 @@ async function loadDashboard() {
     const funnel = stats.byStatus || [];
     const funnelHtml = funnel.length ? `
       <div class="card" style="margin-bottom:20px;">
-        <div class="card-header"><span class="card-title">Pipeline Funnel</span></div>
+        <div class="card-header"><span class="card-title">Onboarding Funnel</span></div>
         <div style="padding:0 20px 16px;">
           ${funnel.map(row => {
             const pct = stats.total ? Math.round((row.cnt / stats.total) * 100) : 0;
@@ -1393,99 +1280,13 @@ async function loadDashboard() {
         </div>
       </div>` : '';
 
-    const rows = subData.submissions || [];
-    const recentHtml = rows.length ? `
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">Pending Submissions</span>
-          <button class="btn btn-ghost btn-sm" onclick="showView('submissions')">View All</button>
-        </div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Applicant</th><th>Pipeline</th><th>Submitted</th></tr></thead>
-          <tbody>${rows.map(s => {
-            const d = tryParse(s.data);
-            const name = `${d.firstName || d.first_name || '?'} ${d.lastName || d.last_name || ''}`.trim();
-            return `<tr style="cursor:pointer;" onclick="showView('submissions')"><td>${esc(name)}</td><td>${pipelineBadge(s.pipeline)}</td><td>${relTime(s.created_at)}</td></tr>`;
-          }).join('')}</tbody>
-        </table></div>
-      </div>` : `<div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">No pending submissions</div>`;
-
-    document.getElementById('dash-recent-submissions').innerHTML = funnelHtml + recentHtml;
+    document.getElementById('dash-recent-submissions').innerHTML = funnelHtml;
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function pollSubmissionBadge() {
-  try {
-    const d = await api('GET', '/submissions?reviewed=false&limit=1');
-    const badge = document.getElementById('badge-new-submissions');
-    if (d && d.total > 0) { badge.textContent = d.total > 99 ? '99+' : d.total; badge.style.display = ''; }
-    else badge.style.display = 'none';
-  } catch {}
-  setTimeout(pollSubmissionBadge, 30000);
-}
-
-// ── Submissions ───────────────────────────────────────────────────────────────
-
-async function loadSubmissions() {
-  const pipeline = document.getElementById('sub-pipeline').value;
-  const reviewed = document.getElementById('sub-reviewed').value;
-  const page = STATE.submissionPage;
-  const params = new URLSearchParams({ page, limit: 20 });
-  if (pipeline) params.set('pipeline', pipeline);
-  if (reviewed !== '') params.set('reviewed', reviewed);
-  try {
-    const d = await api('GET', `/submissions?${params}`);
-    const tbody = document.getElementById('submissions-tbody');
-    tbody.innerHTML = (d.submissions || []).map(s => {
-      const data = tryParse(s.data);
-      const name = `${data.firstName || data.first_name || '?'} ${data.lastName || data.last_name || ''}`.trim();
-      const email = data.email || '—';
-      return `<tr>
-        <td><div class="candidate-name">${esc(name)}</div><div class="candidate-email">${esc(email)}</div></td>
-        <td>${pipelineBadge(s.pipeline)}</td>
-        <td>${relTime(s.created_at)}</td>
-        <td>${s.is_duplicate ? '<span class="badge badge-rejected">Duplicate</span>' : '<span class="badge badge-new">New</span>'}</td>
-        <td style="display:flex;gap:6px">
-          <button class="btn btn-primary btn-sm" onclick="convertSubmission('${s.id}','${name}','${email}')">Convert</button>
-          <button class="btn btn-ghost btn-sm" onclick="viewSubmission('${s.id}')">View</button>
-        </td>
-      </tr>`;
-    }).join('') || '<tr><td colspan="5" class="table-empty">No submissions found</td></tr>';
-    renderPagination('sub-pagination', d.total, 20, page, p => { STATE.submissionPage = p; loadSubmissions(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function viewSubmission(id) {
-  try {
-    const s = await api('GET', `/submissions/${id}`);
-    const data = tryParse(s.data);
-    openModal('Submission Details', `
-      <div class="info-grid">
-        ${Object.entries(data).map(([k, v]) => `<div class="info-item"><label>${esc(k)}</label><span>${esc(String(v || '—'))}</span></div>`).join('')}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-primary" onclick="convertSubmission('${s.id}','','')">Convert to Candidate</button>
-        <button class="btn btn-danger btn-sm" onclick="flagDuplicate('${s.id}')">Flag Duplicate</button>
-      </div>`);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function convertSubmission(id, name, email) {
-  const confirm = await showConfirm(`Convert submission from <strong>${esc(name)}</strong> to a Candidate record?`);
-  if (!confirm) return;
-  try {
-    const d = await api('POST', `/submissions/${id}/convert`, {});
-    closeModal();
-    toast(`Candidate record created`, 'success');
-    loadSubmissions(); loadDashboard();
-    if (d.candidateId) openCandidateDetail(d.candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function flagDuplicate(id) {
-  await api('POST', `/submissions/${id}/flag-duplicate`, {});
-  closeModal(); toast('Flagged as duplicate', 'info'); loadSubmissions();
-}
+// Submissions, the form builder, and the standalone interview/booking pages
+// were removed in v8 — application intake and interviewing are entirely
+// ZeusHire's job now.
 
 // ── Candidates ────────────────────────────────────────────────────────────────
 
@@ -1503,169 +1304,12 @@ function setActivePipeline(p) {
   loadCandidates();
 }
 
-function setNewSubPipeline(p) {
-  STATE.newSubPipeline = p; STATE.newSubPage = 1;
-  document.querySelectorAll('#new-sub-pipeline-tabs button').forEach(b => {
-    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
-  });
-  loadNewSubmissions();
-}
-function setFiPipeline(p) {
-  STATE.fiPipeline = p; STATE.fiPage = 1;
-  document.querySelectorAll('#fi-pipeline-tabs button').forEach(b => {
-    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
-  });
-  loadFinalInterview();
-}
-function setOnbPipeline(p) {
-  STATE.onbPipeline = p; STATE.onbPage = 1;
-  document.querySelectorAll('#onb-pipeline-tabs button').forEach(b => {
-    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
-  });
-  loadOnboarding();
-}
-function setArcPipeline(p) {
-  STATE.arcPipeline = p; STATE.arcPage = 1;
-  document.querySelectorAll('#arc-pipeline-tabs button').forEach(b => {
-    b.className = b.dataset.pipeline === p ? (p===''?'active-all':p==='SEA_BASED'?'active-sea':p==='LAND_BASED'?'active-land':'active-j1') : '';
-  });
-  loadArchive();
-}
-
-async function loadCandidates() {
-  const search = document.getElementById('cand-search').value.trim();
-  const status = document.getElementById('cand-status').value || 'CANDIDATES';
-  const page = STATE.candidatePage;
-  const params = new URLSearchParams({ page, limit: 25 });
-  if (STATE.activePipeline) params.set('pipeline', STATE.activePipeline);
-  if (status) params.set('status', status);
-  if (search) params.set('search', search);
-  try {
-    const d = await api('GET', `/candidates?${params}`);
-    const tbody = document.getElementById('candidates-tbody');
-    tbody.innerHTML = (d.candidates || []).map(c => `
-      <tr onclick="openCandidateDetail('${c.id}')">
-        <td>
-          <div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div>
-          <div class="candidate-email">${esc(c.email)}</div>
-        </td>
-        <td>${pipelineBadge(c.pipeline)}</td>
-        <td>${statusBadge(c.status)}</td>
-        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
-        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No candidates found</td></tr>';
-    renderPagination('cand-pagination', d.total, 25, page, p => { STATE.candidatePage = p; loadCandidates(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function loadNewSubmissions() {
-  const search = document.getElementById('nsub-search')?.value?.trim() || '';
-  const page = STATE.newSubPage || 1;
-  const params = new URLSearchParams({ page, limit: 25, status: 'NEW_SUBMISSION' });
-  if (STATE.newSubPipeline) params.set('pipeline', STATE.newSubPipeline);
-  if (search) params.set('search', search);
-  try {
-    const d = await api('GET', `/candidates?${params}`);
-    const tbody = document.getElementById('new-submissions-tbody');
-    tbody.innerHTML = (d.candidates || []).map(c => `
-      <tr onclick="openCandidateDetail('${c.id}')">
-        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
-        <td>${pipelineBadge(c.pipeline)}</td>
-        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
-        <td class="text-muted text-sm">${relTime(c.created_at)}</td>
-        <td>
-          <div style="display:flex;gap:6px">
-            <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();transitionMoveForward('${c.id}')" style="font-size:11px;padding:3px 10px;">Move Forward</button>
-            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();transitionNotMovingForward('${c.id}')" style="font-size:11px;padding:3px 8px;color:var(--danger)">Not Moving Forward</button>
-          </div>
-        </td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No new submissions</td></tr>';
-    renderPagination('nsub-pagination', d.total, 25, page, p => { STATE.newSubPage = p; loadNewSubmissions(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function loadFinalInterview() {
-  const search = document.getElementById('fi-search')?.value?.trim() || '';
-  const page = STATE.fiPage || 1;
-  const params = new URLSearchParams({ page, limit: 25, status: 'FINAL_INTERVIEW' });
-  if (STATE.fiPipeline) params.set('pipeline', STATE.fiPipeline);
-  if (search) params.set('search', search);
-  try {
-    const d = await api('GET', `/candidates?${params}`);
-    const tbody = document.getElementById('final-interview-tbody');
-    tbody.innerHTML = (d.candidates || []).map(c => `
-      <tr onclick="openCandidateDetail('${c.id}')">
-        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
-        <td>${pipelineBadge(c.pipeline)}</td>
-        <td>${c.endorsed_client_name ? `<span style="color:var(--blue);font-weight:500">${esc(c.endorsed_client_name)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
-        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No candidates in Final Interview</td></tr>';
-    renderPagination('fi-pagination', d.total, 25, page, p => { STATE.fiPage = p; loadFinalInterview(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function loadOfferLetter() {
-  const search = document.getElementById('ol-search')?.value?.trim() || '';
-  const page = STATE.olPage || 1;
-  const params = new URLSearchParams({ page, limit: 25, status: 'OFFER_LETTER' });
-  if (search) params.set('search', search);
-  try {
-    const d = await api('GET', `/candidates?${params}`);
-    const tbody = document.getElementById('offer-letter-tbody');
-    tbody.innerHTML = (d.candidates || []).map(c => `
-      <tr onclick="openCandidateDetail('${c.id}')">
-        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
-        <td>${pipelineBadge(c.pipeline)}</td>
-        <td>${c.endorsed_client_name ? `<span style="color:var(--blue)">${esc(c.endorsed_client_name)}</span>` : '—'}</td>
-        <td><span class="badge badge-active">Awaiting Signature</span></td>
-        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No offer letters pending</td></tr>';
-    renderPagination('ol-pagination', d.total, 25, page, p => { STATE.olPage = p; loadOfferLetter(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function loadOnboarding() {
-  const search = document.getElementById('onb-search')?.value?.trim() || '';
-  const page = STATE.onbPage || 1;
-  const params = new URLSearchParams({ page, limit: 25, status: 'ONBOARDING' });
-  if (STATE.onbPipeline) params.set('pipeline', STATE.onbPipeline);
-  if (search) params.set('search', search);
-  try {
-    const d = await api('GET', `/candidates?${params}`);
-    const tbody = document.getElementById('onboarding-tbody');
-    tbody.innerHTML = (d.candidates || []).map(c => `
-      <tr onclick="openCandidateDetail('${c.id}')">
-        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
-        <td>${pipelineBadge(c.pipeline)}</td>
-        <td>${c.endorsed_client_name ? `<span style="color:var(--blue)">${esc(c.endorsed_client_name)}</span>` : '—'}</td>
-        <td class="text-muted">${c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : '—'}</td>
-        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">No candidates in Onboarding</td></tr>';
-    renderPagination('onb-pagination', d.total, 25, page, p => { STATE.onbPage = p; loadOnboarding(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function loadArchive() {
-  const search = document.getElementById('arc-search')?.value?.trim() || '';
-  const page = STATE.arcPage || 1;
-  const params = new URLSearchParams({ page, limit: 25, status: 'ARCHIVED' });
-  if (STATE.arcPipeline) params.set('pipeline', STATE.arcPipeline);
-  if (search) params.set('search', search);
-  try {
-    const d = await api('GET', `/candidates?${params}`);
-    const tbody = document.getElementById('archive-tbody');
-    tbody.innerHTML = (d.candidates || []).map(c => `
-      <tr onclick="openCandidateDetail('${c.id}')">
-        <td><div class="candidate-name">${esc(c.first_name)} ${esc(c.last_name)}</div><div class="candidate-email">${esc(c.email)}</div></td>
-        <td>${pipelineBadge(c.pipeline)}</td>
-        <td class="text-muted text-sm">${c.archived_at ? fmtDate(c.archived_at) : relTime(c.updated_at)}</td>
-        <td class="text-muted text-sm" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.archive_reason || '—')}</td>
-        <td class="text-muted text-sm">${relTime(c.updated_at)}</td>
-      </tr>`).join('') || '<tr><td colspan="5" class="table-empty">Archive is empty</td></tr>';
-    renderPagination('arc-pagination', d.total, 25, page, p => { STATE.arcPage = p; loadArchive(); });
-  } catch (e) { toast(e.message, 'error'); }
-}
+// NOTE: the legacy non-generic pipeline panes (Candidates/New Submissions/
+// Final Interview/Offer Letter/Onboarding/Archive list views, and their
+// setXxxPipeline()/loadXxx() loaders) were removed here — they were
+// pre-hire ATS relics already unreachable from the UI (no VIEW_META entry,
+// no stage dispatch pointed at them). Every pipeline stage now renders
+// through the generic stage-pane (`loadStagePane()` / `showStage()`).
 
 // Short alias used by stage-pane row click handlers (inline onclick= needs a
 // global function reference; const at script top-level isn't always reachable).
@@ -1683,7 +1327,6 @@ async function openCandidateDetail(id) {
     renderDetailOverview(c);
     renderDetailInterviews(c);
     renderDetailDocuments(c);
-    renderDetailEndorsements(c);
     renderDetailHistory(c);
     renderDetailProfile(c);
     document.getElementById('dp-tab-j1plan').innerHTML = '<p style="color:var(--text-muted);padding:24px 0;">Loading J1 plan…</p>';
@@ -1696,8 +1339,6 @@ async function openCandidateDetail(id) {
       const fetches = [];
       if (!c.seafarerProfile) fetches.push(api('GET', `/candidates/${c.id}/seafarer-profile`).then(sp => { STATE.currentCandidate.seafarerProfile = sp; }));
       if (STATE.sfFieldConfig === undefined) fetches.push(api('GET', '/settings/seafarer-fields').then(cfg => { STATE.sfFieldConfig = cfg || {}; }).catch(() => { STATE.sfFieldConfig = {}; }));
-      // Marlins status: shown as a chip in the action bar + drives the offer-send gate.
-      fetches.push(api('GET', `/candidates/${c.id}/marlins`).then(m => { STATE.currentCandidate.marlins = m; }).catch(() => { STATE.currentCandidate.marlins = null; }));
       // Active deployment (only meaningful at DEPLOYED, but harmless to fetch always)
       if (c.status === 'DEPLOYED') {
         fetches.push(api('GET', `/candidates/${c.id}/deployments`).then(d => {
@@ -1720,37 +1361,6 @@ function renderDetailOverview(c) {
 
   const stateActions = (() => {
     const s = c.status;
-    if (s === 'NEW_SUBMISSION') {
-      const owBtn = ['SEA_BASED','LAND_BASED'].includes(c.pipeline)
-        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendSeaOneWayInterview('${esc(c.id)}')">🎬 Send One-Way Interview</button>`
-        : '';
-      return `
-      ${owBtn}
-      <button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="transitionMoveForward('${esc(c.id)}')">✓ Move Forward</button>
-      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionNotMovingForward('${esc(c.id)}')">✗ Not Moving Forward</button>`;
-    }
-    if (s === 'CANDIDATES') {
-      const twBtn = ['SEA_BASED','LAND_BASED'].includes(c.pipeline)
-        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="sendSeaTwoWayInterview('${esc(c.id)}')">🎥 Schedule Two-Way Interview</button>`
-        : '';
-      return `
-      ${twBtn}
-      <button class="btn btn-primary btn-sm" onclick="transitionEndorse('${esc(c.id)}')">→ Endorse to Clients</button>
-      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
-    }
-    if (s === 'FINAL_INTERVIEW') return `
-      <span style="font-size:11px;color:var(--text-muted)">Per-client decisions → open the Final Interview pane</span>
-      <button class="btn btn-ghost btn-sm" onclick="showStage(_navProgram||'SEA_BASED','FINAL_INTERVIEW')">Open Final Interview pane</button>
-      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
-    if (s === 'OFFER_LETTER') {
-      const marlinsBtn = c.pipeline === 'SEA_BASED'
-        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="recordMarlinsTest('${esc(c.id)}')">🎓 Record Marlins Test</button>`
-        : '';
-      return `
-      ${marlinsBtn}
-      <button class="btn btn-ghost btn-sm" onclick="generateOfferLetter('${esc(c.id)}')">📄 Resend Offer</button>
-      <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="transitionArchive('${esc(c.id)}')">Archive</button>`;
-    }
     if (s === 'ONBOARDING') {
       const readyBtn = ['SEA_BASED','LAND_BASED'].includes(c.pipeline)
         ? `<button class="btn btn-primary btn-sm" onclick="markSeaReadyToDeploy('${esc(c.id)}')">✅ Verify Documents & Mark Ready</button>`
@@ -1781,10 +1391,23 @@ function renderDetailOverview(c) {
       <button class="btn btn-ghost btn-sm" onclick="openEditCandidateModal('${esc(c.id)}')">Edit</button>
     </div>`;
 
-  // Assign-Recruiter control now lives on the Interviews tab (the recruiter
-  // dispatches interviews + manages outreach). Overview stays focused on
-  // status + profile fields.
-  const assignRecruiter = '';
+  // Recruiter assignment lives on Overview — the Interview tab is now a
+  // read-only ZeusHire snapshot (see renderDetailInterviews).
+  const currentRec = c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : null;
+  const assignRecruiter = `
+    <div style="background:var(--navy-mid);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Assigned Recruiter</div>
+        <div style="font-size:13px;color:${currentRec ? 'var(--text)' : 'var(--text-muted)'};font-weight:${currentRec ? '600' : '400'}">${currentRec || 'Unassigned'}</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <select id="assign-recruiter-sel" style="flex:1">
+          <option value="">— Select Recruiter —</option>
+          ${STATE.recruiters.map(r => `<option value="${r.id}" ${r.id === c.assigned_recruiter_id ? 'selected' : ''}>${esc(r.first_name)} ${esc(r.last_name)}</option>`).join('')}
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="assignRecruiter('${c.id}')">${currentRec ? 'Reassign' : 'Assign'}</button>
+      </div>
+    </div>`;
 
   const notes = c.internal_notes
     ? `<div style="margin-bottom:12px"><label>Internal Notes</label><p class="text-sm text-muted" style="margin-top:4px">${esc(c.internal_notes)}</p></div>`
@@ -1862,139 +1485,6 @@ function renderDetailOverview(c) {
     ${assignRecruiter}${notes}`;
 }
 
-async function advanceStage(candidateId, toStatus) {
-  try {
-    await api('POST', `/candidates/${candidateId}/stage`, { toStatus });
-    toast(`Status → ${statusLabel(toStatus)}`, 'success');
-    openCandidateDetail(candidateId);
-    loadCandidates();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function transitionMoveForward(candidateId) {
-  if (!confirm('Move this candidate forward to the Candidates section?')) return;
-  try {
-    await api('POST', `/candidates/${candidateId}/transitions/move-forward`, {});
-    toast('Moved to Candidates ✓', 'success');
-    loadNewSubmissions();
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function sendSeaOneWayInterview(candidateId) {
-  // Optional override; blank → server uses the workspace's default from program_settings
-  const override = (prompt(
-    'Send a one-way ZeusHire interview to this candidate.\n\n' +
-    '(Leave blank to use the default configured in Sea-Based → Local Settings.)\n\n' +
-    'Override ZeusHire interview ID:'
-  ) || '').trim();
-  try {
-    const body = override ? { candidateId, zeushireInterviewId: override } : { candidateId };
-    const r = await api('POST', '/sea/interviews/one-way', body);
-    toast('One-way interview dispatched ✓', 'success');
-    if (r?.takeUrl) {
-      // Surface the URL so the recruiter can manually share it if needed
-      try { await navigator.clipboard.writeText(r.takeUrl); toast('Take URL copied to clipboard', 'success'); } catch {}
-      console.log('ZeusHire take URL:', r.takeUrl);
-    }
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) {
-    toast(e.message, 'error');
-  }
-}
-
-async function transitionNotMovingForward(candidateId) {
-  const reason = prompt('Reason for not moving forward (optional):') ?? null;
-  if (reason === null) return; // user hit Cancel
-  try {
-    await api('POST', `/candidates/${candidateId}/transitions/not-moving-forward`, { reason });
-    toast('Candidate archived', 'info');
-    loadNewSubmissions();
-    if (STATE.currentCandidate?.id === candidateId) { closeDetail(); }
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function transitionEndorse(candidateId) {
-  const clients = STATE.clients.filter(c => c.is_active);
-  if (!clients.length) { toast('No active clients available', 'error'); return; }
-  // Filter clients by candidate's pipeline (Sea-Based → CRUISE_LINE, Land-Based → LAND_BASED, J1 → J1_SPONSOR)
-  const pipeline = STATE.currentCandidate?.pipeline;
-  const typeMap = { SEA_BASED: 'CRUISE_LINE', LAND_BASED: 'LAND_BASED', J1_PROGRAM: 'J1_SPONSOR' };
-  const wanted = typeMap[pipeline];
-  const eligible = wanted ? clients.filter(c => c.type === wanted) : clients;
-  if (!eligible.length) { toast(`No active ${wanted || 'matching'} clients available`, 'error'); return; }
-  const rows = eligible.map(c => `
-    <label style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
-      <input type="checkbox" class="endorse-client-cb" value="${esc(c.id)}" style="width:16px;height:16px">
-      <span style="flex:1">
-        <div style="font-weight:600">${esc(c.name)}</div>
-        ${c.country ? `<div style="font-size:11px;color:var(--text-muted)">${esc(c.country)}</div>` : ''}
-      </span>
-    </label>`).join('');
-  openModal('Endorse to Clients', `
-    <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px">Select one or more clients to endorse this candidate to. They will all be added to the Final Interview pool — the first to approve wins; others get auto-withdrawn.</p>
-    <div style="max-height:340px;overflow-y:auto;margin-bottom:14px">${rows}</div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmEndorse('${candidateId}')">Endorse → Final Interview</button>
-    </div>
-  `);
-}
-
-async function confirmEndorse(candidateId) {
-  const clientIds = [...document.querySelectorAll('.endorse-client-cb:checked')].map(el => el.value);
-  if (!clientIds.length) { toast('Select at least one client', 'error'); return; }
-  try {
-    const d = await api('POST', `/candidates/${candidateId}/transitions/endorse`, { clientIds });
-    const names = (d.clientNames || []).join(', ');
-    toast(`Endorsed to ${names || clientIds.length + ' client(s)'} → Final Interview ✓`, 'success');
-    closeModal();
-    loadCandidates();
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function sendSeaTwoWayInterview(candidateId) {
-  const scheduledAtRaw = prompt(
-    'Schedule a two-way ZeusHire interview.\n\n' +
-    'Enter the date & time (ISO 8601, e.g. 2026-06-15T14:00:00Z):'
-  );
-  if (!scheduledAtRaw) return;
-  const scheduledAt = scheduledAtRaw.trim();
-  if (isNaN(Date.parse(scheduledAt))) { toast('Invalid date — must be ISO 8601', 'error'); return; }
-  if (Date.parse(scheduledAt) <= Date.now()) { toast('scheduledAt must be in the future', 'error'); return; }
-  const duration = parseInt(prompt('Duration in minutes (default 45):') || '45', 10);
-  try {
-    const r = await api('POST', '/sea/interviews/two-way', { candidateId, scheduledAt, durationMinutes: duration });
-    toast('Two-way interview scheduled ✓', 'success');
-    if (r?.meetingUrl) {
-      try { await navigator.clipboard.writeText(r.meetingUrl); toast('Meeting URL copied to clipboard', 'success'); } catch {}
-      console.log('ZeusHire meeting URL:', r.meetingUrl);
-    }
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function recordMarlinsTest(candidateId) {
-  const scoreRaw = prompt(
-    'Record a Marlins English Test attempt.\n\n' +
-    'Enter the candidate\'s score (0–100). Pass threshold is configured per worker; ' +
-    'default is 70. The candidate\'s offer letter cannot be sent until they pass.\n\n' +
-    'Score:'
-  );
-  if (scoreRaw === null) return;
-  const score = parseFloat(scoreRaw);
-  if (isNaN(score) || score < 0 || score > 100) { toast('Score must be a number between 0 and 100', 'error'); return; }
-  const code = (prompt('Test code / reference (optional):') || '').trim() || undefined;
-  try {
-    const r = await api('POST', '/sea/marlins', { candidateId, score, code });
-    if (r.autoArchived) toast(`Marlins ${r.result} — candidate auto-archived (fail cap reached)`, 'error');
-    else if (r.unlocked)  toast(`Marlins ${r.result} ✓ — offer letter unlocked`, 'success');
-    else                  toast(`Marlins ${r.result} (${r.score} < threshold ${r.threshold})`, 'info');
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
 async function markSeaReadyToDeploy(candidateId) {
   if (!confirm('Verify required documents and mark candidate Ready to Go?\n\n(Required: Passport, Seaman Book, STCW Basic, Medical Cert, Yellow Fever, C1/D Visa — all present and unexpired.)')) return;
   try {
@@ -2052,95 +1542,25 @@ async function closeSeaDeployment(deploymentId) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function decideEndorsement(endorsementId, decision) {
-  const verb = decision === 'APPROVED' ? 'approve' : 'reject';
-  const notes = prompt(`Notes for ${verb} (optional):`) ?? null;
-  if (notes === null) return;
-  try {
-    const r = await api('POST', `/endorsements/${endorsementId}/decision`, { decision, notes: notes || undefined });
-    toast(decision === 'APPROVED'
-      ? `${r.clientName || 'Client'} approved → Offer Letter ✓`
-      : `Rejected. Candidate ${r.candidateStatus === 'CANDIDATES' ? 'returned to Candidates' : 'stays in Final Interview (other clients still active)'}`,
-      'success');
-    if (typeof loadFinalInterview === 'function') loadFinalInterview();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function transitionClientApproved(candidateId) {
-  const notes = prompt('Client approval notes (optional):') ?? null;
-  if (notes === null) return;
-  try {
-    await api('POST', `/candidates/${candidateId}/transitions/client-approved`, { notes });
-    toast('Client approved → Offer Letter ✓', 'success');
-    loadFinalInterview();
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function transitionClientRejected(candidateId) {
-  const reason = prompt('Rejection reason:') ?? null;
-  if (reason === null) return;
-  try {
-    await api('POST', `/candidates/${candidateId}/transitions/client-rejected`, { reason });
-    toast('Candidate archived (client rejected)', 'info');
-    loadFinalInterview();
-    if (STATE.currentCandidate?.id === candidateId) { closeDetail(); }
-  } catch (e) { toast(e.message, 'error'); }
-}
-
 async function transitionArchive(candidateId) {
   const reason = prompt('Archive reason (required):');
   if (!reason) return;
   try {
     await api('POST', `/candidates/${candidateId}/transitions/archive`, { reason });
     toast('Candidate archived', 'info');
-    ['loadCandidates','loadFinalInterview','loadOfferLetter','loadOnboarding'].forEach(fn => {
-      if (STATE.currentView === fn.replace('load','').toLowerCase().replace(/([A-Z])/g, m => '-' + m.toLowerCase()).slice(1)) window[fn]?.();
-    });
+    if (_navProgram && _navStage) loadStagePane();
     if (STATE.currentCandidate?.id === candidateId) closeDetail();
   } catch (e) { toast(e.message, 'error'); }
 }
 
 async function transitionRestore(candidateId) {
-  const target = prompt('Restore to which state?\n(NEW_SUBMISSION / CANDIDATES / FINAL_INTERVIEW / OFFER_LETTER / ONBOARDING)');
-  const VALID = ['NEW_SUBMISSION','CANDIDATES','FINAL_INTERVIEW','OFFER_LETTER','ONBOARDING'];
+  const target = prompt('Restore to which state?\n(ONBOARDING / READY_TO_DEPLOY)');
+  const VALID = ['ONBOARDING','READY_TO_DEPLOY'];
   if (!target || !VALID.includes(target.toUpperCase().trim())) { toast('Invalid state', 'error'); return; }
   try {
     await api('POST', `/candidates/${candidateId}/transitions/restore`, { restoreToStatus: target.toUpperCase().trim() });
     toast('Candidate restored ✓', 'success');
-    loadArchive();
-    if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function generateOfferLetter(candidateId) {
-  openModal('Generate Offer Letter', `
-    <div class="form-group">
-      <label>Document URL <span style="color:var(--text-muted)">(OneDrive / SharePoint link)</span></label>
-      <input type="text" id="ol-doc-url" placeholder="https://...">
-    </div>
-    <div class="form-group">
-      <label>Notes</label>
-      <textarea id="ol-notes" rows="2" placeholder="Optional notes…"></textarea>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmGenerateOfferLetter('${candidateId}')">Generate & Send</button>
-    </div>
-  `);
-}
-
-async function confirmGenerateOfferLetter(candidateId) {
-  const documentUrl = document.getElementById('ol-doc-url')?.value?.trim();
-  const notes = document.getElementById('ol-notes')?.value?.trim();
-  if (!documentUrl) { toast('Document URL is required', 'error'); return; }
-  try {
-    const ol = await api('POST', `/candidates/${candidateId}/offer-letters`, { documentUrl, notes });
-    await api('POST', `/offer-letters/${ol.id}/send`, {});
-    toast('Offer letter sent for signing ✓', 'success');
-    closeModal();
-    loadFinalInterview();
-    loadOfferLetter();
+    if (_navProgram && _navStage) loadStagePane();
     if (STATE.currentCandidate?.id === candidateId) openCandidateDetail(candidateId);
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -2155,117 +1575,37 @@ async function assignRecruiter(candidateId) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+// Read-only view of everything ZeusHire captured about this candidate before
+// it pushed them to Poseidon as "Hired" (registration answers, department/
+// position, notes, tags, stage history, any interview scores/recordings
+// ZeusHire had). Poseidon never writes to this — it's a snapshot dump.
 function renderDetailInterviews(c) {
   const el = document.getElementById('dp-tab-interviews');
-  const interviews = c.interviews || [];
-  const currentRec = c.recruiter_fn ? `${esc(c.recruiter_fn)} ${esc(c.recruiter_ln)}` : null;
+  const snap = c.zeushireSnapshot;
 
-  const recruiterBlock = `
-    <div style="background:var(--navy-mid);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:16px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Assigned Recruiter</div>
-        <div style="font-size:13px;color:${currentRec ? 'var(--text)' : 'var(--text-muted)'};font-weight:${currentRec ? '600' : '400'}">${currentRec || 'Unassigned'}</div>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <select id="assign-recruiter-sel" style="flex:1">
-          <option value="">— Select Recruiter —</option>
-          ${STATE.recruiters.map(r => `<option value="${r.id}" ${r.id === c.assigned_recruiter_id ? 'selected' : ''}>${esc(r.first_name)} ${esc(r.last_name)}</option>`).join('')}
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="assignRecruiter('${c.id}')">${currentRec ? 'Reassign' : 'Assign'}</button>
-      </div>
+  if (!snap || typeof snap !== 'object' || !Object.keys(snap).length) {
+    el.innerHTML = '<div class="empty" style="padding:32px"><p>No ZeusHire data available</p></div>';
+    return;
+  }
+
+  const fmtLabel = key => key
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase());
+
+  const fmtValue = v => {
+    if (v === null || v === undefined || v === '') return '<span class="text-muted">—</span>';
+    if (Array.isArray(v) || typeof v === 'object') return `<pre style="white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px;font-family:inherit">${esc(JSON.stringify(v, null, 2))}</pre>`;
+    return esc(String(v));
+  };
+
+  el.innerHTML = `
+    <div class="info-grid" style="grid-template-columns:1fr 1fr">
+      ${Object.entries(snap)
+        .filter(([, v]) => v !== null && v !== undefined)
+        .map(([k, v]) => `<div class="info-item"><label>${esc(fmtLabel(k))}</label><span>${fmtValue(v)}</span></div>`)
+        .join('')}
     </div>`;
-
-  el.innerHTML = recruiterBlock + `
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button class="btn btn-primary btn-sm" onclick="openSendInterviewModal('${c.id}')">Send Interview</button>
-    </div>` +
-    (interviews.length ? interviews.map(i => `
-      <div class="card" style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-weight:600">${esc(i.title)}</div>
-            <div class="text-sm text-muted">${esc(i.type)} · ${relTime(i.invited_at)}</div>
-          </div>
-          <span class="badge ${i.status === 'SUBMITTED' || i.status === 'COMPLETED' ? 'badge-approved' : 'badge-active'}">${esc(i.status)}</span>
-        </div>
-        ${i.score != null ? `<div style="margin-top:8px;font-size:.85rem;">Score: <strong>${i.score}/100</strong> · ${i.passed ? '<span style="color:var(--success)">Passed</span>' : '<span style="color:var(--danger)">Failed</span>'}</div>` : ''}
-        ${i.recruiter_notes ? `<div style="margin-top:4px;font-size:.82rem;color:var(--text-muted);">${esc(i.recruiter_notes)}</div>` : ''}
-        ${(i.status === 'SUBMITTED' || i.status === 'COMPLETED') ? `
-          <div style="display:flex;gap:6px;margin-top:10px">
-            ${i.type === 'ONE_WAY' ? `<button class="btn btn-ghost btn-sm" onclick="viewInterviewResponses('${esc(c.id)}','${esc(i.id)}','${esc(i.interview_id)}')">View Responses</button>` : ''}
-            <button class="btn btn-ghost btn-sm" onclick="openScoreInterviewModal('${esc(c.id)}','${esc(i.id)}',${i.score||'null'},${i.passed!=null?i.passed:'null'})">Score</button>
-          </div>` : ''}
-      </div>`).join('') : '<div class="empty" style="padding:32px"><p>No interviews yet</p></div>');
-}
-
-async function viewInterviewResponses(candidateId, candidateInterviewId, interviewId) {
-  try {
-    const [c, template] = await Promise.all([
-      Promise.resolve(STATE.currentCandidate),
-      api('GET', `/interviews/${interviewId}`)
-    ]);
-    const ci = (c?.interviews || []).find(i => i.id === candidateInterviewId);
-    let responses = [];
-    try { responses = JSON.parse(ci?.responses || '[]'); } catch {}
-    let questions = [];
-    try { questions = JSON.parse(template?.questions || '[]'); } catch {}
-    const respMap = {};
-    responses.forEach(r => { respMap[r.questionId] = r.responseText || r.text || ''; });
-    openModal('Interview Responses', `
-      <div style="margin-bottom:8px;font-size:.85rem;color:var(--text-muted);">
-        ${esc(template?.title)} · Submitted ${relTime(ci?.completed_at || ci?.updated_at)}
-      </div>
-      ${questions.length ? questions.map((q, idx) => `
-        <div style="margin-bottom:16px;padding:12px;background:var(--navy-mid);border-radius:8px;">
-          <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">Q${idx+1}</div>
-          <div style="font-weight:500;margin-bottom:8px;">${esc(q.text)}</div>
-          <div style="font-size:.85rem;color:var(--text);white-space:pre-wrap;border-left:2px solid var(--blue);padding-left:10px;">${esc(respMap[q.id||idx] || '(No answer)')}</div>
-        </div>`).join('') : '<p style="color:var(--text-muted)">No questions found in this template.</p>'}
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
-        <button class="btn btn-primary" onclick="closeModal();openScoreInterviewModal('${esc(candidateId)}','${esc(candidateInterviewId)}',null,null)">Score This Interview</button>
-      </div>`, 'modal-lg');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function openScoreInterviewModal(candidateId, candidateInterviewId, currentScore, currentPassed) {
-  openModal('Score Interview', `
-    <div class="form-group">
-      <label>Score (0–100)</label>
-      <input type="number" id="sc-score" min="0" max="100" value="${currentScore ?? ''}" placeholder="e.g. 75">
-    </div>
-    <div class="form-group">
-      <label>Result</label>
-      <select id="sc-passed">
-        <option value="">— Not set —</option>
-        <option value="1" ${currentPassed === 1 ? 'selected' : ''}>Pass</option>
-        <option value="0" ${currentPassed === 0 ? 'selected' : ''}>Fail</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>Recruiter Notes</label>
-      <textarea id="sc-notes" rows="3" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;" placeholder="Internal notes visible only to recruiters"></textarea>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveInterviewScore('${esc(candidateId)}','${esc(candidateInterviewId)}')">Save Score</button>
-    </div>`);
-}
-
-async function saveInterviewScore(candidateId, candidateInterviewId) {
-  const score   = document.getElementById('sc-score').value;
-  const passed  = document.getElementById('sc-passed').value;
-  const notes   = document.getElementById('sc-notes').value.trim();
-  const body = {};
-  if (score !== '') body.score = parseInt(score);
-  if (passed !== '') body.passed = passed === '1';
-  if (notes) body.recruiterNotes = notes;
-  if (!Object.keys(body).length) { closeModal(); return; }
-  try {
-    await api('PATCH', `/candidates/${candidateId}/interviews/${candidateInterviewId}`, body);
-    closeModal(); toast('Score saved', 'success');
-    openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
 }
 
 function renderDetailDocuments(c) {
@@ -2291,26 +1631,6 @@ function renderDetailDocuments(c) {
           <button class="btn btn-ghost btn-sm" onclick="openEditDocModal('${c.id}','${d.id}')">Edit</button>
         </div>
       </div>`).join('') : '<div class="empty" style="padding:32px"><p>No documents yet</p></div>');
-}
-
-function renderDetailEndorsements(c) {
-  const el = document.getElementById('dp-tab-endorsements');
-  const end = c.endorsements || [];
-  el.innerHTML = `
-    ${c.status === 'PRE_QUAL_APPROVED' ? `<div style="margin-bottom:16px"><button class="btn btn-primary btn-sm" onclick="openEndorseModal('${c.id}')">Endorse to Client</button></div>` : ''}` +
-    (end.length ? end.map(e => `
-      <div class="card" style="margin-bottom:10px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-weight:600">${esc(e.client_name)}</div>
-          <span class="badge ${e.status === 'APPROVED' ? 'badge-approved' : e.status === 'REJECTED' ? 'badge-rejected' : 'badge-active'}">${esc(e.status)}</span>
-        </div>
-        <div class="text-sm text-muted">Endorsed ${relTime(e.endorsed_at)}</div>
-        ${e.scheduled_at ? `<div class="text-sm">Interview: ${fmtDate(e.scheduled_at)}</div>` : ''}
-        <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn btn-sm btn-ghost" onclick="updateEndorsement('${e.id}','APPROVED')">Approve</button>
-          <button class="btn btn-sm btn-danger" onclick="updateEndorsement('${e.id}','REJECTED')">Reject</button>
-        </div>
-      </div>`).join('') : '<div class="empty" style="padding:32px"><p>Not endorsed to any client yet</p></div>');
 }
 
 function renderDetailHistory(c) {
@@ -2358,1832 +1678,12 @@ function switchDetailTab(name, el) {
   }
 }
 
-// ── Interviews (POSEIDON template API — used by candidate detail panel) ─────────
-
-async function loadInterviews() {
-  // Pane-interviews is now the ZeusHire shell — boot it up
-  const key = localStorage.getItem('poseidon_iw_key') || '';
-  if (!key) {
-    document.getElementById('iw-key-prompt').style.display = 'block';
-    document.getElementById('iw-shell').style.display = 'none';
-  } else {
-    _iwKey = key;
-    document.getElementById('iw-key-prompt').style.display = 'none';
-    document.getElementById('iw-shell').style.display = 'block';
-    iwGoto('ow-list');
-  }
-}
-
-function openNewInterviewModal() {
-  openModal('New Interview Template', `
-    <div class="form-group"><label>Title</label><input type="text" id="ni-title" placeholder="Pre-Qualifying OWI — Sea-Based"></div>
-    <div class="form-group"><label>Type</label>
-      <select id="ni-type">
-        <option value="ONE_WAY">One-Way Interview</option>
-        <option value="TWO_WAY">Two-Way Interview</option>
-        <option value="BOOKING">Booking Interview</option>
-      </select>
-    </div>
-    <div class="form-group"><label>Description</label><textarea id="ni-desc" placeholder="Optional description"></textarea></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="createInterview()">Create</button>
-    </div>`);
-}
-
-async function createInterview() {
-  const title = document.getElementById('ni-title').value.trim();
-  const type = document.getElementById('ni-type').value;
-  const description = document.getElementById('ni-desc').value.trim();
-  if (!title) { toast('Title required', 'error'); return; }
-  try {
-    await api('POST', '/interviews', { title, type, description });
-    closeModal(); toast('Interview template created', 'success'); loadInterviews();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function openEditInterviewModal(interviewId) {
-  api('GET', `/interviews/${interviewId}`).then(i => {
-    let qs = [];
-    try { qs = JSON.parse(i.questions || '[]'); } catch {}
-    openModal('Edit Interview Template', `
-      <div class="form-group"><label>Title</label><input type="text" id="ei-title" value="${esc(i.title)}"></div>
-      <div class="form-group"><label>Description</label><textarea id="ei-desc" rows="2" style="width:100%;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-size:13px;resize:vertical;">${esc(i.description||'')}</textarea></div>
-      ${i.type === 'ONE_WAY' || i.type === 'TWO_WAY' ? `
-        <div style="margin-top:16px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <label style="margin:0;font-size:.75rem;text-transform:uppercase;font-weight:700;color:var(--text-muted);">Questions</label>
-            <button class="btn btn-ghost btn-sm" onclick="addInterviewQuestion()">+ Add Question</button>
-          </div>
-          <div id="questions-editor">
-            ${qs.map((q, idx) => `
-              <div class="q-edit-row" data-qid="${esc(q.id||('q'+(idx+1)))}" style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start">
-                <span style="color:var(--text-muted);font-size:.78rem;padding-top:8px;min-width:20px;">${idx+1}.</span>
-                <input type="text" class="q-text-input form-input" value="${esc(q.text||'')}" placeholder="Enter question" style="flex:1;">
-                <button class="btn btn-ghost btn-sm" style="color:var(--danger);flex-shrink:0;margin-top:2px" onclick="this.closest('.q-edit-row').remove()">✕</button>
-              </div>`).join('') || '<p style="font-size:.82rem;color:var(--text-muted)">No questions yet. Add one below.</p>'}
-          </div>
-        </div>` : ''}
-      <div class="modal-footer">
-        <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveInterviewEdit('${esc(i.id)}','${esc(i.type)}')">Save</button>
-      </div>`, 'modal-lg');
-  }).catch(e => toast(e.message, 'error'));
-}
-
-function addInterviewQuestion() {
-  const editor = document.getElementById('questions-editor');
-  if (!editor) return;
-  const idx = editor.querySelectorAll('.q-edit-row').length + 1;
-  const div = document.createElement('div');
-  div.className = 'q-edit-row';
-  div.dataset.qid = `q${idx}_${Date.now()}`;
-  div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:flex-start';
-  div.innerHTML = `
-    <span style="color:var(--text-muted);font-size:.78rem;padding-top:8px;min-width:20px;">${idx}.</span>
-    <input type="text" class="q-text-input form-input" placeholder="Enter question" style="flex:1;">
-    <button class="btn btn-ghost btn-sm" style="color:var(--danger);flex-shrink:0;margin-top:2px" onclick="this.closest('.q-edit-row').remove()">✕</button>`;
-  editor.appendChild(div);
-  div.querySelector('input').focus();
-}
-
-async function saveInterviewEdit(interviewId, type) {
-  const title = document.getElementById('ei-title').value.trim();
-  const description = document.getElementById('ei-desc').value.trim();
-  if (!title) { toast('Title is required', 'error'); return; }
-  const body = { title, description };
-  if (type === 'ONE_WAY' || type === 'TWO_WAY') {
-    const rows = document.querySelectorAll('#questions-editor .q-edit-row');
-    body.questions = [...rows].map(row => ({
-      id: row.dataset.qid,
-      text: row.querySelector('.q-text-input').value.trim(),
-      type: 'text'
-    })).filter(q => q.text);
-  }
-  try {
-    await api('PATCH', `/interviews/${interviewId}`, body);
-    closeModal(); toast('Interview template saved', 'success'); loadInterviews();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function openSendInterviewModal(candidateId) {
-  openModal('Send Interview Invitation', `
-    <div class="form-group"><label>Interview Template</label>
-      <select id="si-interview" style="width:100%">
-        <option value="">Loading…</option>
-      </select>
-    </div>
-    <div class="form-group"><label>Expires In (hours)</label><input type="number" id="si-expires" value="72" min="1"></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="sendInterview('${candidateId}')">Send Invitation</button>
-    </div>`);
-  api('GET', '/interviews').then(d => {
-    const sel = document.getElementById('si-interview');
-    if (sel) sel.innerHTML = (d.interviews || []).map(i => `<option value="${i.id}">[${i.type}] ${esc(i.title)}</option>`).join('');
-  });
-}
-
-async function sendInterview(candidateId) {
-  const interviewId = document.getElementById('si-interview').value;
-  const expiresInHours = parseInt(document.getElementById('si-expires').value);
-  if (!interviewId) { toast('Select an interview', 'error'); return; }
-  try {
-    const d = await api('POST', `/candidates/${candidateId}/interviews/invite`, { interviewId, expiresInHours });
-    closeModal(); toast('Invitation sent', 'success');
-    openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function viewInterviewSlots(interviewId) {
-  const d = await api('GET', `/interviews/${interviewId}/slots`);
-  const slots = d.slots || [];
-  openModal('Booking Slots', `
-    <div style="margin-bottom:12px">
-      <button class="btn btn-primary btn-sm" onclick="openAddSlotsModal('${interviewId}')">+ Add Slots</button>
-    </div>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Start</th><th>End</th><th>Status</th><th></th></tr></thead>
-      <tbody>${slots.length ? slots.map(s => `
-        <tr>
-          <td>${fmtDateTime(s.start_time)}</td>
-          <td>${fmtDateTime(s.end_time)}</td>
-          <td>${s.is_booked ? '<span class="badge badge-approved">Booked</span>' : s.is_blocked ? '<span class="badge badge-hold">Blocked</span>' : '<span class="badge badge-new">Available</span>'}</td>
-          <td>${!s.is_booked ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger);padding:2px 6px;" onclick="deleteSlot('${esc(interviewId)}','${esc(s.id)}')">Delete</button>` : ''}</td>
-        </tr>`).join('') :
-        '<tr><td colspan="4" class="table-empty">No slots defined</td></tr>'}
-      </tbody>
-    </table></div>`, 'modal-lg');
-}
-
-function openAddSlotsModal(interviewId) {
-  openModal('Add Booking Slots', `
-    <p class="text-muted text-sm" style="margin-bottom:12px">Add individual slots as ISO datetime strings (e.g. 2026-06-01T09:00:00).</p>
-    <div id="slots-list">
-      <div class="form-row slot-entry" style="margin-bottom:8px">
-        <div><label>Start Time</label><input type="datetime-local" class="slot-start"></div>
-        <div><label>End Time</label><input type="datetime-local" class="slot-end"></div>
-      </div>
-    </div>
-    <button class="btn btn-ghost btn-sm" onclick="addSlotRow()">+ Add Row</button>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitSlots('${interviewId}')">Save Slots</button>
-    </div>`);
-}
-
-function addSlotRow() {
-  const list = document.getElementById('slots-list');
-  const div = document.createElement('div');
-  div.className = 'form-row slot-entry'; div.style.marginBottom = '8px';
-  div.innerHTML = `<div><label>Start Time</label><input type="datetime-local" class="slot-start"></div><div><label>End Time</label><input type="datetime-local" class="slot-end"></div>`;
-  list.appendChild(div);
-}
-
-async function submitSlots(interviewId) {
-  const starts = [...document.querySelectorAll('.slot-start')].map(i => i.value);
-  const ends = [...document.querySelectorAll('.slot-end')].map(i => i.value);
-  const slots = starts.map((s, i) => ({ startTime: new Date(s).toISOString(), endTime: new Date(ends[i]).toISOString() })).filter(s => s.startTime && s.endTime);
-  if (!slots.length) { toast('No valid slots', 'error'); return; }
-  try {
-    await api('POST', `/interviews/${interviewId}/slots/bulk`, { slots });
-    closeModal(); toast(`${slots.length} slot(s) added`, 'success'); viewInterviewSlots(interviewId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── ZeusHire Integration ─────────────────────────────────────────────────────
-// All functions prefixed `iw` to avoid conflicts with POSEIDON namespace.
-
-const INTERVIEW_API  = 'https://interview-api.putuastrawijaya.workers.dev';
-const IW_TAKE_BASE   = 'https://interview-api.putuastrawijaya.workers.dev';
-
-// ── ZeusHire state ────────────────────────────────────────────────────────────
-let _iwKey              = '';
-let _iwQuestions        = [];
-let _iwCurrentInterviewId = null;
-let _iwEditInterviewId  = null;
-let _iwEditQuestions    = [];
-let _iwAllInterviews    = [];
-let _iwAllSessions      = [];
-let _iwSessionFilter    = 'all';
-let _iwAllTWSessions    = [];
-let _iwTwFilter         = 'all';
-let _iwTwSourceFilter   = 'all';
-let _iwTwSort           = 'asc';
-let _iwBulkRows         = [];
-let _iwBulkHeaders      = [];
-let _iwBulkNameCol      = null;
-let _iwBulkEmailCol     = null;
-let _iwDecisionFilter   = 'all';
-let _iwStarFilter       = 0;
-let _iwReviewStars      = 0;
-let _iwReviewDecision   = null;
-let _iwSessionSortCol   = null;
-let _iwSessionSortDir   = 'desc';
-let _iwBookingLinks     = [];
-let _iwEditingBookingToken = null;
-let _iwCurrentScriptClientId = null;
-let _iwScriptClients    = [];
-
-// ── ZeusHire key management ────────────────────────────────────────────────────
-function iwSaveKey() {
-  const val = document.getElementById('iw-key-input').value.trim();
-  if (!val) { toast('Please enter an admin key', 'error'); return; }
-  localStorage.setItem('poseidon_iw_key', val);
-  _iwKey = val;
-  document.getElementById('iw-key-prompt').style.display = 'none';
-  document.getElementById('iw-shell').style.display = 'block';
-  iwGoto('ow-list');
-}
-function iwChangeKey() {
-  localStorage.removeItem('poseidon_iw_key');
-  _iwKey = '';
-  document.getElementById('iw-shell').style.display = 'none';
-  document.getElementById('iw-key-prompt').style.display = 'block';
-  const inp = document.getElementById('iw-key-input');
-  if (inp) { inp.value = ''; inp.focus(); }
-}
-
-// ── ZeusHire API helpers ───────────────────────────────────────────────────────
-async function iwApi(method, path, body = null) {
-  return fetch(INTERVIEW_API + path, {
-    method,
-    headers: { 'Content-Type': 'application/json', 'X-Admin-Key': _iwKey },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-}
-async function iwApiJSON(method, path, body = null) {
-  const res = await iwApi(method, path, body);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    if (res.status === 401) { toast('Invalid admin key — please re-enter', 'error'); iwChangeKey(); }
-    throw new Error(err.error || 'Request failed');
-  }
-  return res.json();
-}
-
-// ── ZeusHire navigation ────────────────────────────────────────────────────────
-function iwGoto(page) {
-  const navMap = {
-    'ow-list': 'iw-nav-ow', 'ow-create': 'iw-nav-ow',
-    'tw-list': 'iw-nav-tw', 'tw-schedule': 'iw-nav-tw',
-    'booking': 'iw-nav-booking', 'booking-create': 'iw-nav-booking', 'booking-edit': 'iw-nav-booking',
-    'scripts': 'iw-nav-scripts',
-  };
-  const activeNav = navMap[page] || 'iw-nav-ow';
-  ['iw-nav-ow','iw-nav-tw','iw-nav-booking','iw-nav-scripts'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle('active', id === activeNav);
-  });
-  const main = document.getElementById('iw-main');
-  if (!main) return;
-  main.innerHTML = '<div style="display:flex;justify-content:center;padding:60px"><div class="spinner"></div></div>';
-
-  if (page === 'ow-list')        iwRenderOWListPage();
-  if (page === 'ow-create')      iwRenderOWCreatePage();
-  if (page === 'tw-list')        iwRenderTWListPage();
-  if (page === 'tw-schedule')    iwRenderTWSchedulePage();
-  if (page === 'booking')        iwRenderBookingPage();
-  if (page === 'booking-create') iwRenderCreateBookingLinkPage();
-  if (page === 'booking-edit')   iwRenderEditBookingLinkPage(_iwEditingBookingToken);
-  if (page === 'scripts')        iwRenderScriptPage();
-}
-
-// ── ZeusHire modals ────────────────────────────────────────────────────────────
-function iwOpenModal(id)  { const el = document.getElementById(id); if (el) el.classList.add('open'); }
-function iwCloseModal(id) { const el = document.getElementById(id); if (el) el.classList.remove('open'); }
-
-// ── One-Way: List page ─────────────────────────────────────────────────────────
-async function iwRenderOWListPage() {
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 style="font-size:16px;font-weight:700;margin:0">One-Way Interviews</h2>
-      <button class="btn btn-primary" onclick="iwGoto('ow-create')">+ New Interview</button>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-      <input type="text" id="iw-search-interviews" placeholder="Search interviews…" oninput="iwFilterAndRenderInterviews()"
-        style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:220px">
-      <select id="iw-sort-interviews" onchange="iwFilterAndRenderInterviews()"
-        style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:auto">
-        <option value="newest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="az">A → Z</option>
-        <option value="za">Z → A</option>
-        <option value="candidates">Most candidates</option>
-      </select>
-    </div>
-    <div id="iw-interviews-list"><div class="iw-empty-state"><div class="spinner"></div></div></div>`;
-  iwLoadInterviewList();
-}
-
-// ── One-Way: Create page ───────────────────────────────────────────────────────
-function iwRenderOWCreatePage() {
-  _iwQuestions = [{ text: '', duration: 120 }];
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="max-width:680px">
-      <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">New One-Way Interview</h2>
-      <div class="card">
-        <div class="form-group"><label>Interview Title *</label><input type="text" id="iw-new-title" placeholder="e.g. J1 Intern Initial Screening"></div>
-        <div class="form-group"><label>Description (shown to candidate)</label><textarea id="iw-new-desc" placeholder="Brief instructions for the candidate…"></textarea></div>
-        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <label style="margin:0;font-size:.75rem;text-transform:uppercase;font-weight:700;color:var(--text-muted)">Questions</label>
-          <button class="btn btn-ghost btn-sm" onclick="iwAddQuestion()">+ Add Question</button>
-        </div>
-        <div id="iw-questions-builder"></div>
-        <div style="display:flex;gap:8px;margin-top:20px">
-          <button class="btn btn-primary" onclick="iwSubmitInterview()">Create Interview</button>
-          <button class="btn btn-ghost" onclick="iwGoto('ow-list')">Cancel</button>
-        </div>
-      </div>
-    </div>`;
-  iwRenderQuestions();
-}
-
-// ── Interview list loader ──────────────────────────────────────────────────────
-async function iwLoadInterviewList() {
-  const el = document.getElementById('iw-interviews-list');
-  if (!el) return;
-  el.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
-  try {
-    _iwAllInterviews = await iwApiJSON('GET', '/api/interviews');
-    if (!_iwAllInterviews.length) {
-      el.innerHTML = `<div class="iw-empty-state">No interviews yet.<br><button class="btn btn-primary" style="margin-top:12px" onclick="iwGoto('ow-create')">Create one</button></div>`;
-      return;
-    }
-    iwFilterAndRenderInterviews();
-  } catch (e) {
-    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
-  }
-}
-
-function iwFilterAndRenderInterviews() {
-  const query = (document.getElementById('iw-search-interviews')?.value || '').toLowerCase();
-  const sort  = document.getElementById('iw-sort-interviews')?.value || 'newest';
-  let list    = _iwAllInterviews.filter(i => !query || i.title.toLowerCase().includes(query));
-  list.sort((a, b) => {
-    if (sort === 'newest')     return b.createdAt - a.createdAt;
-    if (sort === 'oldest')     return a.createdAt - b.createdAt;
-    if (sort === 'az')         return a.title.localeCompare(b.title);
-    if (sort === 'za')         return b.title.localeCompare(a.title);
-    if (sort === 'candidates') return (b._counts?.total || 0) - (a._counts?.total || 0);
-    return 0;
-  });
-  const el = document.getElementById('iw-interviews-list');
-  if (!el) return;
-  el.innerHTML = list.length ? list.map(iwRenderInterviewCard).join('') : '<div class="iw-empty-state">No interviews match your search.</div>';
-}
-
-function iwRenderInterviewCard(iv) {
-  const qCount  = iv.questions?.length || 0;
-  const created = new Date(iv.createdAt).toLocaleDateString();
-  const c       = iv._counts || { total: 0, pending: 0, completed: 0 };
-  const candLine = c.total > 0
-    ? `<span style="font-weight:600">${c.total} Candidate${c.total !== 1 ? 's' : ''}</span> <span style="color:var(--text-muted)"> · ${c.pending} Pending · ${c.completed} Completed</span>`
-    : `<span style="color:var(--text-muted)">No candidates yet</span>`;
-  return `
-    <div class="card" style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-        <div>
-          <div style="font-size:15px;font-weight:600">${esc(iv.title)}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${qCount} question${qCount !== 1 ? 's' : ''} · Created ${created}</div>
-          <div style="font-size:13px;margin-top:5px">${candLine}</div>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-          <button class="btn btn-primary btn-sm" onclick="iwOpenSessions('${iv.id}','${esc(iv.title)}','candidates')">Candidates</button>
-          <button class="btn btn-ghost btn-sm"   onclick="iwOpenSessions('${iv.id}','${esc(iv.title)}','invite')">Invite</button>
-          <button class="btn btn-ghost btn-sm"   onclick="iwOpenEditInterview('${iv.id}')" title="Edit">✏</button>
-          <button class="btn btn-ghost btn-sm"   onclick="iwDeleteInterview('${iv.id}')" title="Delete" style="color:var(--danger)">🗑</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-async function iwDeleteInterview(id) {
-  if (!confirm('Delete this interview and all its sessions?')) return;
-  try {
-    await iwApiJSON('DELETE', `/api/interview/${id}`);
-    toast('Interview deleted', 'success');
-    iwLoadInterviewList();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Questions builder ──────────────────────────────────────────────────────────
-function iwAddQuestion()         { _iwQuestions.push({ text: '', duration: 120 }); iwRenderQuestions(); }
-function iwRemoveQuestion(i)     { if (_iwQuestions.length === 1) return toast('Need at least one question', 'error'); _iwQuestions.splice(i, 1); iwRenderQuestions(); }
-function iwMoveQuestion(i, dir)  { const j = i + dir; if (j < 0 || j >= _iwQuestions.length) return; [_iwQuestions[i], _iwQuestions[j]] = [_iwQuestions[j], _iwQuestions[i]]; iwRenderQuestions(); }
-
-function iwRenderQuestions() {
-  const el = document.getElementById('iw-questions-builder');
-  if (!el) return;
-  el.innerHTML = _iwQuestions.map((q, i) => `
-    <div class="question-item">
-      <div class="q-num">${i + 1}</div>
-      <div class="q-fields">
-        <input type="text" placeholder="Question text *" value="${esc(q.text)}" oninput="_iwQuestions[${i}].text = this.value">
-        <select onchange="_iwQuestions[${i}].duration = parseInt(this.value)">
-          ${[30,60,90,120,180,240,300].map(s => `<option value="${s}" ${q.duration===s?'selected':''}>${s}s (${s<60?s+'s':(s/60)+' min'})</option>`).join('')}
-        </select>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="iwMoveQuestion(${i},-1)" ${i===0?'disabled':''}>↑</button>
-      <button class="btn btn-ghost btn-sm" onclick="iwRemoveQuestion(${i})" style="color:var(--danger)">✕</button>
-    </div>`).join('');
-}
-
-async function iwSubmitInterview() {
-  const title       = document.getElementById('iw-new-title').value.trim();
-  const description = document.getElementById('iw-new-desc').value.trim();
-  if (!title) return toast('Title is required', 'error');
-  if (_iwQuestions.some(q => !q.text.trim())) return toast('All questions need text', 'error');
-  try {
-    await iwApiJSON('POST', '/api/interviews', { title, description, questions: _iwQuestions });
-    toast('Interview created!', 'success');
-    iwGoto('ow-list');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Two-Way: List page ─────────────────────────────────────────────────────────
-async function iwRenderTWListPage() {
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 style="font-size:16px;font-weight:700;margin:0">Two-Way Interview Sessions</h2>
-      <button class="btn btn-primary" onclick="iwGoto('tw-schedule')">+ Schedule Direct Invite</button>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-      <input type="text" id="iw-tw-search" placeholder="Search candidates…" oninput="iwFilterAndRenderTWSessions()"
-        style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;color:var(--text);font-size:13px;width:220px">
-      <div style="display:flex;gap:6px">
-        <button class="filter-chip active" id="iw-tw-fc-all"       onclick="iwSetTWFilter('all')">All Status</button>
-        <button class="filter-chip"        id="iw-tw-fc-scheduled"  onclick="iwSetTWFilter('scheduled')">Scheduled</button>
-        <button class="filter-chip"        id="iw-tw-fc-completed"  onclick="iwSetTWFilter('completed')">Completed</button>
-        <button class="filter-chip"        id="iw-tw-fc-cancelled"  onclick="iwSetTWFilter('cancelled')">Cancelled</button>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-      <span style="font-size:12px;color:var(--text-muted);font-weight:500">Source:</span>
-      <div style="display:flex;gap:6px">
-        <button class="filter-chip active" id="iw-tw-src-all"    onclick="iwSetTWSourceFilter('all')">All</button>
-        <button class="filter-chip"        id="iw-tw-src-direct" onclick="iwSetTWSourceFilter('DIRECT_INVITE')">✉ Direct Invite</button>
-        <button class="filter-chip"        id="iw-tw-src-booked" onclick="iwSetTWSourceFilter('CANDIDATE_BOOKING')">🗓 Self-Booked</button>
-      </div>
-    </div>
-    <div class="iw-tw-table-header">
-      <span>Candidate</span>
-      <span>Position</span>
-      <span style="cursor:pointer;user-select:none" onclick="iwToggleTWSort()">Scheduled <span id="iw-tw-sort-ind">↓</span></span>
-      <span style="text-align:center">Status</span>
-      <span style="text-align:right">Actions</span>
-    </div>
-    <div id="iw-tw-sessions-list"></div>`;
-  await iwLoadTWSessions();
-}
-
-async function iwLoadTWSessions() {
-  const el = document.getElementById('iw-tw-sessions-list');
-  if (!el) return;
-  el.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
-  try {
-    _iwAllTWSessions = await iwApiJSON('GET', '/api/tw-sessions/unified');
-    _iwTwFilter      = 'all';
-    _iwTwSourceFilter = 'all';
-    iwSetTWFilter('all');
-  } catch (e) {
-    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
-  }
-}
-
-function iwToggleTWSort() {
-  _iwTwSort = _iwTwSort === 'asc' ? 'desc' : 'asc';
-  const ind = document.getElementById('iw-tw-sort-ind');
-  if (ind) ind.textContent = _iwTwSort === 'asc' ? '↑' : '↓';
-  iwFilterAndRenderTWSessions();
-}
-
-function iwSetTWFilter(filter) {
-  _iwTwFilter = filter;
-  ['all','scheduled','completed','cancelled'].forEach(f => {
-    const c = document.getElementById(`iw-tw-fc-${f}`);
-    if (c) c.classList.toggle('active', f === filter);
-  });
-  iwFilterAndRenderTWSessions();
-}
-
-function iwSetTWSourceFilter(source) {
-  _iwTwSourceFilter = source;
-  const idMap = { all:'iw-tw-src-all', DIRECT_INVITE:'iw-tw-src-direct', CANDIDATE_BOOKING:'iw-tw-src-booked' };
-  Object.entries(idMap).forEach(([k, id]) => {
-    const c = document.getElementById(id);
-    if (c) c.classList.toggle('active', k === source);
-  });
-  iwFilterAndRenderTWSessions();
-}
-
-function iwFilterAndRenderTWSessions() {
-  const query = (document.getElementById('iw-tw-search')?.value || '').toLowerCase();
-  let list = _iwAllTWSessions.filter(s => {
-    if (_iwTwFilter !== 'all' && s.status !== _iwTwFilter) return false;
-    if (_iwTwSourceFilter !== 'all' && s.scheduling_source !== _iwTwSourceFilter) return false;
-    if (query && !s.candidateName.toLowerCase().includes(query) &&
-        !(s.candidateEmail || '').toLowerCase().includes(query) &&
-        !(s.position || '').toLowerCase().includes(query)) return false;
-    return true;
-  });
-  list.sort((a, b) => {
-    const ta = a.scheduledAt || 0, tb = b.scheduledAt || 0;
-    return _iwTwSort === 'asc' ? ta - tb : tb - ta;
-  });
-  const el = document.getElementById('iw-tw-sessions-list');
-  if (!el) return;
-  if (!list.length) {
-    el.innerHTML = `<div class="iw-empty-state">${_iwAllTWSessions.length ? 'No sessions match your filter.' : 'No sessions scheduled yet.'}</div>`;
-    return;
-  }
-  el.innerHTML = list.map(iwRenderTWSessionRow).join('');
-}
-
-function iwRenderTWSessionRow(s) {
-  const dt      = s.scheduledAt ? new Date(s.scheduledAt) : null;
-  const dateStr = dt ? dt.toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
-  const timeStr = dt ? dt.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
-  const safeName = esc(s.candidateName).replace(/'/g, "\\'");
-
-  const statusBadge = {
-    scheduled: `<span class="badge badge-active">Scheduled</span>`,
-    completed:  `<span class="badge badge-approved">Completed</span>`,
-    cancelled:  `<span class="badge badge-new">Cancelled</span>`,
-  }[s.status] || `<span class="badge badge-new">${esc(s.status)}</span>`;
-
-  const sourceBadge = s.scheduling_source === 'DIRECT_INVITE'
-    ? `<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(59,130,246,.1);color:#3b82f6;border:1px solid rgba(59,130,246,.2);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;margin-top:3px">✉ Direct Invite</span>`
-    : `<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(22,163,74,.1);color:#16a34a;border:1px solid rgba(22,163,74,.2);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:600;margin-top:3px">🗓 Self-Booked</span>`;
-
-  let actions = '';
-  if (s.scheduling_source === 'DIRECT_INVITE') {
-    if (s.status === 'scheduled') {
-      actions = `
-        ${s.meetingLink ? `<a href="${esc(s.meetingLink)}" target="_blank" class="btn btn-ghost btn-sm">${s.teamsGenerated?'🟦':'🔗'} Join</a>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="iwMarkTWCompleted('${s.id}')">✓ Done</button>
-        <button class="btn btn-danger btn-sm" onclick="iwCancelTWSession('${s.id}','${safeName}')">Cancel</button>`;
-    } else if (s.status === 'completed') {
-      actions = s.recordingDriveItemId
-        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="iwOpenTWRecording('${s.id}')">▶ Recording</button>`
-        : `<button class="btn btn-ghost btn-sm" onclick="iwFetchAndRefreshTWRecording('${s.id}')">⟳ Fetch</button>`;
-      actions += ` <button class="btn btn-ghost btn-sm" onclick="iwDeleteTWSession('${s.id}','${safeName}')" style="color:var(--danger)">🗑</button>`;
-    } else {
-      actions = `<button class="btn btn-ghost btn-sm" onclick="iwDeleteTWSession('${s.id}','${safeName}')" style="color:var(--danger)">🗑</button>`;
-    }
-  } else {
-    if (s.status === 'scheduled') {
-      actions = `
-        ${s.meetingLink ? `<a href="${esc(s.meetingLink)}" target="_blank" class="btn btn-ghost btn-sm">🟦 Join</a>` : ''}
-        <button class="btn btn-ghost btn-sm" onclick="iwMarkSelfBookedCompleted('${s.id}')">✓ Done</button>
-        <button class="btn btn-danger btn-sm" onclick="iwCancelSelfBookedSession('${s.id}','${safeName}')">Cancel</button>`;
-    } else if (s.status === 'completed') {
-      actions = s.recordingDriveItemId
-        ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue)" onclick="iwOpenBookingRecording('${s.id}')">▶ Recording</button>`
-        : `<button class="btn btn-ghost btn-sm" onclick="iwFetchAndRefreshBookingRecording('${s.id}')">⟳ Fetch</button>`;
-    } else {
-      actions = `<span style="font-size:12px;color:var(--text-muted)">—</span>`;
-    }
-  }
-
-  const positionLabel = s.position || (s.linkTitle ? `via ${esc(s.linkTitle)}` : '—');
-  return `
-    <div class="iw-tw-session-row">
-      <div style="min-width:0">
-        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.candidateName)}</div>
-        <div style="font-size:11px;color:var(--text-muted)">${s.candidateEmail ? esc(s.candidateEmail) : ''}${s.teamsGenerated ? ' · <span style="color:#6264a7">Teams</span>' : ''}</div>
-        ${sourceBadge}
-      </div>
-      <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-muted)">${positionLabel}</div>
-      <div>
-        <div style="font-size:13px">${dateStr}</div>
-        <div style="font-size:11px;color:var(--text-muted)">${timeStr}${s.duration ? ' · ' + s.duration + ' min' : ''}</div>
-      </div>
-      <div style="text-align:center">${statusBadge}</div>
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap">${actions}</div>
-    </div>`;
-}
-
-async function iwMarkTWCompleted(id) {
-  if (!confirm('Mark this session as completed?')) return;
-  try {
-    await iwApiJSON('PUT', `/api/tw-session/${id}`, { status: 'completed' });
-    toast('Marked as completed — searching for recording…', 'info');
-    await iwLoadTWSessions();
-    try {
-      const result = await iwApiJSON('POST', `/api/tw-session/${id}/fetch-recording`);
-      if (result.ok) { toast('Recording found and linked!', 'success'); await iwLoadTWSessions(); }
-      else toast(result.message || 'No recording found yet — use ⟳ Fetch to retry.', 'info');
-    } catch { /* not ready yet */ }
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwFetchAndRefreshTWRecording(id) {
-  toast('Searching OneDrive Recordings…', 'info');
-  try {
-    const r = await iwApiJSON('POST', `/api/tw-session/${id}/fetch-recording`);
-    r.ok ? (toast('Recording found: ' + r.fileName, 'success'), await iwLoadTWSessions()) : toast(r.message || 'No recording found yet.', 'info');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwOpenTWRecording(id) {
-  toast('Loading recording…', 'info');
-  try {
-    const { downloadUrl, webUrl, fileName } = await iwApiJSON('GET', `/api/tw-session/${id}/recording-url`);
-    document.getElementById('iw-review-candidate-name').textContent  = fileName || 'Meeting Recording';
-    document.getElementById('iw-review-interview-title').textContent = 'Two-Way Interview Recording';
-    document.getElementById('iw-review-content').innerHTML = downloadUrl
-      ? `<div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:10px">
-           <video src="${downloadUrl}" controls style="width:100%;border-radius:6px;background:#000"></video>
-           <div style="text-align:right"><a href="${webUrl}" target="_blank" class="btn btn-ghost btn-sm">Open in OneDrive ↗</a></div>
-         </div>`
-      : `<div style="flex:1;display:flex;align-items:center;justify-content:center">
-           <a href="${webUrl}" target="_blank" class="btn btn-primary">Open Recording in OneDrive ↗</a>
-         </div>`;
-    iwOpenModal('iw-modal-review');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwCancelTWSession(id, name) {
-  if (!confirm(`Cancel ${name}'s interview session? A cancellation email will be sent if on file.`)) return;
-  try {
-    const data = await iwApiJSON('PUT', `/api/tw-session/${id}`, { status: 'cancelled' });
-    toast(data.emailSent ? 'Session cancelled & candidate notified' : 'Session cancelled', 'success');
-    await iwLoadTWSessions();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwDeleteTWSession(id, name) {
-  if (!confirm(`Delete ${name}'s session record?`)) return;
-  try {
-    await iwApiJSON('DELETE', `/api/tw-session/${id}`);
-    toast('Session deleted', 'success');
-    await iwLoadTWSessions();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwMarkSelfBookedCompleted(id) {
-  if (!confirm('Mark this booking as completed?')) return;
-  try {
-    await iwApiJSON('PUT', `/api/booking/booking/${id}`, { status: 'completed' });
-    toast('Marked as completed — searching for recording…', 'info');
-    await iwLoadTWSessions();
-    try {
-      const r = await iwApiJSON('POST', `/api/booking/booking/${id}/fetch-recording`);
-      if (r.ok) { toast('Recording found!', 'success'); await iwLoadTWSessions(); }
-      else toast(r.message || 'No recording yet — use ⟳ Fetch to retry.', 'info');
-    } catch { /* not ready */ }
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwFetchAndRefreshBookingRecording(id) {
-  toast('Searching OneDrive Recordings…', 'info');
-  try {
-    const r = await iwApiJSON('POST', `/api/booking/booking/${id}/fetch-recording`);
-    r.ok ? (toast('Recording found: ' + r.fileName, 'success'), await iwLoadTWSessions()) : toast(r.message || 'No recording found yet.', 'info');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwOpenBookingRecording(id) {
-  toast('Loading recording…', 'info');
-  try {
-    const { downloadUrl, webUrl, fileName } = await iwApiJSON('GET', `/api/booking/booking/${id}/recording-url`);
-    document.getElementById('iw-review-candidate-name').textContent  = fileName || 'Meeting Recording';
-    document.getElementById('iw-review-interview-title').textContent = 'Two-Way Interview Recording';
-    document.getElementById('iw-review-content').innerHTML = downloadUrl
-      ? `<div style="flex:1;padding:20px"><video src="${downloadUrl}" controls style="width:100%;border-radius:6px;background:#000"></video>
-         <div style="text-align:right;margin-top:8px"><a href="${webUrl}" target="_blank" class="btn btn-ghost btn-sm">Open in OneDrive ↗</a></div></div>`
-      : `<div style="flex:1;display:flex;align-items:center;justify-content:center">
-         <a href="${webUrl}" target="_blank" class="btn btn-primary">Open Recording in OneDrive ↗</a></div>`;
-    iwOpenModal('iw-modal-review');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwCancelSelfBookedSession(id, name) {
-  if (!confirm(`Cancel ${name}'s booking? Teams meeting will be removed and candidate notified.`)) return;
-  try {
-    const data = await iwApiJSON('DELETE', `/api/booking/booking/${id}`);
-    toast(data.emailSent ? 'Booking cancelled & candidate notified' : 'Booking cancelled (email failed)', 'success');
-    await iwLoadTWSessions();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Two-Way: Schedule page ─────────────────────────────────────────────────────
-function iwRenderTWSchedulePage() {
-  const main = document.getElementById('iw-main');
-  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; })();
-  const today = new Date().toISOString().split('T')[0];
-  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return ''; } })();
-  main.innerHTML = `
-    <div style="max-width:680px">
-      <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">Schedule Two-Way Interview</h2>
-      <div class="card">
-        <div class="form-row">
-          <div class="form-group" style="margin-bottom:0"><label>Candidate Name *</label><input type="text" id="iw-tw-cand-name" placeholder="Full name"></div>
-          <div class="form-group" style="margin-bottom:0"><label>Candidate Email *</label><input type="email" id="iw-tw-cand-email" placeholder="email@example.com"></div>
-        </div>
-        <div class="form-group" style="margin-top:16px"><label>Position / Role *</label><input type="text" id="iw-tw-position" placeholder="e.g. J1 Summer Intern – Marketing"></div>
-        <div class="form-row-3" style="margin-top:8px">
-          <div class="form-group" style="margin-bottom:0"><label>Date *</label><input type="date" id="iw-tw-date" value="${tomorrow}" min="${today}"></div>
-          <div class="form-group" style="margin-bottom:0">
-            <label>Time * <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)">${tz}</span></label>
-            <div style="display:flex;gap:6px">
-              <select id="iw-tw-time-h" style="flex:1">${[...Array(12)].map((_,i)=>{ const v=String(i+1).padStart(2,'0'); return `<option value="${v}"${i===8?' selected':''}>${v}</option>`; }).join('')}</select>
-              <select id="iw-tw-time-m" style="flex:1"><option value="00" selected>00</option><option value="15">15</option><option value="30">30</option><option value="45">45</option></select>
-              <select id="iw-tw-time-ap" style="flex:1"><option value="AM" selected>AM</option><option value="PM">PM</option></select>
-            </div>
-          </div>
-          <div class="form-group" style="margin-bottom:0"><label>Duration</label>
-            <select id="iw-tw-duration">
-              <option value="30">30 minutes</option><option value="45">45 minutes</option>
-              <option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">2 hours</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group" style="margin-top:16px">
-          <label>Microsoft Teams Meeting</label>
-          <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer" onclick="document.getElementById('iw-tw-auto-meeting').click()">
-            <input type="checkbox" id="iw-tw-auto-meeting" checked style="accent-color:var(--blue);width:16px;height:16px;flex-shrink:0;margin-top:2px;cursor:pointer" onclick="event.stopPropagation()" onchange="iwToggleTWAutoMeeting(this.checked)">
-            <div>
-              <div style="font-size:13px;font-weight:600">Auto-generate Microsoft Teams link</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Creates a Teams meeting on <strong>corporate-recruiter@cti-usa.com</strong> calendar. Candidate receives a calendar invite automatically.</div>
-            </div>
-          </div>
-        </div>
-        <div id="iw-tw-manual-link-wrap" style="display:none">
-          <div class="form-group"><label>Meeting Link (manual)</label><input type="url" id="iw-tw-meeting-link" placeholder="https://teams.microsoft.com/…"></div>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:16px;font-size:13px;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">
-            <input type="checkbox" id="iw-tw-send-email" style="accent-color:var(--blue);width:14px;height:14px;cursor:pointer">
-            Send email invite to candidate
-          </label>
-        </div>
-        <div class="form-group"><label>Notes (optional)</label><textarea id="iw-tw-notes" placeholder="Internal notes…"></textarea></div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-primary" id="iw-tw-schedule-btn" onclick="iwSubmitTWSession()">Schedule &amp; Create Teams Meeting</button>
-          <button class="btn btn-ghost" onclick="iwGoto('tw-list')">Cancel</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-function iwToggleTWAutoMeeting(checked) {
-  document.getElementById('iw-tw-manual-link-wrap').style.display = checked ? 'none' : 'block';
-  document.getElementById('iw-tw-schedule-btn').textContent = checked ? 'Schedule & Create Teams Meeting' : 'Schedule Interview';
-}
-
-async function iwSubmitTWSession() {
-  const candidateName  = document.getElementById('iw-tw-cand-name').value.trim();
-  const candidateEmail = document.getElementById('iw-tw-cand-email').value.trim();
-  const position       = document.getElementById('iw-tw-position').value.trim();
-  const date           = document.getElementById('iw-tw-date').value;
-  const twH  = document.getElementById('iw-tw-time-h').value;
-  const twM  = document.getElementById('iw-tw-time-m').value;
-  const twAP = document.getElementById('iw-tw-time-ap').value;
-  let hour24 = parseInt(twH);
-  if (twAP === 'PM' && hour24 !== 12) hour24 += 12;
-  if (twAP === 'AM' && hour24 === 12) hour24 = 0;
-  const time        = `${String(hour24).padStart(2,'0')}:${twM}`;
-  const duration    = parseInt(document.getElementById('iw-tw-duration').value);
-  const autoMeeting = document.getElementById('iw-tw-auto-meeting').checked;
-  const meetingLink = !autoMeeting ? (document.getElementById('iw-tw-meeting-link')?.value.trim() || '') : '';
-  const notes       = document.getElementById('iw-tw-notes').value.trim();
-  const sendEmail   = !autoMeeting && document.getElementById('iw-tw-send-email')?.checked;
-
-  if (!candidateName)  return toast('Candidate name is required', 'error');
-  if (!candidateEmail) return toast('Candidate email is required', 'error');
-  if (!position)       return toast('Position is required', 'error');
-  if (!date || !time)  return toast('Date and time are required', 'error');
-
-  const btn = document.getElementById('iw-tw-schedule-btn');
-  btn.disabled = true;
-  btn.textContent = autoMeeting ? 'Creating Teams meeting…' : 'Scheduling…';
-  const scheduledAt = new Date(`${date}T${time}`).getTime();
-  try {
-    const session = await iwApiJSON('POST', '/api/tw-sessions', { candidateName, candidateEmail, position, scheduledAt, duration, meetingLink, notes, autoMeeting });
-    if (session.teamsError)          toast('Scheduled, but Teams failed: ' + session.teamsError, 'info');
-    else if (autoMeeting && session.teamsGenerated) toast('Teams meeting created! Calendar invite sent.', 'success');
-    else if (sendEmail && session.id) {
-      try { await iwApiJSON('POST', `/api/tw-session/${session.id}/send-email`); toast('Scheduled & email sent!', 'success'); }
-      catch { toast('Scheduled, but email could not be sent', 'info'); }
-    } else toast('Session scheduled!', 'success');
-    iwGoto('tw-list');
-  } catch (e) {
-    toast(e.message, 'error');
-    btn.disabled = false;
-    btn.textContent = autoMeeting ? 'Schedule & Create Teams Meeting' : 'Schedule Interview';
-  }
-}
-
-// ── Sessions modal (one-way invite + candidates) ───────────────────────────────
-function iwSwitchSessionTab(name) {
-  const invite = document.getElementById('iw-session-pane-invite');
-  const cands  = document.getElementById('iw-session-pane-candidates');
-  if (!invite || !cands) return;
-  invite.style.display = name === 'invite' ? 'block' : 'none';
-  cands.style.display  = name === 'candidates' ? 'flex' : 'none';
-  const inner = document.getElementById('iw-sessions-modal-inner');
-  if (inner) {
-    if (name === 'invite') {
-      inner.style.width    = '';
-      inner.style.maxWidth = '660px';
-      inner.style.height   = '';
-    } else {
-      inner.style.width    = 'calc(100vw - 100px)';
-      inner.style.maxWidth = 'calc(100vw - 100px)';
-      inner.style.height   = 'calc(100vh - 60px)';
-    }
-  }
-  ['iw-tab-invite','iw-tab-candidates'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.toggle('active', id === `iw-tab-${name}`);
-  });
-}
-
-function iwResetInviteForm() {
-  const nn = document.getElementById('iw-new-cand-name'); if (nn) nn.value = '';
-  const ne = document.getElementById('iw-new-cand-email'); if (ne) ne.value = '';
-  const lb = document.getElementById('iw-generated-link-box'); if (lb) lb.style.display = 'none';
-  const sb = document.getElementById('iw-send-email-btn'); if (sb) { sb.style.display = 'none'; sb.disabled = false; sb.textContent = '✉ Send Email'; }
-  iwResetBulkUpload();
-  iwSwitchInviteMode('single');
-}
-
-function iwSwitchInviteMode(mode) {
-  const ss = document.getElementById('iw-invite-single-section'); if (ss) ss.style.display = mode === 'single' ? 'block' : 'none';
-  const bs = document.getElementById('iw-invite-bulk-section'); if (bs) bs.style.display = mode === 'bulk' ? 'block' : 'none';
-  const ms = document.getElementById('iw-invite-mode-single'); if (ms) ms.classList.toggle('active', mode === 'single');
-  const mb = document.getElementById('iw-invite-mode-bulk'); if (mb) mb.classList.toggle('active', mode === 'bulk');
-}
-
-async function iwOpenSessions(interviewId, title, tab = 'invite') {
-  _iwCurrentInterviewId = interviewId;
-  const el = document.getElementById('iw-modal-interview-title');
-  if (el) el.textContent = title;
-  iwResetInviteForm();
-  _iwDecisionFilter = 'all'; _iwStarFilter = 0; _iwSessionSortCol = null; _iwSessionSortDir = 'desc';
-  ['iw-fd-all','iw-fd-fwd','iw-fd-rej'].forEach((id, idx) => {
-    const c = document.getElementById(id); if (c) c.classList.toggle('active', idx === 0);
-  });
-  [0,1,2,3,4,5].forEach(i => {
-    const c = document.getElementById(`iw-fs-${i}`); if (c) c.classList.toggle('active', i === 0);
-  });
-  iwSwitchSessionTab(tab);
-  iwOpenModal('iw-modal-sessions');
-  await iwLoadSessions(interviewId);
-}
-
-async function iwLoadSessions(interviewId) {
-  const el = document.getElementById('iw-sessions-list');
-  if (!el) return;
-  el.innerHTML = '<div class="iw-empty-state"><div class="spinner"></div></div>';
-  try {
-    _iwAllSessions = await iwApiJSON('GET', `/api/interview/${interviewId}/sessions`);
-    _iwSessionFilter = 'all';
-    iwSetSessionFilter('all');
-  } catch (e) {
-    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
-  }
-}
-
-function iwSetSessionFilter(filter) {
-  _iwSessionFilter = filter;
-  ['all','pending','completed'].forEach(f => {
-    const c = document.getElementById(`iw-fc-${f}`); if (c) c.classList.toggle('active', f === filter);
-  });
-  iwFilterAndRenderSessions();
-}
-
-function iwSetDecisionFilter(filter) {
-  _iwDecisionFilter = filter;
-  [['iw-fd-all','all'],['iw-fd-fwd','move_forward'],['iw-fd-rej','not_moving_forward']].forEach(([id, val]) => {
-    const c = document.getElementById(id); if (c) c.classList.toggle('active', filter === val);
-  });
-  iwFilterAndRenderSessions();
-}
-
-function iwSetStarFilter(n) {
-  _iwStarFilter = n;
-  [0,1,2,3,4,5].forEach(i => {
-    const c = document.getElementById(`iw-fs-${i}`); if (c) c.classList.toggle('active', i === n);
-  });
-  iwFilterAndRenderSessions();
-}
-
-function iwToggleSessionSort(col) {
-  if (_iwSessionSortCol === col) _iwSessionSortDir = _iwSessionSortDir === 'asc' ? 'desc' : 'asc';
-  else { _iwSessionSortCol = col; _iwSessionSortDir = 'desc'; }
-  iwFilterAndRenderSessions();
-}
-
-function iwFilterAndRenderSessions() {
-  const query = (document.getElementById('iw-search-candidates')?.value || '').toLowerCase();
-  let list = _iwAllSessions.filter(s => {
-    if (_iwSessionFilter !== 'all' && s.status !== _iwSessionFilter) return false;
-    if (query && !s.candidateName.toLowerCase().includes(query) && !(s.candidateEmail||'').toLowerCase().includes(query)) return false;
-    if (_iwDecisionFilter !== 'all' && s.reviewDecision !== _iwDecisionFilter) return false;
-    if (_iwStarFilter > 0 && (s.reviewStars || 0) < _iwStarFilter) return false;
-    return true;
-  });
-  if (_iwSessionSortCol === 'review')       list.sort((a,b) => { const sa=a.reviewStars||0,sb=b.reviewStars||0; return _iwSessionSortDir==='desc'?sb-sa:sa-sb; });
-  else if (_iwSessionSortCol === 'status')  list.sort((a,b) => { const o={completed:2,in_progress:1,pending:0}; const sa=o[a.status]??0,sb=o[b.status]??0; return _iwSessionSortDir==='desc'?sb-sa:sa-sb; });
-  else if (_iwSessionSortCol === 'date')    list.sort((a,b) => { const ta=a.createdAt||0,tb=b.createdAt||0; return _iwSessionSortDir==='desc'?tb-ta:ta-tb; });
-
-  const rv = document.getElementById('iw-sort-review-ind'); if (rv) rv.textContent = _iwSessionSortCol==='review' ? (_iwSessionSortDir==='desc'?'↓':'↑') : '↕';
-  const st = document.getElementById('iw-sort-status-ind'); if (st) st.textContent = _iwSessionSortCol==='status' ? (_iwSessionSortDir==='desc'?'↓':'↑') : '↕';
-  const dt = document.getElementById('iw-sort-date-ind');   if (dt) dt.textContent = _iwSessionSortCol==='date'   ? (_iwSessionSortDir==='desc'?'↓':'↑') : '↕';
-
-  const hd = document.getElementById('iw-sessions-heading'); if (hd) hd.textContent = `Candidates (${_iwAllSessions.length})`;
-  const el = document.getElementById('iw-sessions-list'); if (!el) return;
-  if (!list.length) {
-    el.innerHTML = `<div class="iw-empty-state">${_iwAllSessions.length ? 'No candidates match your filter.' : 'No candidates yet. Use the Invite tab to generate a link.'}</div>`;
-    return;
-  }
-  el.innerHTML = list.map((s, i) => iwRenderSessionRow(s, i + 1)).join('');
-  list.filter(s => s.profilePhotoItemId).forEach(s => iwLoadAvatarPhoto(s.token));
-}
-
-function iwCandidateInitials(name) {
-  const w = name.trim().split(/\s+/);
-  return (w.length >= 2 ? w[0][0] + w[w.length-1][0] : w[0].slice(0,2)).toUpperCase();
-}
-
-async function iwLoadAvatarPhoto(token) {
-  const el = document.getElementById(`iw-av-${token}`); if (!el) return;
-  try {
-    const data = await iwApiJSON('GET', `/api/session/${token}/profile-photo`);
-    if (data.downloadUrl) el.innerHTML = `<img src="${data.downloadUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
-  } catch { /* silently skip */ }
-}
-
-const IW_DECISION_STYLE = { move_forward:'background:#16a34a;color:#fff', not_moving_forward:'background:#dc2626;color:#fff' };
-const IW_DECISION_LABEL = { move_forward:'✓ Moving Forward', not_moving_forward:'✗ Not Moving Forward' };
-
-function iwRenderSessionRow(s, num) {
-  const invitedDate = s.createdAt ? new Date(s.createdAt).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
-  const responseCount = s.responses?.length || 0;
-  const avatarContent = `<span style="font-size:11px;font-weight:700;color:var(--text-muted)">${iwCandidateInitials(s.candidateName)}</span>`;
-  const videosCell = responseCount > 0
-    ? `<button class="btn btn-ghost btn-sm" style="color:var(--blue);white-space:nowrap" onclick="iwOpenReview('${s.token}','${esc(s.candidateName)}')">🎥 View ${responseCount}</button>`
-    : `<span style="font-size:12px;color:var(--text-muted)">—</span>`;
-  const actionsCell = s.status === 'pending'
-    ? `<button class="btn btn-ghost btn-sm" title="Copy link" onclick="iwCopySessionLink('${s.token}')">🔗</button>
-       <button class="btn btn-danger btn-sm" onclick="iwRevokeSession('${s.token}','${esc(s.candidateName)}')">Revoke</button>`
-    : `<button class="btn btn-ghost btn-sm" onclick="iwOpenReview('${s.token}','${esc(s.candidateName)}')">Review</button>`;
-
-  return `
-    <div class="iw-session-row">
-      <div style="font-size:11px;color:var(--text-muted);font-weight:600;text-align:center">${num}</div>
-      <div style="display:flex;align-items:center;gap:8px;min-width:0">
-        <div id="iw-av-${s.token}" class="candidate-avatar">${avatarContent}</div>
-        <div style="min-width:0">
-          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.candidateName)}</div>
-          <div style="font-size:11px;color:var(--text-muted)">${s.candidateEmail ? esc(s.candidateEmail) : ''}</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:3px">
-        ${s.reviewDecision
-          ? `<div><span style="font-size:10px;padding:2px 7px;border-radius:10px;${IW_DECISION_STYLE[s.reviewDecision]||''};white-space:nowrap">${IW_DECISION_LABEL[s.reviewDecision]||s.reviewDecision}</span></div>
-             ${s.reviewStars ? `<div style="font-size:13px;color:#f59e0b">${'★'.repeat(s.reviewStars)}<span style="color:var(--border)">${'★'.repeat(5-s.reviewStars)}</span></div>` : ''}`
-          : `<span style="font-size:12px;color:var(--text-muted)">—</span>`}
-      </div>
-      <div><span style="font-size:12px;color:var(--text-muted)">${invitedDate}</span></div>
-      <div style="text-align:center"><span class="badge badge-${s.status === 'completed' ? 'approved' : s.status === 'pending' ? 'new' : 'active'}">${s.status.replace('_',' ')}</span></div>
-      <div style="text-align:center">${videosCell}</div>
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:5px">${actionsCell}</div>
-    </div>`;
-}
-
-async function iwGenerateLink() {
-  const name  = document.getElementById('iw-new-cand-name').value.trim();
-  const email = document.getElementById('iw-new-cand-email').value.trim();
-  if (!name)  return toast('Candidate name is required', 'error');
-  if (!email) return toast('Email is required', 'error');
-  try {
-    const data = await iwApiJSON('POST', `/api/interview/${_iwCurrentInterviewId}/sessions`, { candidateName: name, candidateEmail: email });
-    const link = iwBuildTakeUrl(data.token);
-    document.getElementById('iw-generated-link-text').textContent = link;
-    document.getElementById('iw-generated-link-box').style.display = 'block';
-    const sb = document.getElementById('iw-send-email-btn');
-    if (sb) { sb.style.display = 'inline-flex'; sb.onclick = () => iwSendLinkEmail(data.token, link, email); }
-    toast('Link generated!', 'success');
-    await iwLoadSessions(_iwCurrentInterviewId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function iwBuildTakeUrl(token)    { return `${IW_TAKE_BASE}/take.html?token=${token}`; }
-function iwCopySessionLink(token) { navigator.clipboard.writeText(iwBuildTakeUrl(token)); toast('Link copied!', 'success'); }
-function iwCopyLink()             { navigator.clipboard.writeText(document.getElementById('iw-generated-link-text').textContent); toast('Copied!', 'success'); }
-
-async function iwSendLinkEmail(token, link, email) {
-  const btn = document.getElementById('iw-send-email-btn');
-  btn.disabled = true; btn.textContent = 'Sending…';
-  try {
-    await iwApiJSON('POST', `/api/session/${token}/send-email`, { link });
-    toast(`Email sent to ${email}`, 'success');
-    iwResetInviteForm();
-    await iwLoadSessions(_iwCurrentInterviewId);
-  } catch (e) {
-    toast('Failed: ' + e.message, 'error');
-    btn.disabled = false; btn.textContent = '✉ Send Email';
-  }
-}
-
-async function iwRevokeSession(token, name) {
-  if (!confirm(`Revoke ${name}'s invitation? Their link will stop working immediately.`)) return;
-  try {
-    await iwApiJSON('DELETE', `/api/session/${token}`);
-    toast('Invitation revoked', 'success');
-    await iwLoadSessions(_iwCurrentInterviewId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Bulk import ────────────────────────────────────────────────────────────────
-async function iwHandleBulkFile(file) {
-  if (!file) return;
-  const ext = file.name.split('.').pop().toLowerCase();
-  let rows, headers;
-  try {
-    if (ext === 'csv') {
-      const text = await file.text();
-      ({ rows, headers } = iwParseCsvText(text));
-    } else if (ext === 'xlsx' || ext === 'xls') {
-      if (typeof XLSX === 'undefined') return toast('Excel library not loaded — try CSV instead', 'error');
-      const buffer = await file.arrayBuffer();
-      ({ rows, headers } = iwParseXlsxBuffer(buffer));
-    } else return toast('Please upload .csv, .xlsx, or .xls', 'error');
-  } catch (e) { return toast('Could not read file: ' + e.message, 'error'); }
-  if (!rows.length) return toast('No data rows found in file', 'error');
-  _iwBulkRows = rows; _iwBulkHeaders = headers;
-  _iwBulkNameCol  = iwDetectBestCol(headers, ['full name','fullname','name','candidate']);
-  if (!_iwBulkNameCol) {
-    const first = headers.find(h => /first.?name|fname/i.test(h));
-    const last  = headers.find(h => /last.?name|lname|surname/i.test(h));
-    if (first && last) _iwBulkNameCol = `__concat__${first}__${last}`;
-    else _iwBulkNameCol = first || last || headers[0];
-  }
-  _iwBulkEmailCol = iwDetectBestCol(headers, ['email','e-mail','mail']);
-  iwRenderBulkPreview();
-}
-
-function iwDetectBestCol(headers, keywords) {
-  for (const kw of keywords) { const m = headers.find(h => h.toLowerCase().includes(kw)); if (m) return m; }
-  return null;
-}
-
-function iwParseCsvText(text) {
-  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').trim().split('\n');
-  if (!lines.length) return { rows:[], headers:[] };
-  const parseRow = line => {
-    const result=[]; let cur=''; let inQ=false;
-    for (let i=0;i<line.length;i++) {
-      const ch=line[i];
-      if (ch==='"') { if (inQ&&line[i+1]==='"'){cur+='"';i++;} else inQ=!inQ; }
-      else if (ch===','&&!inQ) { result.push(cur.trim()); cur=''; }
-      else cur+=ch;
-    }
-    result.push(cur.trim()); return result;
-  };
-  const headers = parseRow(lines[0]);
-  const rows=[];
-  for (let i=1;i<lines.length;i++) {
-    const cells=parseRow(lines[i]);
-    if (cells.every(c=>!c)) continue;
-    const obj={}; headers.forEach((h,idx)=>{ obj[h]=cells[idx]||''; }); rows.push(obj);
-  }
-  return { rows, headers };
-}
-
-function iwParseXlsxBuffer(buffer) {
-  const wb=XLSX.read(buffer,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
-  const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-  if (!data.length) return { rows:[], headers:[] };
-  const headers=data[0].map(String); const rows=[];
-  for (let i=1;i<data.length;i++) {
-    const cells=data[i]; if (cells.every(c=>!String(c))) continue;
-    const obj={}; headers.forEach((h,idx)=>{ obj[h]=String(cells[idx]??''); }); rows.push(obj);
-  }
-  return { rows, headers };
-}
-
-function iwGetBulkName(row) {
-  if (_iwBulkNameCol?.startsWith('__concat__')) {
-    const parts=_iwBulkNameCol.slice('__concat__'.length).split('__');
-    return parts.map(k=>row[k]||'').filter(Boolean).join(' ');
-  }
-  return row[_iwBulkNameCol]||'';
-}
-function iwGetBulkEmail(row) { return row[_iwBulkEmailCol]||''; }
-
-function iwRenderBulkPreview() {
-  const section = document.getElementById('iw-bulk-preview-section');
-  if (!section) return;
-  const first=_iwBulkHeaders.find(h=>/first.?name|fname/i.test(h));
-  const last =_iwBulkHeaders.find(h=>/last.?name|lname|surname/i.test(h));
-  const concatKey = first&&last ? `__concat__${first}__${last}` : null;
-  const nameOpts=[
-    ...(concatKey?[`<option value="${esc(concatKey)}" ${_iwBulkNameCol===concatKey?'selected':''}>First + Last Name</option>`]:[]),
-    ..._iwBulkHeaders.map(h=>`<option value="${esc(h)}" ${_iwBulkNameCol===h?'selected':''}>${esc(h)}</option>`),
-  ].join('');
-  const emailOpts=_iwBulkHeaders.map(h=>`<option value="${esc(h)}" ${_iwBulkEmailCol===h?'selected':''}>${esc(h)}</option>`).join('');
-  const preview=_iwBulkRows.slice(0,5);
-  const validCount=_iwBulkRows.filter(r=>iwGetBulkName(r)&&iwGetBulkEmail(r)).length;
-  section.style.display='block';
-  section.innerHTML=`
-    <div style="margin-top:14px;padding:14px 16px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px">
-      <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;margin-bottom:14px">
-        <div>
-          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);display:block;margin-bottom:4px">Name Column</label>
-          <select id="iw-bulk-name-col" onchange="_iwBulkNameCol=this.value;iwRenderBulkPreview()"
-            style="width:100%;background:var(--navy-light);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">${nameOpts}</select>
-        </div>
-        <div>
-          <label style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);display:block;margin-bottom:4px">Email Column</label>
-          <select id="iw-bulk-email-col" onchange="_iwBulkEmailCol=this.value;iwRenderBulkPreview()"
-            style="width:100%;background:var(--navy-light);border:1px solid var(--border);border-radius:6px;padding:7px 10px;color:var(--text);font-size:13px">${emailOpts}</select>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="iwResetBulkUpload()">✕ Clear</button>
-      </div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">
-        Preview — first 5 of <strong style="color:var(--text)">${_iwBulkRows.length}</strong> rows
-        ${validCount<_iwBulkRows.length?`<span style="color:var(--danger)"> · ${_iwBulkRows.length-validCount} rows missing name or email</span>`:''}
-      </div>
-      <div style="border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:14px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;padding:7px 12px;background:var(--navy-mid);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">
-          <span>Name</span><span>Email</span></div>
-        ${preview.map(r=>{
-          const n=iwGetBulkName(r),e=iwGetBulkEmail(r);
-          return `<div style="display:grid;grid-template-columns:1fr 1fr;padding:7px 12px;border-top:1px solid var(--border);font-size:12px${!n||!e?';background:rgba(239,68,68,.05)':''}">
-            <span style="${!n?'color:var(--danger)':''}">${n||'⚠ missing'}</span>
-            <span style="${!e?'color:var(--danger)':''}">${e||'⚠ missing'}</span>
-          </div>`;
-        }).join('')}
-        ${_iwBulkRows.length>5?`<div style="padding:6px 12px;border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);text-align:center">and ${_iwBulkRows.length-5} more…</div>`:''}
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-primary" onclick="iwRunBulkImport(false)">Generate Links for ${validCount}</button>
-        <button class="btn btn-ghost" onclick="iwRunBulkImport(true)">Generate &amp; Send Emails</button>
-      </div>
-    </div>`;
-}
-
-function iwResetBulkUpload() {
-  _iwBulkRows=[]; _iwBulkHeaders=[]; _iwBulkNameCol=null; _iwBulkEmailCol=null;
-  const preview=document.getElementById('iw-bulk-preview-section'); if (preview) { preview.style.display='none'; preview.innerHTML=''; }
-  const progress=document.getElementById('iw-bulk-import-progress'); if (progress) { progress.style.display='none'; progress.innerHTML=''; }
-  const fi=document.getElementById('iw-bulk-file-input'); if (fi) fi.value='';
-}
-
-async function iwRunBulkImport(sendEmails) {
-  const valid=_iwBulkRows.filter(r=>iwGetBulkName(r)&&iwGetBulkEmail(r));
-  if (!valid.length) return toast('No valid rows to import', 'error');
-  document.getElementById('iw-bulk-preview-section').querySelectorAll('button,select').forEach(el=>el.disabled=true);
-  const progress=document.getElementById('iw-bulk-import-progress'); progress.style.display='block';
-  let done=0, failed=0; const errors=[]; const total=valid.length;
-  const showProg=()=>{
-    const pct=Math.round((done+failed)/total*100);
-    progress.innerHTML=`
-      <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">Importing${sendEmails?' &amp; sending emails':''}… <strong>${done+failed}</strong> / ${total}</div>
-      <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden">
-        <div style="background:var(--blue);height:100%;border-radius:4px;width:${pct}%;transition:width .15s"></div>
-      </div>`;
-  };
-  showProg();
-  for (const row of valid) {
-    try {
-      const n=iwGetBulkName(row), e=iwGetBulkEmail(row);
-      const data=await iwApiJSON('POST',`/api/interview/${_iwCurrentInterviewId}/sessions`,{candidateName:n,candidateEmail:e});
-      if (sendEmails&&data.token) {
-        try { await iwApiJSON('POST',`/api/session/${data.token}/send-email`,{link:iwBuildTakeUrl(data.token)}); } catch {}
-      }
-      done++;
-    } catch (e) { failed++; errors.push(e.message); }
-    showProg();
-  }
-  progress.innerHTML=`
-    <div style="padding:14px 16px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:8px">Import complete</div>
-      <div style="display:flex;gap:16px">
-        <span style="color:var(--success)">✓ ${done} imported${sendEmails?' &amp; emailed':''}</span>
-        ${failed?`<span style="color:var(--danger)">✗ ${failed} failed</span>`:''}
-      </div>
-      ${errors.length?`<div style="font-size:12px;color:var(--text-muted);margin-top:8px">${errors.slice(0,3).map(e=>`<div>• ${esc(e)}</div>`).join('')}${errors.length>3?`<div>…and ${errors.length-3} more</div>`:''}</div>`:''}
-      <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="iwResetBulkUpload();iwSwitchInviteMode('single')">Done</button>
-    </div>`;
-  await iwLoadSessions(_iwCurrentInterviewId);
-  iwLoadInterviewList();
-}
-
-// ── Review modal ───────────────────────────────────────────────────────────────
-function iwStarsHTML(n, max=5) {
-  return Array.from({length:max},(_,i)=>`<span style="color:${i<n?'#f59e0b':'var(--border)'}">★</span>`).join('');
-}
-
-const IW_LEVEL_COLORS = { 'Excellent':'#16a34a','Good':'#2563eb','Intermediate':'#d97706','Basic':'#dc2626','Very limited':'#9ca3af' };
-
-function iwRenderAnalysisPanel(analysis, token) {
-  const overall=analysis.overall||{};
-  const levelColor=IW_LEVEL_COLORS[overall.level]||'var(--blue)';
-  const ts=analysis.analyzedAt?new Date(analysis.analyzedAt).toLocaleString():'';
-  const qCards=(analysis.questions||[]).map(q=>`
-    <div style="border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px">
-        <div style="font-size:13px;font-weight:600">Q${q.questionIndex+1}: ${esc(q.qText||'')}</div>
-        <div style="flex-shrink:0;font-size:18px;line-height:1">${iwStarsHTML(q.stars)}</div>
-      </div>
-      <p style="font-size:12px;color:var(--text);margin:0 0 8px">${esc(q.feedback||'')}</p>
-      ${q.transcript?`<details style="margin-top:4px"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer">Show transcript</summary><p style="font-size:11px;color:var(--text-muted);margin:6px 0 0;line-height:1.55;font-style:italic">"${esc(q.transcript)}"</p></details>`:''}
-    </div>`).join('');
-
-  return `
-    <div id="iw-analysis-panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <h3 style="margin:0;font-size:15px">English Analysis</h3>
-        <div style="display:flex;gap:8px;align-items:center">
-          ${ts?`<span style="font-size:11px;color:var(--text-muted)">${ts}</span>`:''}
-          <button class="btn btn-ghost btn-sm" onclick="iwRunAnalysis('${token}')">Re-analyze</button>
-        </div>
-      </div>
-      <div style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:16px;display:flex;gap:20px;align-items:center">
-        <div style="text-align:center;flex-shrink:0">
-          <div style="font-size:28px;line-height:1">${iwStarsHTML(overall.stars)}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${overall.stars||'?'} / 5</div>
-        </div>
-        <div>
-          <span style="display:inline-block;background:${levelColor};color:#fff;font-size:11px;font-weight:700;padding:2px 10px;border-radius:20px;margin-bottom:6px">${esc(overall.level||'')}</span>
-          <p style="font-size:13px;color:var(--text);margin:0;line-height:1.5">${esc(overall.summary||'')}</p>
-        </div>
-      </div>
-      ${qCards}
-    </div>`;
-}
-
-async function iwOpenReview(token, candidateName) {
-  document.getElementById('iw-review-candidate-name').textContent  = candidateName;
-  document.getElementById('iw-review-interview-title').textContent = '';
-  iwOpenModal('iw-modal-review');
-  const content = document.getElementById('iw-review-content');
-  content.style.cssText = 'flex:1;min-height:0;display:flex';
-  content.innerHTML = '<div style="margin:auto"><div class="spinner"></div></div>';
-  _iwReviewDecision = null;
-
-  try {
-    const [{ session, interview }, cachedAnalysis, resumeData, reviewData] = await Promise.all([
-      fetch(`${INTERVIEW_API}/api/session/${token}`,          { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()),
-      fetch(`${INTERVIEW_API}/api/session/${token}/analysis`, { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({notFound:true})),
-      fetch(`${INTERVIEW_API}/api/session/${token}/resume-url`,{ headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({notFound:true})),
-      fetch(`${INTERVIEW_API}/api/session/${token}/review`,   { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({notFound:true})),
-    ]);
-
-    document.getElementById('iw-review-interview-title').textContent = interview?.title || '';
-
-    const videoItems = session.responses?.length
-      ? await Promise.all(session.responses.map(async r => {
-          const q = interview?.questions?.[r.questionIndex];
-          const { downloadUrl, webUrl } = await fetch(`${INTERVIEW_API}/api/session/${token}/video/${r.questionIndex}`, { headers:{'X-Admin-Key':_iwKey} }).then(r=>r.json()).catch(()=>({}));
-          return { q, downloadUrl, webUrl, questionIndex: r.questionIndex };
-        }))
-      : [];
-
-    const videosHTML = videoItems.length
-      ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
-          ${videoItems.map(({q,downloadUrl,webUrl,questionIndex})=>`
-            <div style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--input-bg)">
-              ${downloadUrl
-                ?`<video src="${downloadUrl}" controls preload="metadata" style="width:100%;aspect-ratio:16/9;background:#000;display:block"></video>`
-                :`<div style="aspect-ratio:16/9;background:#111;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">Unavailable</div>`}
-              <div style="padding:8px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:4px">
-                <div>
-                  <div style="font-size:11px;font-weight:700;color:var(--blue);margin-bottom:2px">Q${questionIndex+1}</div>
-                  <div style="font-size:11px;color:var(--text);line-height:1.4">${q?esc(q.text):'Question '+(questionIndex+1)}</div>
-                </div>
-                ${webUrl?`<a href="${webUrl}" target="_blank" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 5px;flex-shrink:0">↗</a>`:''}
-              </div>
-            </div>`).join('')}
-        </div>`
-      : `<div class="iw-empty-state">No recordings yet</div>`;
-
-    const analysisSection = cachedAnalysis?.notFound
-      ? `<div style="margin-top:8px;text-align:center">
-           <button class="btn btn-primary" onclick="iwRunAnalysis('${token}')" id="iw-analyze-btn">🤖 Analyze English Proficiency</button>
-           <p style="font-size:12px;color:var(--text-muted);margin-top:6px">~20–40 s · transcribes &amp; rates all answers</p>
-         </div>`
-      : iwRenderAnalysisPanel(cachedAnalysis, token);
-
-    let resumeSection = '';
-    if (resumeData?.downloadUrl) {
-      const ext = (resumeData.ext||'pdf').toLowerCase();
-      const enc = encodeURIComponent(resumeData.downloadUrl);
-      const viewerSrc = (ext==='doc'||ext==='docx')
-        ? `https://view.officeapps.live.com/op/embed.aspx?src=${enc}`
-        : `https://docs.google.com/viewer?url=${enc}&embedded=true`;
-      resumeSection = `
-        <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:6px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <h3 style="margin:0;font-size:14px">Resume</h3>
-            <a href="${resumeData.downloadUrl}" target="_blank" class="btn btn-ghost btn-sm">Download ↗</a>
-          </div>
-          <iframe src="${viewerSrc}" style="flex:1;min-height:400px;border:1px solid var(--border);border-radius:8px;width:100%" frameborder="0"></iframe>
-        </div>`;
-    } else {
-      resumeSection = `<div class="iw-empty-state" style="flex:none">No resume uploaded</div>`;
-    }
-
-    if (reviewData&&!reviewData.notFound) { _iwReviewDecision=reviewData.decision; _iwReviewStars=reviewData.stars||0; }
-    else _iwReviewStars = 0;
-
-    const reviewOutcome = `
-      <div style="border-top:1px solid var(--border);padding-top:16px;flex-shrink:0">
-        <h3 style="margin:0 0 12px;font-size:14px">Review Outcome</h3>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-          <button id="iw-btn-fwd" onclick="iwSetReviewDecision('move_forward')"
-            class="btn-outcome btn-outcome-fwd${_iwReviewDecision==='move_forward'?' selected':''}">✓ Move Forward</button>
-          <button id="iw-btn-rej" onclick="iwSetReviewDecision('not_moving_forward')"
-            class="btn-outcome btn-outcome-rej${_iwReviewDecision==='not_moving_forward'?' selected':''}">✗ Not Moving Forward</button>
-          <div id="iw-star-picker" style="display:inline-flex;gap:2px;margin-left:6px;align-items:center">
-            ${Array.from({length:5},(_,i)=>
-              `<span style="font-size:24px;cursor:pointer;color:${i<_iwReviewStars?'#f59e0b':'var(--border)'};transition:color .1s;line-height:1;padding:0 1px"
-                onmouseenter="iwHighlightStars(${i+1})"
-                onmouseleave="iwHighlightStars(_iwReviewStars)"
-                onclick="iwSetReviewStars(${i+1})">★</span>`).join('')}
-          </div>
-        </div>
-        <textarea id="iw-review-notes" placeholder="Notes about this candidate…"
-          style="width:100%;min-height:90px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;color:var(--text);font-size:13px;resize:vertical;box-sizing:border-box"
-        >${reviewData?.notes?esc(reviewData.notes):''}</textarea>
-        <div style="margin-top:10px;text-align:right">
-          <button class="btn btn-ghost" onclick="iwSaveReviewOutcome('${token}')">💾 Save Review</button>
-        </div>
-      </div>`;
-
-    content.innerHTML = `
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)">
-        <div style="flex:1;overflow-y:auto;padding:20px 20px 12px">
-          <h3 style="margin:0 0 12px;font-size:14px">Recordings</h3>
-          ${videosHTML}
-        </div>
-        <div style="flex-shrink:0;padding:14px 20px;border-top:1px solid var(--border);background:var(--navy-light)">
-          ${analysisSection}
-        </div>
-      </div>
-      <div style="flex:1;min-width:0;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px">
-        ${resumeSection}
-        ${reviewOutcome}
-      </div>`;
-  } catch (e) {
-    content.innerHTML = `<div style="margin:auto;color:var(--danger);font-size:13px">Error: ${esc(e.message)}</div>`;
-  }
-}
-
-function iwSetReviewDecision(decision) {
-  _iwReviewDecision = decision;
-  const fwd = document.getElementById('iw-btn-fwd'); if (fwd) fwd.classList.toggle('selected', decision === 'move_forward');
-  const rej = document.getElementById('iw-btn-rej'); if (rej) rej.classList.toggle('selected', decision === 'not_moving_forward');
-}
-
-async function iwSaveReviewOutcome(token) {
-  const notes    = document.getElementById('iw-review-notes')?.value || '';
-  const decision = _iwReviewDecision;
-  const stars    = _iwReviewStars || 0;
-  if (!decision) return toast('Please select a decision first', 'error');
-  try {
-    await iwApiJSON('POST', `/api/session/${token}/review`, { notes, decision, stars });
-    toast('Review saved', 'success');
-    iwCloseModal('iw-modal-review');
-    if (_iwCurrentInterviewId) {
-      iwSwitchSessionTab('candidates');
-      await iwLoadSessions(_iwCurrentInterviewId);
-    }
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function iwHighlightStars(n) {
-  const container = document.getElementById('iw-star-picker'); if (!container) return;
-  container.querySelectorAll('span').forEach((s, i) => { s.style.color = i < n ? '#f59e0b' : 'var(--border)'; });
-}
-function iwSetReviewStars(n) { _iwReviewStars = n; iwHighlightStars(n); }
-
-async function iwRunAnalysis(token) {
-  const panel = document.getElementById('iw-analysis-panel');
-  const btn   = document.getElementById('iw-analyze-btn');
-  const loadingHTML = `<div id="iw-analysis-panel" style="text-align:center">
-    <div class="spinner" style="margin:0 auto 12px"></div>
-    <p style="font-size:13px;color:var(--text-muted)">Transcribing recordings and analyzing English…</p>
-    <p style="font-size:11px;color:var(--text-muted)">This may take 20–40 seconds</p>
-  </div>`;
-  if (panel) panel.outerHTML = loadingHTML;
-  else if (btn) btn.closest('div').outerHTML = loadingHTML;
-  try {
-    const res  = await fetch(`${INTERVIEW_API}/api/session/${token}/analyze`, { method:'POST', headers:{'X-Admin-Key':_iwKey} });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    const newPanel = document.getElementById('iw-analysis-panel');
-    if (newPanel) newPanel.outerHTML = iwRenderAnalysisPanel(data, token);
-  } catch (e) {
-    const newPanel = document.getElementById('iw-analysis-panel');
-    if (newPanel) newPanel.outerHTML = `<div id="iw-analysis-panel"><p style="color:var(--danger);font-size:13px">Analysis failed: ${esc(e.message)}</p>
-      <button class="btn btn-ghost btn-sm" onclick="iwRunAnalysis('${token}')">Try again</button></div>`;
-  }
-}
-
-// ── Edit Interview modal ───────────────────────────────────────────────────────
-async function iwOpenEditInterview(id) {
-  _iwEditInterviewId = id;
-  try {
-    const iv = await iwApiJSON('GET', `/api/interview/${id}`);
-    document.getElementById('iw-edit-title').value = iv.title;
-    document.getElementById('iw-edit-desc').value  = iv.description || '';
-    _iwEditQuestions = iv.questions.map(q => ({ ...q }));
-    iwRenderEditQuestions();
-    iwOpenModal('iw-modal-edit');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function iwAddEditQuestion()        { _iwEditQuestions.push({ text:'', duration:120 }); iwRenderEditQuestions(); }
-function iwRemoveEditQuestion(i)    { if (_iwEditQuestions.length===1) return toast('Need at least one question','error'); _iwEditQuestions.splice(i,1); iwRenderEditQuestions(); }
-function iwMoveEditQuestion(i, dir) { const j=i+dir; if (j<0||j>=_iwEditQuestions.length) return; [_iwEditQuestions[i],_iwEditQuestions[j]]=[_iwEditQuestions[j],_iwEditQuestions[i]]; iwRenderEditQuestions(); }
-
-function iwRenderEditQuestions() {
-  const el = document.getElementById('iw-edit-questions-builder'); if (!el) return;
-  el.innerHTML = _iwEditQuestions.map((q, i) => `
-    <div class="question-item">
-      <div class="q-num">${i+1}</div>
-      <div class="q-fields">
-        <input type="text" placeholder="Question text *" value="${esc(q.text)}" oninput="_iwEditQuestions[${i}].text=this.value">
-        <select onchange="_iwEditQuestions[${i}].duration=parseInt(this.value)">
-          ${[30,60,90,120,180,240,300].map(s=>`<option value="${s}" ${q.duration===s?'selected':''}>${s}s (${s<60?s+'s':(s/60)+' min'})</option>`).join('')}
-        </select>
-      </div>
-      <button class="btn btn-ghost btn-sm" onclick="iwMoveEditQuestion(${i},-1)" ${i===0?'disabled':''}>↑</button>
-      <button class="btn btn-ghost btn-sm" onclick="iwRemoveEditQuestion(${i})" style="color:var(--danger)">✕</button>
-    </div>`).join('');
-}
-
-async function iwSubmitEditInterview() {
-  const title       = document.getElementById('iw-edit-title').value.trim();
-  const description = document.getElementById('iw-edit-desc').value.trim();
-  if (!title) return toast('Title is required', 'error');
-  if (_iwEditQuestions.some(q => !q.text.trim())) return toast('All questions need text', 'error');
-  try {
-    await iwApiJSON('PUT', `/api/interview/${_iwEditInterviewId}`, { title, description, questions: _iwEditQuestions });
-    toast('Interview updated!', 'success');
-    iwCloseModal('iw-modal-edit');
-    iwLoadInterviewList();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Booking page ───────────────────────────────────────────────────────────────
-async function iwRenderBookingPage() {
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="max-width:820px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h2 style="font-size:16px;font-weight:700;margin:0">Booking Interview</h2>
-        <button class="btn btn-primary" onclick="iwGoto('booking-create')">+ New Booking Link</button>
-      </div>
-      <div id="iw-booking-links-list"><div class="iw-empty-state"><div class="spinner"></div></div></div>
-    </div>`;
-  await iwLoadBookingLinks();
-}
-
-async function iwLoadBookingLinks() {
-  const el = document.getElementById('iw-booking-links-list'); if (!el) return;
-  try {
-    _iwBookingLinks = await iwApiJSON('GET', '/api/booking/links');
-    if (!_iwBookingLinks.length) {
-      el.innerHTML = `<div class="iw-empty-state">No booking links yet. Click "+ New Booking Link" to create one.</div>`;
-      return;
-    }
-    el.innerHTML = _iwBookingLinks.map(link => {
-      const created = new Date(link.createdAt).toLocaleDateString();
-      const active  = link.active;
-      const bookUrl = `${IW_TAKE_BASE}/book.html?t=${link.token}`;
-      return `
-        <div class="card" style="margin-bottom:10px">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-            <div style="flex:1;min-width:0">
-              <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                <span style="font-size:15px;font-weight:700">${esc(link.title)}</span>
-                <span style="font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;${active?'background:rgba(22,163,74,.12);color:#16a34a':'background:rgba(148,163,184,.12);color:var(--text-muted)'}">${active?'● Active':'○ Inactive'}</span>
-              </div>
-              <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
-                ${link.clientName ? esc(link.clientName)+' · ':''} ${link.position ? esc(link.position)+' · ':''} 🟦 Teams · ${link.duration||30} min · Created ${created}
-              </div>
-              <div style="display:flex;align-items:center;gap:8px">
-                <code style="font-size:11px;color:var(--text-muted);word-break:break-all">${bookUrl}</code>
-                <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${bookUrl}');toast('Link copied!','success')">📋</button>
-              </div>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-              <button class="btn btn-ghost btn-sm" onclick="_iwEditingBookingToken='${link.token}';iwGoto('booking-edit')" title="Edit">✏ Edit</button>
-              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="iwDeleteBookingLink('${link.token}','${esc(link.title)}')" title="Delete">🗑</button>
-            </div>
-          </div>
-        </div>`;
-    }).join('');
-  } catch (e) {
-    el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`;
-  }
-}
-
-async function iwDeleteBookingLink(token, title) {
-  if (!confirm(`Delete booking link "${title}"? This cannot be undone.`)) return;
-  try {
-    await iwApiJSON('DELETE', `/api/booking/link/${token}`);
-    toast('Booking link deleted', 'success');
-    await iwLoadBookingLinks();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function iwRenderCreateBookingLinkPage() {
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="max-width:680px">
-      <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">New Booking Link</h2>
-      <div class="card">
-        <div class="form-group"><label>Title *</label><input type="text" id="iw-bk-title" placeholder="e.g. J1 Hospitality Interview"></div>
-        <div class="form-row">
-          <div class="form-group"><label>Client Name</label><input type="text" id="iw-bk-client" placeholder="Optional"></div>
-          <div class="form-group"><label>Position</label><input type="text" id="iw-bk-position" placeholder="Optional"></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Duration (min)</label>
-            <select id="iw-bk-duration">
-              <option value="15">15</option><option value="30" selected>30</option>
-              <option value="45">45</option><option value="60">60</option>
-            </select>
-          </div>
-          <div class="form-group"><label>Days Ahead (booking window)</label>
-            <select id="iw-bk-days">
-              <option value="7">7 days</option><option value="14" selected>14 days</option>
-              <option value="21">21 days</option><option value="30">30 days</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group"><label>Min Notice (hours)</label>
-          <select id="iw-bk-notice">
-            <option value="3">3 Hours</option><option value="6">6 Hours</option>
-            <option value="12">12 Hours</option><option value="24" selected>24 Hours</option><option value="48">48 Hours</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-primary" onclick="iwSubmitCreateBookingLink()">Create Booking Link</button>
-          <button class="btn btn-ghost" onclick="iwGoto('booking')">Cancel</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-async function iwSubmitCreateBookingLink() {
-  const title    = document.getElementById('iw-bk-title').value.trim();
-  const client   = document.getElementById('iw-bk-client').value.trim();
-  const position = document.getElementById('iw-bk-position').value.trim();
-  const duration = parseInt(document.getElementById('iw-bk-duration').value);
-  const daysAhead = parseInt(document.getElementById('iw-bk-days').value);
-  const minNoticeHours = parseInt(document.getElementById('iw-bk-notice').value);
-  if (!title) return toast('Title is required', 'error');
-  try {
-    await iwApiJSON('POST', '/api/booking/links', { title, clientName: client, position, duration, daysAhead, minNoticeHours, active: true });
-    toast('Booking link created!', 'success');
-    iwGoto('booking');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwRenderEditBookingLinkPage(token) {
-  if (!token) { iwGoto('booking'); return; }
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `<div style="max-width:680px"><div class="iw-empty-state"><div class="spinner"></div></div></div>`;
-  try {
-    const link = await iwApiJSON('GET', `/api/booking/link/${token}`);
-    main.innerHTML = `
-      <div style="max-width:680px">
-        <h2 style="font-size:16px;font-weight:700;margin:0 0 16px">Edit Booking Link</h2>
-        <div class="card">
-          <div class="form-group"><label>Title *</label><input type="text" id="iw-bk-edit-title" value="${esc(link.title)}"></div>
-          <div class="form-row">
-            <div class="form-group"><label>Client Name</label><input type="text" id="iw-bk-edit-client" value="${esc(link.clientName||'')}"></div>
-            <div class="form-group"><label>Position</label><input type="text" id="iw-bk-edit-position" value="${esc(link.position||'')}"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>Duration (min)</label>
-              <select id="iw-bk-edit-duration">
-                ${[15,30,45,60].map(v=>`<option value="${v}" ${link.duration===v?'selected':''}>${v}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group"><label>Active</label>
-              <select id="iw-bk-edit-active">
-                <option value="true"  ${link.active?'selected':''}>Active</option>
-                <option value="false" ${!link.active?'selected':''}>Inactive</option>
-              </select>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="btn btn-primary" onclick="iwSubmitEditBookingLink('${token}')">Save Changes</button>
-            <button class="btn btn-ghost" onclick="iwGoto('booking')">Cancel</button>
-          </div>
-        </div>
-      </div>`;
-  } catch (e) { main.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`; }
-}
-
-async function iwSubmitEditBookingLink(token) {
-  const title    = document.getElementById('iw-bk-edit-title').value.trim();
-  const client   = document.getElementById('iw-bk-edit-client').value.trim();
-  const position = document.getElementById('iw-bk-edit-position').value.trim();
-  const duration = parseInt(document.getElementById('iw-bk-edit-duration').value);
-  const active   = document.getElementById('iw-bk-edit-active').value === 'true';
-  if (!title) return toast('Title is required', 'error');
-  try {
-    await iwApiJSON('PUT', `/api/booking/link/${token}`, { title, clientName: client, position, duration, active });
-    toast('Booking link updated!', 'success');
-    iwGoto('booking');
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Interview Scripts page ─────────────────────────────────────────────────────
-async function iwRenderScriptPage() {
-  _iwCurrentScriptClientId = null;
-  const main = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="max-width:720px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h2 style="font-size:16px;font-weight:700;margin:0">Interview Scripts</h2>
-        <button class="btn btn-primary" onclick="iwPromptAddClient()">+ Add Client</button>
-      </div>
-      <div id="iw-script-clients-list"><div class="iw-empty-state"><div class="spinner"></div></div></div>
-    </div>`;
-  await iwLoadScriptClientsList();
-}
-
-async function iwLoadScriptClientsList() {
-  const el = document.getElementById('iw-script-clients-list'); if (!el) return;
-  try {
-    _iwScriptClients = await iwApiJSON('GET', '/api/script/clients');
-    if (!_iwScriptClients.length) {
-      el.innerHTML = `<div class="iw-empty-state">No clients yet. Click "+ Add Client" to get started.</div>`;
-      return;
-    }
-    el.innerHTML = `
-      <div class="card" style="padding:0;overflow:hidden">
-        ${_iwScriptClients.map((c, i) => {
-          const initials = c.name.trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
-          return `
-          <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;cursor:pointer;${i<_iwScriptClients.length-1?'border-bottom:1px solid var(--border)':''};transition:background .12s"
-            onmouseenter="this.style.background='var(--navy-mid)'" onmouseleave="this.style.background=''"
-            onclick="iwOpenScriptClient('${c.id}')">
-            <div id="iw-cl-av-${c.id}" style="width:44px;height:44px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden;font-size:13px;font-weight:700;color:#fff">${initials}</div>
-            <div style="flex:1;font-size:14px;font-weight:600">${esc(c.name)}</div>
-            <span style="color:var(--text-muted);font-size:20px;font-weight:300">›</span>
-          </div>`;
-        }).join('')}
-      </div>`;
-  } catch (e) { el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`; }
-}
-
-async function iwOpenScriptClient(clientId) {
-  _iwCurrentScriptClientId = clientId;
-  const client = _iwScriptClients.find(c => c.id === clientId);
-  const main   = document.getElementById('iw-main');
-  main.innerHTML = `
-    <div style="max-width:720px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
-        <button class="btn btn-ghost btn-sm" onclick="iwRenderScriptPage()">← Scripts</button>
-        <span style="color:var(--text-muted)">›</span>
-        <span style="font-size:15px;font-weight:700">${esc(client?.name||'')}</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h3 style="margin:0;font-size:14px;font-weight:600">Positions</h3>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="iwPromptAddPosition('${clientId}')">+ Add Position</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="iwDeleteScriptClient('${clientId}','${esc(client?.name||'').replace(/'/g,"\\'")}')" title="Delete client">🗑</button>
-        </div>
-      </div>
-      <div id="iw-sc-positions-${clientId}"><div class="iw-empty-state"><div class="spinner"></div></div></div>
-    </div>`;
-  await iwLoadClientPositions(clientId);
-}
-
-async function iwLoadClientPositions(clientId) {
-  const el = document.getElementById(`iw-sc-positions-${clientId}`); if (!el) return;
-  try {
-    const positions = await iwApiJSON('GET', `/api/script/client/${clientId}/positions`);
-    if (!positions.length) {
-      el.innerHTML = `<div class="iw-empty-state">No positions yet. Click "+ Add Position".</div>`;
-      return;
-    }
-    el.innerHTML = `<div class="card" style="padding:0;overflow:hidden">
-      ${positions.map((p, i) => {
-        const hasDoc = !!p.driveItemId;
-        const uploaded = p.uploadedAt ? new Date(p.uploadedAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : null;
-        const notLast  = i < positions.length - 1;
-        return `
-          <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;${notLast?'border-bottom:1px solid var(--border)':''}">
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:600">${esc(p.name)}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${hasDoc?`📄 ${esc(p.fileName||'Document')}${uploaded?' · '+uploaded:''}`:'No document uploaded'}</div>
-            </div>
-            <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
-              ${hasDoc?`
-                <button class="btn btn-ghost btn-sm" onclick="iwViewScriptDoc('${p.id}','${esc(p.fileName||'document')}')">View</button>
-                <button class="btn btn-ghost btn-sm" onclick="iwDownloadScriptDoc('${p.id}')">↓</button>`:''}
-              <label class="btn btn-ghost btn-sm" style="cursor:pointer">
-                ${hasDoc?'Replace':'Upload'}
-                <input type="file" accept=".pdf,.doc,.docx" style="display:none" onchange="iwUploadScriptDoc('${p.id}',this)">
-              </label>
-              <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="iwDeleteScriptPosition('${p.id}','${esc(p.name).replace(/'/g,"\\'")}','${clientId}')">🗑</button>
-            </div>
-          </div>`;
-      }).join('')}
-    </div>`;
-  } catch (e) { el.innerHTML = `<div class="iw-empty-state" style="color:var(--danger)">${esc(e.message)}</div>`; }
-}
-
-function iwPromptAddClient() {
-  document.getElementById('iw-new-client-name').value = '';
-  const btn = document.getElementById('iw-add-client-btn');
-  if (btn) { btn.disabled = false; btn.textContent = 'Add Client'; }
-  iwOpenModal('iw-modal-add-client');
-  setTimeout(() => document.getElementById('iw-new-client-name')?.focus(), 80);
-}
-
-async function iwSubmitAddClient() {
-  const name = document.getElementById('iw-new-client-name').value.trim();
-  if (!name) return toast('Client name is required', 'error');
-  const btn = document.getElementById('iw-add-client-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
-  try {
-    await iwApiJSON('POST', '/api/script/clients', { name });
-    toast('Client added', 'success');
-    iwCloseModal('iw-modal-add-client');
-    await iwLoadScriptClientsList();
-  } catch (e) {
-    toast(e.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = 'Add Client'; }
-  }
-}
-
-async function iwDeleteScriptClient(id, name) {
-  if (!confirm(`Delete client "${name}"? This will also delete all positions and documents.`)) return;
-  try { await iwApiJSON('DELETE', `/api/script/client/${id}`); toast('Client deleted','success'); iwRenderScriptPage(); }
-  catch (e) { toast(e.message,'error'); }
-}
-
-async function iwPromptAddPosition(clientId) {
-  const name = prompt('Enter position / role name:');
-  if (!name?.trim()) return;
-  try {
-    await iwApiJSON('POST', `/api/script/client/${clientId}/positions`, { name: name.trim() });
-    toast('Position added', 'success');
-    await iwLoadClientPositions(clientId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function iwDeleteScriptPosition(id, name, clientId) {
-  if (!confirm(`Delete position "${name}"?`)) return;
-  try { await iwApiJSON('DELETE', `/api/script/position/${id}`); toast('Position deleted','success'); await iwLoadClientPositions(clientId); }
-  catch (e) { toast(e.message,'error'); }
-}
-
-async function iwUploadScriptDoc(positionId, input) {
-  const file = input.files?.[0]; if (!file) return;
-  const label = input.closest('label'); const origText = label?.textContent?.trim();
-  if (label) { label.textContent='Uploading…'; label.style.pointerEvents='none'; label.style.opacity='0.6'; }
-  try {
-    const form = new FormData(); form.append('file', file);
-    const res  = await fetch(`${INTERVIEW_API}/api/script/position/${positionId}/upload`, { method:'POST', headers:{'X-Admin-Key':_iwKey}, body:form });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error||'Upload failed');
-    toast('Document uploaded', 'success');
-    if (_iwCurrentScriptClientId) await iwLoadClientPositions(_iwCurrentScriptClientId);
-  } catch (e) {
-    toast(e.message,'error');
-    if (label) { label.textContent=origText||'Upload'; label.style.pointerEvents=''; label.style.opacity=''; }
-  }
-}
-
-async function iwViewScriptDoc(positionId, fileName) {
-  try {
-    const data = await iwApiJSON('GET', `/api/script/position/${positionId}/doc-url`);
-    if (!data.downloadUrl) return toast('Document not available','error');
-    const ext = (data.ext||fileName.split('.').pop()||'pdf').toLowerCase();
-    const enc = encodeURIComponent(data.downloadUrl);
-    const src = (ext==='doc'||ext==='docx')
-      ? `https://view.officeapps.live.com/op/embed.aspx?src=${enc}`
-      : `https://docs.google.com/viewer?url=${enc}&embedded=true`;
-    window.open(src,'_blank');
-  } catch (e) { toast(e.message,'error'); }
-}
-
-async function iwDownloadScriptDoc(positionId) {
-  try {
-    const data = await iwApiJSON('GET', `/api/script/position/${positionId}/doc-url`);
-    if (!data.downloadUrl) return toast('Document not available','error');
-    window.open(data.downloadUrl,'_blank');
-  } catch (e) { toast(e.message,'error'); }
-}
+// The Poseidon-native interview-template CRUD (called Poseidon's own
+// /interviews REST API, now removed) and the embedded ZeusHire ops shell
+// (one-way/two-way/booking management via a direct X-Admin-Key call to
+// interview-api.putuastrawijaya.workers.dev) were both removed in v8.
+// ZeusHire has its own dedicated admin panel now — interviewing is
+// entirely its job, not something to duplicate here.
 
 // ── Clients ───────────────────────────────────────────────────────────────────
 
@@ -4247,7 +1747,7 @@ async function createClient() {
 }
 
 async function openClientDetail(id) {
-  const [c, endr] = await Promise.all([api('GET', `/clients/${id}`), api('GET', `/clients/${id}/endorsements`)]);
+  const c = await api('GET', `/clients/${id}`);
   const contacts = c.contacts || [];
   openModal(c.name, `
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:16px">
@@ -4265,7 +1765,7 @@ async function openClientDetail(id) {
       <div class="card-title" style="margin:0">Portal Contacts (${contacts.length})</div>
       <button class="btn btn-ghost btn-sm" onclick="openAddContactToClientModal('${esc(id)}')">+ Add Contact</button>
     </div>
-    <div style="margin-bottom:20px">
+    <div>
       ${contacts.length ? contacts.map(ct => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
           <div style="flex:1">
@@ -4275,22 +1775,6 @@ async function openClientDetail(id) {
           <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="removeContactFromClient('${esc(id)}','${esc(ct.user_id)}')">Remove</button>
         </div>`).join('') : '<div class="text-muted text-sm" style="padding:8px 0">No portal contacts linked. Add a CLIENT_CONTACT user to give access to the client portal.</div>'}
     </div>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div class="card-title" style="margin:0">Endorsements (${endr.endorsements?.length || 0})</div>
-    </div>
-    ${(endr.endorsements || []).map(e => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
-        <div>
-          <div style="font-weight:500">${esc(e.first_name)} ${esc(e.last_name)}</div>
-          <div style="font-size:.78rem;color:var(--text-muted)">${esc(e.pipeline)} · ${esc(e.status)}</div>
-        </div>
-        ${e.status === 'PENDING' || e.status === 'SCHEDULED' ? `
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-sm btn-primary" onclick="updateEndorsement('${e.id}','APPROVED')">Approve</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="updateEndorsement('${e.id}','REJECTED')">Reject</button>
-        </div>` : `<span class="badge ${e.status === 'APPROVED' ? 'badge-approved' : 'badge-rejected'}">${esc(e.status)}</span>`}
-      </div>`).join('') || '<div class="text-muted text-sm" style="padding:12px 0">No endorsements yet</div>'}
     `, 'modal-lg');
 }
 
@@ -4394,46 +1878,6 @@ async function removeContactFromClient(clientId, userId) {
     await api('DELETE', `/clients/${clientId}/contacts/${userId}`);
     toast('Contact removed', 'success');
     openClientDetail(clientId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-// ── Endorsements ──────────────────────────────────────────────────────────────
-
-function openEndorseModal(candidateId) {
-  openModal('Endorse to Client(s)', `
-    <p class="text-muted text-sm" style="margin-bottom:12px">Select one or more clients for this candidate's final interview.</p>
-    <div style="display:flex;flex-direction:column;gap:8px" id="endorse-client-list">
-      ${STATE.clients.filter(c => c.is_active).map(c => `
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px;border:1px solid var(--border);border-radius:6px">
-          <input type="checkbox" value="${c.id}">
-          <div>
-            <div style="font-weight:500">${esc(c.name)}</div>
-            <div class="text-xs text-muted">${esc(c.type)} · ${esc(c.country || '—')}</div>
-          </div>
-        </label>`).join('') || '<div class="text-muted">No active clients</div>'}
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitEndorse('${candidateId}')">Endorse</button>
-    </div>`);
-}
-
-async function submitEndorse(candidateId) {
-  const clientIds = [...document.querySelectorAll('#endorse-client-list input:checked')].map(i => i.value);
-  if (!clientIds.length) { toast('Select at least one client', 'error'); return; }
-  try {
-    await api('POST', `/candidates/${candidateId}/endorse`, { clientIds });
-    closeModal(); toast(`Endorsed to ${clientIds.length} client(s)`, 'success');
-    openCandidateDetail(candidateId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function updateEndorsement(id, status) {
-  try {
-    await api('PATCH', `/endorsements/${id}`, { status });
-    toast(`Endorsement → ${status}`, status === 'APPROVED' ? 'success' : 'info');
-    if (STATE.currentCandidate) openCandidateDetail(STATE.currentCandidate.id);
-    closeModal();
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -4588,106 +2032,9 @@ async function runComplianceFilter() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ── Form builder ──────────────────────────────────────────────────────────────
-
-async function loadForms() {
-  try {
-    const d = await api('GET', '/forms');
-    const el = document.getElementById('forms-list');
-    el.innerHTML = (d.forms || []).map(f => `
-      <div class="card" style="margin-bottom:12px">
-        <div class="card-header">
-          <div>
-            <span class="card-title">${esc(f.name)}</span>
-            ${f.pipeline ? ` · ${pipelineBadge(f.pipeline)}` : ' · <span class="badge badge-new">All Pipelines</span>'}
-          </div>
-          <div style="display:flex;gap:6px">
-            <span class="${f.is_active ? 'badge badge-approved' : 'badge badge-new'}">${f.is_active ? 'Active' : 'Inactive'}</span>
-            <button class="btn btn-ghost btn-sm" onclick="openEditFormModal('${f.id}')">Edit</button>
-            <button class="btn btn-ghost btn-sm" onclick="toggleFormActive('${f.id}', ${!f.is_active})">${f.is_active ? 'Deactivate' : 'Activate'}</button>
-          </div>
-        </div>
-      </div>`).join('') || '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg><h3>No forms yet</h3><p>Create your first application form</p></div>';
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-function openNewFormModal() {
-  openModal('New Submission Form', `
-    <div class="form-group"><label>Form Name</label><input type="text" id="nf-name" placeholder="Sea-Based Application 2026"></div>
-    <div class="form-group"><label>Pipeline</label>
-      <select id="nf-pipeline"><option value="">All Pipelines</option><option value="SEA_BASED">Sea-Based</option><option value="LAND_BASED">Land-Based</option><option value="J1_PROGRAM">J1 Program</option></select>
-    </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer">
-      <input type="checkbox" id="nf-active" checked> Set as active default form for pipeline
-    </label>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="createForm()">Create Form</button>
-    </div>`);
-}
-
-async function createForm() {
-  const name = document.getElementById('nf-name').value.trim();
-  if (!name) { toast('Name required', 'error'); return; }
-  try {
-    const d = await api('POST', '/forms', { name, pipeline: document.getElementById('nf-pipeline').value || null, isActive: document.getElementById('nf-active').checked, isDefault: document.getElementById('nf-active').checked });
-    closeModal(); toast('Form created', 'success'); loadForms();
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function toggleFormActive(id, isActive) {
-  try { await api('PATCH', `/forms/${id}`, { isActive }); toast('Form updated', 'success'); loadForms(); }
-  catch (e) { toast(e.message, 'error'); }
-}
-
-async function openEditFormModal(id) {
-  const d = await api('GET', `/forms/${id}`);
-  openModal(`Edit Form: ${esc(d.name)}`, `
-    <div class="form-group"><label>Form Name</label><input type="text" id="ef-name" value="${esc(d.name)}"></div>
-    <div class="card-title" style="margin:16px 0 10px">Fields (${d.fields?.length || 0})</div>
-    <div id="ef-fields">${(d.fields || []).map(f => `
-      <div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
-        <span style="flex:1;font-size:13px"><strong>${esc(f.label)}</strong> <span class="text-muted">(${f.field_type}${f.is_required ? ', required' : ''})</span></span>
-        <button class="btn btn-ghost btn-sm" onclick="deleteField('${id}','${f.id}')">✕</button>
-      </div>`).join('')}</div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn btn-ghost btn-sm" onclick="openAddFieldModal('${id}')">+ Add Field</button>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveFormName('${id}')">Save</button>
-    </div>`, 'modal-lg');
-}
-
-function openAddFieldModal(formId) {
-  openModal('Add Field', `
-    <div class="form-group"><label>Label</label><input type="text" id="af-label" placeholder="Full Name"></div>
-    <div class="form-group"><label>Field Key (machine name)</label><input type="text" id="af-key" placeholder="full_name"></div>
-    <div class="form-group"><label>Type</label>
-      <select id="af-type"><option value="text">Text</option><option value="email">Email</option><option value="phone">Phone</option><option value="date">Date</option><option value="select">Select</option><option value="textarea">Textarea</option><option value="file">File Upload</option><option value="checkbox">Checkbox</option></select>
-    </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px"><input type="checkbox" id="af-required"> Required</label>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="openEditFormModal('${formId}')">← Back</button>
-      <button class="btn btn-primary" onclick="addField('${formId}')">Add Field</button>
-    </div>`);
-}
-
-async function addField(formId) {
-  try {
-    await api('POST', `/forms/${formId}/fields`, { label: document.getElementById('af-label').value, fieldKey: document.getElementById('af-key').value, fieldType: document.getElementById('af-type').value, isRequired: document.getElementById('af-required').checked, sortOrder: 99 });
-    toast('Field added', 'success'); openEditFormModal(formId);
-  } catch (e) { toast(e.message, 'error'); }
-}
-
-async function deleteField(formId, fieldId) {
-  await api('DELETE', `/forms/${formId}/fields/${fieldId}`); toast('Field removed', 'info'); openEditFormModal(formId);
-}
-
-async function saveFormName(id) {
-  try { await api('PATCH', `/forms/${id}`, { name: document.getElementById('ef-name').value }); closeModal(); toast('Form saved', 'success'); loadForms(); }
-  catch (e) { toast(e.message, 'error'); }
-}
+// The application-form builder (called Poseidon's own /forms REST API,
+// now removed) was removed in v8 — application intake is entirely
+// ZeusHire's job.
 
 // ── Users ────────────────────────────────────────────────────────────────────
 
@@ -4740,120 +2087,8 @@ async function createUser() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ── Add candidate ─────────────────────────────────────────────────────────────
-
-function openAddCandidateModal() {
-  openModal('Add Applicant Manually', `
-    <div class="form-row">
-      <div class="form-group"><label>First Name <span style="color:var(--danger)">*</span></label><input type="text" id="nc-fn" placeholder="First name"></div>
-      <div class="form-group"><label>Last Name <span style="color:var(--danger)">*</span></label><input type="text" id="nc-ln" placeholder="Last name"></div>
-    </div>
-    <div class="form-group"><label>Email Address <span style="color:var(--danger)">*</span></label><input type="email" id="nc-email" placeholder="candidate@email.com"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Phone</label><input type="tel" id="nc-phone" placeholder="+63 9XX XXX XXXX"></div>
-      <div class="form-group"><label>Nationality</label><input type="text" id="nc-nationality" placeholder="e.g. Filipino"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Gender</label>
-        <select id="nc-gender"><option value="">— Select —</option><option value="Male">Male</option><option value="Female">Female</option></select>
-      </div>
-      <div class="form-group"><label>Employment Status</label>
-        <select id="nc-emp-status"><option value="New">New</option><option value="Repeater">Repeater</option></select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>CTI Office</label>
-        <select id="nc-cti-office">
-          <option value="">— Select Office —</option>
-          <option value="CTI Indonesia">CTI Indonesia</option>
-          <option value="CTI Group Myanmar">CTI Group Myanmar</option>
-          <option value="CTI Philippines">CTI Philippines</option>
-          <option value="CTI Group USA">CTI Group USA</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Position Applied</label><input type="text" id="nc-position" placeholder="e.g. Waiter / J1 Intern"></div>
-    </div>
-    <div class="form-group"><label>Pipeline <span style="color:var(--danger)">*</span></label>
-      <select id="nc-pipeline"><option value="SEA_BASED">Sea-Based</option><option value="LAND_BASED">Land-Based</option><option value="J1_PROGRAM">J1 Program</option></select>
-    </div>
-    <div style="border-top:1px solid var(--border);margin:16px 0 12px;padding-top:14px;">
-      <p style="font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:0 0 12px;">Documents</p>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Resume / CV <span style="color:var(--danger)">*</span></label>
-          <input type="file" id="nc-resume" accept=".pdf,.doc,.docx" style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem;width:100%;cursor:pointer;">
-        </div>
-        <div class="form-group">
-          <label>Reference Letter <span style="color:var(--danger)">*</span></label>
-          <input type="file" id="nc-refletter" accept=".pdf,.doc,.docx" style="background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:.85rem;width:100%;cursor:pointer;">
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="nc-submit-btn" onclick="createCandidateManual()">Create Applicant</button>
-    </div>`);
-}
-
-async function createCandidateManual() {
-  const firstName       = document.getElementById('nc-fn').value.trim();
-  const lastName        = document.getElementById('nc-ln').value.trim();
-  const email           = document.getElementById('nc-email').value.trim();
-  const phone           = document.getElementById('nc-phone').value.trim();
-  const nationality     = document.getElementById('nc-nationality').value.trim();
-  const gender          = document.getElementById('nc-gender').value;
-  const employmentStatus = document.getElementById('nc-emp-status').value;
-  const ctiOffice       = document.getElementById('nc-cti-office').value;
-  const positionApplied = document.getElementById('nc-position').value.trim();
-  const pipeline        = document.getElementById('nc-pipeline').value;
-  const resumeFile      = document.getElementById('nc-resume')?.files[0];
-  const refLetterFile   = document.getElementById('nc-refletter')?.files[0];
-
-  if (!firstName || !lastName || !email) { toast('First name, last name, and email are required', 'error'); return; }
-  if (!resumeFile)    { toast('Resume / CV is required', 'error'); return; }
-  if (!refLetterFile) { toast('Reference Letter is required', 'error'); return; }
-
-  const btn = document.getElementById('nc-submit-btn');
-  btn.disabled = true; btn.textContent = 'Creating…';
-
-  // ── Step 1: Create candidate record ──────────────────────────────────────────
-  let candidateId;
-  try {
-    const d = await api('POST', '/candidates', { firstName, lastName, email, phone: phone || undefined, nationality: nationality || undefined, gender: gender || undefined, employmentStatus: employmentStatus || undefined, ctiOffice: ctiOffice || undefined, positionApplied: positionApplied || undefined, pipeline });
-    candidateId = d.candidateId;
-  } catch (e) {
-    toast(e.message, 'error');
-    btn.disabled = false; btn.textContent = 'Create Applicant';
-    return;
-  }
-
-  // ── Step 2: Close modal & show candidate immediately ─────────────────────────
-  closeModal();
-  loadCandidates();
-  openCandidateDetail(candidateId);
-
-  // ── Step 3: Upload documents in background (won't block or crash creation) ───
-  const uploads = [
-    { file: resumeFile,    type: 'RESUME',           label: 'Resume / CV' },
-    { file: refLetterFile, type: 'REFERENCE_LETTER', label: 'Reference Letter' }
-  ];
-  let uploadFailed = false;
-  for (const u of uploads) {
-    try {
-      const session = await api('POST', `/candidates/${candidateId}/documents/upload-session`, {
-        type: u.type, label: u.label, fileName: u.file.name, fileSizeBytes: u.file.size, mimeType: u.file.type
-      });
-      if (session.uploadUrl) {
-        const upRes = await fetch(session.uploadUrl, { method: 'PUT', body: u.file, headers: { 'Content-Type': u.file.type, 'Content-Length': u.file.size, 'Content-Range': `bytes 0-${u.file.size - 1}/${u.file.size}` } });
-        const upData = await upRes.json().catch(() => ({}));
-        if (upData.id) await api('POST', `/candidates/${candidateId}/documents/${session.sessionId}/confirm-upload`, { oneDriveFileId: upData.id });
-      }
-    } catch (e) { uploadFailed = true; console.warn(`Upload failed for ${u.label}:`, e.message); }
-  }
-
-  if (uploadFailed) toast('Applicant created. Document uploads failed — add them from the Documents tab once storage is configured.', 'info');
-  else toast('Applicant created with documents ✓', 'success');
-}
+// Manual candidate creation was removed in v8 — every candidate now
+// arrives exclusively via the ZeusHire hired-push.
 
 // ── Pipeline Profiles ─────────────────────────────────────────────────────────
 
@@ -6057,10 +3292,6 @@ function pipelineBadge(p) {
 
 function statusBadge(s) {
   const map = {
-    NEW_SUBMISSION:      'badge-new',
-    CANDIDATES:          'badge-active',
-    FINAL_INTERVIEW:     'badge-hold',
-    OFFER_LETTER:        'badge-approved',
     ONBOARDING:          'badge-deployed',
     READY_TO_DEPLOY:     'badge-approved',
     DEPLOYED:            'badge-deployed',
@@ -6089,18 +3320,6 @@ function statusLabel(s) {
     WITHDRAWN:'Withdrawn', DEPLOYED:'Deployed',
   };
   return labels[s] || s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-}
-
-function nextStages(current, pipeline) {
-  const map = {
-    NEW_SUBMISSION:      ['CANDIDATES', 'ARCHIVED'],
-    CANDIDATES:          ['FINAL_INTERVIEW', 'ARCHIVED'],
-    FINAL_INTERVIEW:     ['OFFER_LETTER', 'ARCHIVED'],
-    OFFER_LETTER: ['ONBOARDING', 'ARCHIVED'],
-    ONBOARDING:          ['ARCHIVED'],
-    ARCHIVED:            ['NEW_SUBMISSION', 'CANDIDATES'],
-  };
-  return map[current] || [];
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
@@ -6352,17 +3571,7 @@ async function sendPortalInvite(candidateId) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ── Delete Booking Slot ───────────────────────────────────────────────────────
-
-async function deleteSlot(interviewId, slotId) {
-  const ok = await showConfirm('Delete this slot? This cannot be undone.');
-  if (!ok) return;
-  try {
-    await api('DELETE', `/interviews/${interviewId}/slots/${slotId}`);
-    toast('Slot deleted', 'success');
-    viewInterviewSlots(interviewId);
-  } catch (e) { toast(e.message, 'error'); }
-}
+// Booking slots (and the calendar UI that managed them) were removed in v8.
 
 // ── User Management ───────────────────────────────────────────────────────────
 

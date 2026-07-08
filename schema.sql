@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS candidates (
   nationality              TEXT,
   address                  TEXT,  -- JSON: { street, city, province, country, postalCode }
   pipeline                 TEXT NOT NULL CHECK(pipeline IN ('SEA_BASED','LAND_BASED','J1_PROGRAM')),
-  status                   TEXT NOT NULL DEFAULT 'NEW_SUBMISSION',
+  status                   TEXT NOT NULL DEFAULT 'ONBOARDING',
   assigned_recruiter_id    TEXT REFERENCES users(id),
   submission_id            TEXT UNIQUE,
   profile_photo_url        TEXT,
@@ -45,6 +45,12 @@ CREATE TABLE IF NOT EXISTS candidates (
   internal_notes           TEXT,
   tags                     TEXT,  -- JSON array
   portal_activated_at      TEXT,
+  -- ZeusHire hand-off (v8) — every candidate now arrives via a Super Admin's
+  -- "Push to Poseidon" action in ZeusHire once the candidate is Hired.
+  zeushire_candidate_id    TEXT UNIQUE,
+  zeushire_snapshot        TEXT,  -- JSON, read-only ATS history for the Interview tab
+  zeushire_pushed_by       TEXT,  -- email of the Super Admin who triggered the push
+  zeushire_pushed_at       TEXT,
   created_at               TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -68,112 +74,12 @@ CREATE INDEX IF NOT EXISTS idx_candidates_pipeline_status    ON candidates(pipel
 CREATE INDEX IF NOT EXISTS idx_candidates_pipeline_recruiter ON candidates(pipeline, assigned_recruiter_id);
 CREATE INDEX IF NOT EXISTS idx_candidates_pipeline_created   ON candidates(pipeline, created_at);
 
--- ── SUBMISSION FORMS ────────────────────────────────────────────────────────
+-- Submission forms/fields, submissions, interviews, candidate_interviews, and
+-- booking_slots were removed in migration v8 — application intake and
+-- interview scheduling are entirely ZeusHire's job now. Poseidon only
+-- receives a candidate once ZeusHire marks them Hired and pushes them over.
 
-CREATE TABLE IF NOT EXISTS submission_forms (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  description TEXT,
-  pipeline    TEXT CHECK(pipeline IN ('SEA_BASED','LAND_BASED','J1_PROGRAM')),
-  is_active   INTEGER NOT NULL DEFAULT 0,
-  is_default  INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS form_fields (
-  id              TEXT PRIMARY KEY,
-  form_id         TEXT NOT NULL REFERENCES submission_forms(id) ON DELETE CASCADE,
-  label           TEXT NOT NULL,
-  field_key       TEXT NOT NULL,
-  field_type      TEXT NOT NULL,  -- text|email|phone|date|select|multiselect|file|textarea|checkbox|number
-  placeholder     TEXT,
-  help_text       TEXT,
-  is_required     INTEGER NOT NULL DEFAULT 0,
-  options         TEXT,           -- JSON: [{ label, value }]
-  file_types      TEXT,           -- JSON: ["pdf","jpg"]
-  max_file_size_mb INTEGER,
-  sort_order      INTEGER NOT NULL DEFAULT 0,
-  is_active       INTEGER NOT NULL DEFAULT 1,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(form_id, field_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_form_fields_form ON form_fields(form_id, sort_order);
-
--- ── SUBMISSIONS ─────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS submissions (
-  id                         TEXT PRIMARY KEY,
-  form_id                    TEXT NOT NULL REFERENCES submission_forms(id),
-  pipeline                   TEXT NOT NULL CHECK(pipeline IN ('SEA_BASED','LAND_BASED','J1_PROGRAM')),
-  data                       TEXT NOT NULL,  -- JSON of submitted field values
-  ip_address                 TEXT,
-  user_agent                 TEXT,
-  is_duplicate               INTEGER NOT NULL DEFAULT 0,
-  duplicate_of_candidate_id  TEXT REFERENCES candidates(id),
-  reviewed_by_id             TEXT REFERENCES users(id),
-  reviewed_at                TEXT,
-  review_notes               TEXT,
-  created_at                 TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_submissions_pipeline ON submissions(pipeline);
-CREATE INDEX IF NOT EXISTS idx_submissions_created  ON submissions(created_at);
-CREATE INDEX IF NOT EXISTS idx_submissions_reviewed ON submissions(reviewed_at);
-
--- ── INTERVIEWS ──────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS interviews (
-  id              TEXT PRIMARY KEY,
-  type            TEXT NOT NULL CHECK(type IN ('ONE_WAY','TWO_WAY','BOOKING','CLIENT_FINAL')),
-  title           TEXT NOT NULL,
-  description     TEXT,
-  created_by_id   TEXT NOT NULL REFERENCES users(id),
-  questions       TEXT,        -- JSON: [{ id, text, timeLimitSecs, type: "video"|"text" }]
-  booking_config  TEXT,        -- JSON: { durationMinutes, bufferMinutes, timezone, advanceNoticeHours, ... }
-  is_active       INTEGER NOT NULL DEFAULT 1,
-  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS candidate_interviews (
-  id              TEXT PRIMARY KEY,
-  candidate_id    TEXT NOT NULL REFERENCES candidates(id),
-  interview_id    TEXT NOT NULL REFERENCES interviews(id),
-  status          TEXT NOT NULL DEFAULT 'INVITED',
-  invited_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  scheduled_at    TEXT,
-  completed_at    TEXT,
-  expires_at      TEXT,
-  meeting_url     TEXT,
-  booking_slot_id TEXT,
-  responses       TEXT,        -- JSON: [{ questionId, responseText, videoUrl }]
-  score           INTEGER,
-  passed          INTEGER,     -- 0|1
-  recruiter_notes TEXT,
-  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_ci_candidate ON candidate_interviews(candidate_id);
-CREATE INDEX IF NOT EXISTS idx_ci_interview ON candidate_interviews(interview_id);
-CREATE INDEX IF NOT EXISTS idx_ci_status    ON candidate_interviews(status);
-
-CREATE TABLE IF NOT EXISTS booking_slots (
-  id           TEXT PRIMARY KEY,
-  interview_id TEXT NOT NULL REFERENCES interviews(id) ON DELETE CASCADE,
-  start_time   TEXT NOT NULL,
-  end_time     TEXT NOT NULL,
-  is_booked    INTEGER NOT NULL DEFAULT 0,
-  is_blocked   INTEGER NOT NULL DEFAULT 0,
-  block_reason TEXT,
-  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_slots_interview    ON booking_slots(interview_id, start_time);
-CREATE INDEX IF NOT EXISTS idx_slots_availability ON booking_slots(is_booked, is_blocked, start_time);
-
--- ── CLIENTS & ENDORSEMENTS ──────────────────────────────────────────────────
+-- ── CLIENTS ─────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS clients (
   id            TEXT PRIMARY KEY,
@@ -200,29 +106,10 @@ CREATE TABLE IF NOT EXISTS client_contacts (
   is_primary INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS client_endorsements (
-  id               TEXT PRIMARY KEY,
-  candidate_id     TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-  client_id        TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  endorsement_role TEXT NOT NULL CHECK(endorsement_role IN
-                    ('CRUISE_LINE','LAND_BASED','SPONSOR_MATCH','HOST_PLACEMENT')),
-  status           TEXT NOT NULL CHECK(status IN
-                    ('PENDING','SCHEDULED','COMPLETED','REJECTED','APPROVED','WITHDRAWN')),
-  endorsed_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  scheduled_at     TEXT,
-  decided_at       TEXT,
-  decision_notes   TEXT,
-  interview_url    TEXT,
-  endorsed_by_id   TEXT REFERENCES users(id),
-  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_endorsement_active
-  ON client_endorsements(candidate_id, client_id, endorsement_role)
-  WHERE status IN ('PENDING','SCHEDULED');
-CREATE INDEX IF NOT EXISTS idx_endorsements_client    ON client_endorsements(client_id, status);
-CREATE INDEX IF NOT EXISTS idx_endorsements_candidate ON client_endorsements(candidate_id, status);
-CREATE INDEX IF NOT EXISTS idx_endorsements_role      ON client_endorsements(candidate_id, endorsement_role, status);
+-- client_endorsements (the pre-hire client approval workflow) was removed in
+-- migration v8 along with the rest of the ATS pipeline. `clients` and
+-- `client_contacts` stay — they're still used for post-hire deployment
+-- tracking (which client/vessel a candidate is placed with).
 
 -- ── DOCUMENTS ───────────────────────────────────────────────────────────────
 
@@ -495,40 +382,10 @@ CREATE TABLE IF NOT EXISTS seafarer_certificates (
 );
 CREATE INDEX IF NOT EXISTS idx_seacert_candidate ON seafarer_certificates(candidate_id);
 
-CREATE TABLE IF NOT EXISTS offer_letters (
-  id                    TEXT PRIMARY KEY,
-  candidate_id          TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-  client_id             TEXT REFERENCES clients(id),
-  template_id           TEXT,
-  content               TEXT,
-  status                TEXT NOT NULL DEFAULT 'DRAFT'
-                          CHECK (status IN ('DRAFT','SENT','SIGNED','EXPIRED','REVOKED')),
-  sent_at               TEXT,
-  signed_at             TEXT,
-  signed_blob           TEXT,
-  signing_session_id    TEXT,
-  signature_token       TEXT,
-  webhook_verified      INTEGER NOT NULL DEFAULT 0,
-  webhook_received_at   TEXT,
-  created_by_id         TEXT REFERENCES users(id),
-  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_offer_candidate ON offer_letters(candidate_id);
-CREATE INDEX IF NOT EXISTS idx_offer_session   ON offer_letters(signing_session_id);
-
-CREATE TABLE IF NOT EXISTS marlins_tests (
-  id                TEXT PRIMARY KEY,
-  candidate_id      TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-  score             REAL NOT NULL CHECK (score >= 0 AND score <= 100),
-  duration_seconds  INTEGER,
-  code              TEXT,
-  result            TEXT NOT NULL CHECK (result IN ('PASS','FAIL')),
-  taken_at          TEXT NOT NULL DEFAULT (datetime('now')),
-  recorded_by_id    TEXT REFERENCES users(id),
-  created_at        TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_marlins_candidate ON marlins_tests(candidate_id, taken_at DESC);
+-- offer_letters (e-signature workflow) and marlins_tests (pre-hire English
+-- screening test) were removed in migration v8 — both are ATS/screening
+-- territory that ZeusHire now owns; ZeusHire's own snapshot carries the
+-- Marlins result forward for reference on the candidate's Interview tab.
 
 CREATE TABLE IF NOT EXISTS deployments (
   id                        TEXT PRIMARY KEY,
@@ -690,34 +547,9 @@ CREATE TABLE IF NOT EXISTS j1_placements (
 CREATE INDEX IF NOT EXISTS idx_j1_placements_cand ON j1_placements(candidate_id, program_start DESC);
 CREATE INDEX IF NOT EXISTS idx_j1_placements_host ON j1_placements(host_client_id);
 
-CREATE TABLE IF NOT EXISTS j1_eligibility_decisions (
-  id                 TEXT PRIMARY KEY,
-  candidate_id       TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-  enrollment_id      TEXT REFERENCES j1_enrollments(id),
-  verdict            TEXT NOT NULL CHECK(verdict IN ('PASS','FAIL')),
-  age_ok             INTEGER,
-  education_ok       INTEGER,
-  work_experience_ok INTEGER,
-  reason             TEXT,
-  decided_by_id      TEXT NOT NULL REFERENCES users(id),
-  decided_at         TEXT NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_elig_cand ON j1_eligibility_decisions(candidate_id, decided_at DESC);
-
-CREATE TABLE IF NOT EXISTS j1_sponsor_submissions (
-  id                  TEXT PRIMARY KEY,
-  candidate_id        TEXT NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
-  enrollment_id       TEXT REFERENCES j1_enrollments(id),
-  sponsor_client_id   TEXT NOT NULL REFERENCES clients(id),
-  external_reference  TEXT,
-  status              TEXT NOT NULL DEFAULT 'SUBMITTED'
-                        CHECK(status IN ('SUBMITTED','UNDER_REVIEW','APPROVED','REJECTED')),
-  submitted_at        TEXT NOT NULL DEFAULT (datetime('now')),
-  decided_at          TEXT,
-  decided_by_id       TEXT REFERENCES users(id),
-  notes               TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_sponsor_sub_cand ON j1_sponsor_submissions(candidate_id, submitted_at DESC);
+-- j1_eligibility_decisions and j1_sponsor_submissions (pre-hire J1 screening
+-- and sponsor matching) were removed in migration v8 — ZeusHire owns J1
+-- eligibility/sponsor-matching decisions before a candidate is ever hired.
 
 CREATE TABLE IF NOT EXISTS whatsapp_groups (
   id                TEXT PRIMARY KEY,
