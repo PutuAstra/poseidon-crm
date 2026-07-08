@@ -294,6 +294,10 @@ R.post('/api/v1/auth/candidate/set-password', async (req, env) => {
   const c = await env.DB.prepare('SELECT id,email,user_id FROM candidates WHERE id=?').bind(candidateId).first();
   if (!c) return err('Candidate not found', 404);
   if (c.user_id) return err('Account already activated', 409);
+  // A leftover/orphaned account (e.g. from a since-deleted candidate that shared
+  // this email) would otherwise surface as a raw UNIQUE-constraint 500 below.
+  const existingUser = await env.DB.prepare('SELECT id FROM users WHERE email=? COLLATE NOCASE').bind(c.email).first();
+  if (existingUser) return err('An account with this email already exists. Contact your recruiter for help.', 409);
   const uid = cuid();
   await env.DB.batch([
     env.DB.prepare("INSERT INTO users(id,email,password_hash,role,first_name,last_name)SELECT ?,email,?,'CANDIDATE',first_name,last_name FROM candidates WHERE id=?")
